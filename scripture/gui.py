@@ -221,84 +221,89 @@ class App(QMainWindow):
         root.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
         root.setSpacing(GAP_MEDIUM)
 
-        # --- Toolbar ---
-        toolbar = QHBoxLayout()
-        toolbar.setSpacing(GAP_SMALL)
+        # --- Toolbar row 1: file + scene splitting ---
+        row1 = QHBoxLayout()
+        row1.setSpacing(GAP_SMALL)
 
         self.btn_open = QPushButton("Open Video")
         self.btn_open.setStyleSheet(_BTN_STYLE)
         self.btn_open.clicked.connect(self._open_video)
-        toolbar.addWidget(self.btn_open)
+        row1.addWidget(self.btn_open)
 
         self.btn_save = QPushButton("Save")
         self.btn_save.setStyleSheet(_BTN_STYLE)
         self.btn_save.clicked.connect(self._save_project)
-        toolbar.addWidget(self.btn_save)
+        row1.addWidget(self.btn_save)
 
         self.btn_load = QPushButton("Load")
         self.btn_load.setStyleSheet(_BTN_STYLE)
         self.btn_load.clicked.connect(self._load_project)
-        toolbar.addWidget(self.btn_load)
+        row1.addWidget(self.btn_load)
 
-        toolbar.addSpacing(12)
+        row1.addSpacing(12)
 
         self.btn_split = QPushButton("Split Here")
         self.btn_split.setStyleSheet(_BTN_STYLE)
         self.btn_split.clicked.connect(self._split_here)
-        toolbar.addWidget(self.btn_split)
+        row1.addWidget(self.btn_split)
 
         self.btn_merge = QPushButton("Merge \u2190")
         self.btn_merge.setStyleSheet(_BTN_STYLE)
         self.btn_merge.setToolTip("Remove split at start of current scene (merge with previous)")
         self.btn_merge.clicked.connect(self._merge_left)
-        toolbar.addWidget(self.btn_merge)
+        row1.addWidget(self.btn_merge)
 
-        toolbar.addSpacing(12)
+        row1.addStretch()
+        root.addLayout(row1)
+
+        # --- Toolbar row 2: scene nav + annotation + processing ---
+        row2 = QHBoxLayout()
+        row2.setSpacing(GAP_SMALL)
 
         self.btn_prev = QPushButton("< Prev")
         self.btn_prev.setFixedWidth(70)
         self.btn_prev.setStyleSheet(_BTN_STYLE)
         self.btn_prev.clicked.connect(self._prev_scene)
-        toolbar.addWidget(self.btn_prev)
+        row2.addWidget(self.btn_prev)
 
         self.scene_label = QLabel("Scene: -/-")
-        self.scene_label.setFixedWidth(360)
+        self.scene_label.setMinimumWidth(200)
         self.scene_label.setFont(make_font(size=SIZE_BODY))
         self.scene_label.setStyleSheet(f"color: {TEXT_SECONDARY.name()};")
-        toolbar.addWidget(self.scene_label)
+        row2.addWidget(self.scene_label)
 
         self.btn_next = QPushButton("Next >")
         self.btn_next.setFixedWidth(70)
         self.btn_next.setStyleSheet(_BTN_STYLE)
         self.btn_next.clicked.connect(self._next_scene)
-        toolbar.addWidget(self.btn_next)
+        row2.addWidget(self.btn_next)
 
-        toolbar.addSpacing(12)
+        row2.addSpacing(12)
 
         self.click_label = QLabel("Click: TIP")
         self.click_label.setFixedWidth(90)
         self.click_label.setFont(make_font(size=SIZE_BODY, bold=True))
         self.click_label.setStyleSheet("color: #ff5050;")
-        toolbar.addWidget(self.click_label)
+        row2.addWidget(self.click_label)
 
-        toolbar.addStretch()
+        row2.addStretch()
 
         self.btn_process = QPushButton("Process Scene")
         self.btn_process.setStyleSheet(_BTN_STYLE)
         self.btn_process.clicked.connect(self._process_scene)
-        toolbar.addWidget(self.btn_process)
+        row2.addWidget(self.btn_process)
 
         self.btn_process_all = QPushButton("Process All")
         self.btn_process_all.setStyleSheet(_BTN_STYLE)
         self.btn_process_all.clicked.connect(self._process_all)
-        toolbar.addWidget(self.btn_process_all)
+        row2.addWidget(self.btn_process_all)
 
         self.btn_export = QPushButton("Export .funscript")
         self.btn_export.setStyleSheet(_BTN_STYLE)
         self.btn_export.clicked.connect(self._export)
-        toolbar.addWidget(self.btn_export)
+        row2.addWidget(self.btn_export)
 
-        root.addLayout(toolbar)
+        root.addLayout(row2)
 
         # --- Frame canvas ---
         self.canvas = FrameCanvas()
