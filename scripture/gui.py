@@ -5,11 +5,11 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QBrush, QColor
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QLabel, QPushButton, QSlider, QFileDialog, QMessageBox,
+    QLabel, QPushButton, QSlider, QFileDialog, QMessageBox, QProgressBar,
 )
 
 from shared_ui.colors import (
@@ -57,6 +57,45 @@ _SLIDER_STYLE = f"""
         border-radius: 7px;
     }}
 """
+
+_PROGRESS_STYLE = f"""
+    QProgressBar {{
+        background: {BG_TERTIARY.name()};
+        border: 1px solid {BORDER_SUBTLE.name()};
+        border-radius: 3px;
+        text-align: center;
+        color: {TEXT_PRIMARY.name()};
+        height: 18px;
+    }}
+    QProgressBar::chunk {{
+        background: {BLUE.name()};
+        border-radius: 2px;
+    }}
+"""
+
+
+class ProcessWorker(QThread):
+    """Runs optical flow processing off the main thread."""
+    scene_done = pyqtSignal(int, int, list)  # scene_idx, total, actions
+    finished = pyqtSignal()
+    error = pyqtSignal(int, str)  # scene_idx, error message
+
+    def __init__(self, video_path: str, jobs: list[tuple[int, 'Scene', AxisDefinition]], fps: float):
+        super().__init__()
+        self.video_path = video_path
+        self.jobs = jobs
+        self.fps = fps
+
+    def run(self):
+        total = len(self.jobs)
+        for i, (idx, scene, axis) in enumerate(self.jobs):
+            try:
+                result = track_motion(self.video_path, axis, scene.start_frame, scene.end_frame)
+                actions = extract_strokes(result.positions, result.timestamps_ms, fps=self.fps)
+                self.scene_done.emit(idx, total, actions)
+            except Exception as e:
+                self.error.emit(idx, str(e))
+        self.finished.emit()
 
 
 class FrameCanvas(QWidget):
@@ -212,6 +251,8 @@ class App(QMainWindow):
         self.click_state: str = "tip"
         self.current_tip: tuple[int, int] | None = None
 
+        self._worker: ProcessWorker | None = None
+
         self._build_ui()
 
     def _build_ui(self):
@@ -304,6 +345,12 @@ class App(QMainWindow):
         row2.addWidget(self.btn_export)
 
         root.addLayout(row2)
+
+        # --- Progress bar (hidden by default) ---
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setStyleSheet(_PROGRESS_STYLE)
+        self.progress_bar.setVisible(False)
+        root.addWidget(self.progress_bar)
 
         # --- Frame canvas ---
         self.canvas = FrameCanvas()
@@ -539,42 +586,55 @@ class App(QMainWindow):
 
     # ── Processing ─────────────────────────────────────────────────────
 
+    def _build_jobs(self, scene_indices: list[int]) -> list[tuple[int, Scene, AxisDefinition]]:
+        return [
+            (idx, self.scenes[idx], self.scene_axes[idx])
+            for idx in scene_indices
+        ]
+
+    def _start_processing(self, jobs: list[tuple[int, Scene, AxisDefinition]]):
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setMaximum(len(jobs))
+        self.progress_bar.setValue(0)
+        self.btn_process.setEnabled(False)
+        self.btn_process_all.setEnabled(False)
+
+        self._worker = ProcessWorker(self.video_path, jobs, self.fps)
+        self._worker.scene_done.connect(self._on_scene_done)
+        self._worker.error.connect(self._on_process_error)
+        self._worker.finished.connect(self._on_process_finished)
+        self._worker.start()
+
+    def _on_scene_done(self, scene_idx: int, total: int, actions: list[dict]):
+        self.scene_actions[scene_idx] = actions
+        done = self.progress_bar.value() + 1
+        self.progress_bar.setValue(done)
+        self._set_status(f"Processed scene {scene_idx + 1} ({done}/{total}) — {len(actions)} stroke points.")
+
+    def _on_process_error(self, scene_idx: int, msg: str):
+        self._set_status(f"Error processing scene {scene_idx + 1}: {msg}")
+
+    def _on_process_finished(self):
+        self.progress_bar.setVisible(False)
+        self.btn_process.setEnabled(True)
+        self.btn_process_all.setEnabled(True)
+
+        total_actions = sum(len(a) for a in self.scene_actions.values())
+        self._set_status(f"Done — {len(self.scene_actions)} scenes, {total_actions} total stroke points.")
+
     def _process_scene(self):
         idx = self._current_scene_idx()
         if idx not in self.scene_axes:
             QMessageBox.warning(self, "No axis", "Define tip and base for this scene first.")
             return
-
-        scene = self.scenes[idx]
-        axis = self.scene_axes[idx]
-        self._set_status(f"Processing scene {idx + 1} (frames {scene.start_frame}\u2013{scene.end_frame})...")
-        QApplication.processEvents()
-
-        result = track_motion(self.video_path, axis, scene.start_frame, scene.end_frame)
-        actions = extract_strokes(result.positions, result.timestamps_ms, fps=self.fps)
-        self.scene_actions[idx] = actions
-        self._set_status(f"Scene {idx + 1}: found {len(actions)} stroke points.")
+        self._start_processing(self._build_jobs([idx]))
 
     def _process_all(self):
         annotated = [i for i in range(len(self.scenes)) if i in self.scene_axes]
         if not annotated:
             QMessageBox.warning(self, "No axes", "Annotate tip/base on at least one scene first.")
             return
-
-        for idx in annotated:
-            scene = self.scenes[idx]
-            axis = self.scene_axes[idx]
-            self._set_status(f"Processing scene {idx + 1}/{len(self.scenes)}...")
-            QApplication.processEvents()
-            result = track_motion(self.video_path, axis, scene.start_frame, scene.end_frame)
-            actions = extract_strokes(result.positions, result.timestamps_ms, fps=self.fps)
-            self.scene_actions[idx] = actions
-
-        skipped = len(self.scenes) - len(annotated)
-        self._set_status(
-            f"Processed {len(annotated)} scenes"
-            f"{f', skipped {skipped} unannotated' if skipped else ''}."
-        )
+        self._start_processing(self._build_jobs(annotated))
 
     # ── Project save/load ────────────────────────────────────────────────
 
