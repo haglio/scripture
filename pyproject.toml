@@ -1,0 +1,13 @@
+[project]
+name = "scripture"
+version = "0.1.0"
+description = "Semi-automated funscript generator from 2D video"
+requires-python = ">=3.10"
+dependencies = [
+    "opencv-python>=4.8",
+    "numpy>=1.24",
+    "scipy>=1.11",
+]
+
+[project.scripts]
+scripture = "scripture.main:main"
