@@ -1,8 +1,8 @@
-"""Scene detection using PySceneDetect's ContentDetector.
+"""Scene detection using PySceneDetect's AdaptiveDetector.
 
-ContentDetector uses HSV color-space analysis with adaptive thresholds,
-which correctly distinguishes actual scene cuts from fast motion within
-a scene.
+AdaptiveDetector compares each frame's score against a rolling average
+over a local window, so it adapts to the video's own content rather than
+relying on a fixed global threshold.
 """
 
 from dataclasses import dataclass
@@ -10,7 +10,7 @@ from typing import Callable
 
 import cv2
 import numpy as np
-from scenedetect import open_video, SceneManager, ContentDetector
+from scenedetect import open_video, SceneManager, AdaptiveDetector
 
 
 @dataclass
@@ -51,7 +51,7 @@ def _frame_brightness(cap: cv2.VideoCapture, frame_idx: int) -> float:
 
 def build_scenes(
     video_path: str,
-    threshold: float = 27.0,
+    threshold: float = 3.0,
     min_scene_len_sec: float = 2.0,
     black_brightness: float = 15.0,
     num_samples: int = 10,
@@ -59,13 +59,14 @@ def build_scenes(
 ) -> list[Scene]:
     """Detect scenes via PySceneDetect, classify, pick representative frames.
 
-    Uses ContentDetector for cut detection with a minimum scene length to
-    prevent motion-triggered false positives.  Returns only content scenes
-    (black/blank and very short scenes are filtered out).
+    Uses AdaptiveDetector which compares each frame's score against a
+    rolling local average, adapting to the video's content.  Returns only
+    content scenes (black/blank and very short scenes are filtered out).
 
     Args:
-        threshold: ContentDetector sensitivity. Lower = more sensitive.
-            Default 27.0.  Try 10-15 for content with subtle cuts.
+        threshold: AdaptiveDetector sensitivity — the ratio a frame's score
+            must exceed vs. the local window average to trigger a cut.
+            Default 3.0.  Lower = more sensitive.
     """
     video = open_video(video_path)
     fps = video.frame_rate
@@ -73,8 +74,8 @@ def build_scenes(
     min_scene_frames = int(min_scene_len_sec * fps)
 
     scene_manager = SceneManager()
-    scene_manager.add_detector(ContentDetector(
-        threshold=threshold,
+    scene_manager.add_detector(AdaptiveDetector(
+        adaptive_threshold=threshold,
         min_scene_len=min_scene_frames,
     ))
 

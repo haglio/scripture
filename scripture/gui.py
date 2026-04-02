@@ -286,11 +286,11 @@ class App(QMainWindow):
         toolbar.addWidget(thresh_label)
 
         self.thresh_spin = QDoubleSpinBox()
-        self.thresh_spin.setRange(1.0, 100.0)
-        self.thresh_spin.setSingleStep(1.0)
-        self.thresh_spin.setValue(27.0)
+        self.thresh_spin.setRange(0.5, 20.0)
+        self.thresh_spin.setSingleStep(0.5)
+        self.thresh_spin.setValue(3.0)
         self.thresh_spin.setFixedWidth(70)
-        self.thresh_spin.setToolTip("ContentDetector threshold. Lower = more sensitive.")
+        self.thresh_spin.setToolTip("AdaptiveDetector threshold (ratio vs local average). Lower = more sensitive.")
         self.thresh_spin.setStyleSheet(f"""
             QDoubleSpinBox {{
                 color: {TEXT_PRIMARY.name()};
