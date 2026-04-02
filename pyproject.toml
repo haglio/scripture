@@ -8,6 +8,7 @@ dependencies = [
     "numpy>=1.24",
     "scipy>=1.11",
     "PyQt6",
+    "scenedetect[opencv]>=0.6",
 ]
 
 [project.scripts]

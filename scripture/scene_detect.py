@@ -1,8 +1,8 @@
-"""Automatic scene/shot change detection.
+"""Scene detection using PySceneDetect's ContentDetector.
 
-Combines histogram correlation (catches color distribution shifts) with
-frame differencing (catches spatial layout changes between similar-colored
-shots).  Either method triggering counts as a scene change.
+ContentDetector uses HSV color-space analysis with adaptive thresholds,
+which correctly distinguishes actual scene cuts from fast motion within
+a scene.
 """
 
 from dataclasses import dataclass
@@ -10,6 +10,7 @@ from typing import Callable
 
 import cv2
 import numpy as np
+from scenedetect import open_video, SceneManager, ContentDetector
 
 
 @dataclass
@@ -26,76 +27,6 @@ def filter_scenes(scenes: list[Scene], min_frames: int = 5) -> list[Scene]:
         s for s in scenes
         if s.is_content and (s.end_frame - s.start_frame) >= min_frames
     ]
-
-
-def detect_scene_changes(
-    video_path: str,
-    hist_threshold: float = 0.4,
-    diff_threshold: float = 30.0,
-    subsample: int = 2,
-    progress: Callable[[float], None] | None = None,
-) -> list[int]:
-    """Return frame indices where scene changes occur.
-
-    Uses two complementary methods:
-    - Histogram correlation: catches overall color distribution shifts
-      (e.g. black-to-content transitions)
-    - Frame differencing: mean absolute pixel difference catches spatial
-      changes between shots with similar color palettes
-
-    `subsample` controls how many frames to skip between comparisons
-    (1 = every frame, 2 = every other frame, etc.)
-    """
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        raise FileNotFoundError(f"Cannot open video: {video_path}")
-
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    prev_gray = None
-    prev_hist = None
-    scene_changes: list[int] = []
-    frame_idx = 0
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        if frame_idx % subsample == 0:
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            # Downscale for faster differencing
-            small = cv2.resize(gray, (160, 90))
-
-            hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
-            cv2.normalize(hist, hist)
-
-            if prev_gray is not None:
-                # Method 1: histogram correlation
-                correlation = cv2.compareHist(prev_hist, hist, cv2.HISTCMP_CORREL)
-                hist_cut = correlation < hist_threshold
-
-                # Method 2: mean absolute frame difference
-                diff = cv2.absdiff(prev_gray, small)
-                mean_diff = float(diff.mean())
-                diff_cut = mean_diff > diff_threshold
-
-                if hist_cut or diff_cut:
-                    scene_changes.append(frame_idx)
-
-            prev_gray = small
-            prev_hist = hist
-
-        frame_idx += 1
-
-        if progress and total_frames > 0 and frame_idx % 500 == 0:
-            progress(frame_idx / total_frames)
-
-    cap.release()
-
-    if progress:
-        progress(1.0)
-
-    return scene_changes
 
 
 def _frame_variance(cap: cv2.VideoCapture, frame_idx: int) -> float:
@@ -120,30 +51,46 @@ def _frame_brightness(cap: cv2.VideoCapture, frame_idx: int) -> float:
 
 def build_scenes(
     video_path: str,
-    hist_threshold: float = 0.4,
-    diff_threshold: float = 30.0,
-    subsample: int = 2,
+    min_scene_len_sec: float = 2.0,
     black_brightness: float = 15.0,
     num_samples: int = 10,
     progress: Callable[[float], None] | None = None,
 ) -> list[Scene]:
-    """Detect scenes, classify as content/non-content, pick representative frames.
+    """Detect scenes via PySceneDetect, classify, pick representative frames.
 
-    Returns only content scenes with sufficient length (black/blank scenes
-    and zero-length scenes are filtered out).
+    Uses ContentDetector for cut detection with a minimum scene length to
+    prevent motion-triggered false positives.  Returns only content scenes
+    (black/blank and very short scenes are filtered out).
     """
-    changes = detect_scene_changes(
-        video_path, hist_threshold, diff_threshold, subsample, progress,
-    )
-    cap = cv2.VideoCapture(video_path)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    video = open_video(video_path)
+    fps = video.frame_rate
+    total_frames = video.duration.get_frames()
+    min_scene_frames = int(min_scene_len_sec * fps)
 
-    boundaries = [0] + changes + [total_frames]
+    scene_manager = SceneManager()
+    scene_manager.add_detector(ContentDetector(min_scene_len=min_scene_frames))
+
+    frame_count = [0]
+
+    def _on_frame(_frame: np.ndarray, frame_num: int) -> None:
+        frame_count[0] = frame_num
+        if progress and total_frames > 0 and frame_num % 200 == 0:
+            progress(frame_num / total_frames)
+
+    scene_manager.detect_scenes(video=video, callback=_on_frame)
+
+    if progress:
+        progress(1.0)
+
+    scene_list = scene_manager.get_scene_list(start_in_scene=True)
+
+    # Convert to our Scene dataclass with representative frame selection
+    cap = cv2.VideoCapture(video_path)
     scenes: list[Scene] = []
 
-    for i in range(len(boundaries) - 1):
-        start = boundaries[i]
-        end = boundaries[i + 1]
+    for start_tc, end_tc in scene_list:
+        start = start_tc.get_frames()
+        end = end_tc.get_frames()
         length = end - start
 
         sample_count = min(num_samples, length)
@@ -158,10 +105,12 @@ def build_scenes(
                 for j in range(sample_count)
             ]
 
+        # Classify content vs black
         brightnesses = [_frame_brightness(cap, idx) for idx in sample_indices]
         dark_count = sum(1 for b in brightnesses if b < black_brightness)
         is_content = dark_count < len(brightnesses) / 2
 
+        # Pick representative frame: highest Laplacian variance
         best_idx = sample_indices[0]
         best_var = -1.0
         for idx in sample_indices:
