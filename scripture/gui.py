@@ -24,6 +24,7 @@ from scripture.scene import Scene, scenes_from_splits
 from scripture.motion_tracker import AxisDefinition, track_motion
 from scripture.stroke_extract import extract_strokes
 from scripture.funscript import build_funscript, save_funscript
+from scripture.project import save_project, load_project
 
 
 _BTN_STYLE = f"""
@@ -229,6 +230,16 @@ class App(QMainWindow):
         self.btn_open.clicked.connect(self._open_video)
         toolbar.addWidget(self.btn_open)
 
+        self.btn_save = QPushButton("Save")
+        self.btn_save.setStyleSheet(_BTN_STYLE)
+        self.btn_save.clicked.connect(self._save_project)
+        toolbar.addWidget(self.btn_save)
+
+        self.btn_load = QPushButton("Load")
+        self.btn_load.setStyleSheet(_BTN_STYLE)
+        self.btn_load.clicked.connect(self._load_project)
+        toolbar.addWidget(self.btn_load)
+
         toolbar.addSpacing(12)
 
         self.btn_split = QPushButton("Split Here")
@@ -345,11 +356,12 @@ class App(QMainWindow):
                 return i
         return max(0, len(self.scenes) - 1)
 
-    def _rebuild_scenes(self):
-        """Rebuild scene list from splits. Clears axes and actions."""
+    def _rebuild_scenes(self, clear_annotations: bool = True):
+        """Rebuild scene list from splits."""
         self.scenes = scenes_from_splits(self.splits, self.total_frames)
-        self.scene_axes.clear()
-        self.scene_actions.clear()
+        if clear_annotations:
+            self.scene_axes.clear()
+            self.scene_actions.clear()
 
     # ── Video loading ──────────────────────────────────────────────────
 
@@ -461,25 +473,27 @@ class App(QMainWindow):
 
     # ── Scene navigation ───────────────────────────────────────────────
 
+    def _navigate_to_scene(self, scene_idx: int):
+        """Jump to a scene — show axis frame if annotated, else start frame."""
+        if scene_idx in self.scene_axes:
+            target = self.scene_axes[scene_idx].frame
+        else:
+            target = self.scenes[scene_idx].start_frame
+        self._reset_click_state()
+        self.frame_scrubber.blockSignals(True)
+        self.frame_scrubber.setValue(int(target / self.total_frames * 10000))
+        self.frame_scrubber.blockSignals(False)
+        self._show_frame(target)
+
     def _prev_scene(self):
         idx = self._current_scene_idx()
         if idx > 0:
-            target = self.scenes[idx - 1].start_frame
-            self._reset_click_state()
-            self.frame_scrubber.blockSignals(True)
-            self.frame_scrubber.setValue(int(target / self.total_frames * 10000))
-            self.frame_scrubber.blockSignals(False)
-            self._show_frame(target)
+            self._navigate_to_scene(idx - 1)
 
     def _next_scene(self):
         idx = self._current_scene_idx()
         if idx < len(self.scenes) - 1:
-            target = self.scenes[idx + 1].start_frame
-            self._reset_click_state()
-            self.frame_scrubber.blockSignals(True)
-            self.frame_scrubber.setValue(int(target / self.total_frames * 10000))
-            self.frame_scrubber.blockSignals(False)
-            self._show_frame(target)
+            self._navigate_to_scene(idx + 1)
 
     def _on_scrub(self, value: int):
         if self.total_frames == 0:
@@ -509,7 +523,10 @@ class App(QMainWindow):
             self.click_label.setStyleSheet("color: #508cff;")
             self.canvas.set_pending_tip(self.current_tip)
         else:
-            axis = AxisDefinition(tip=self.current_tip, base=(frame_x, frame_y))
+            axis = AxisDefinition(
+                tip=self.current_tip, base=(frame_x, frame_y),
+                frame=self.current_frame_idx,
+            )
             self.scene_axes[idx] = axis
             self.canvas.set_axis(axis)
             self._reset_click_state()
@@ -552,6 +569,86 @@ class App(QMainWindow):
             self.scene_actions[idx] = actions
 
         self._set_status(f"Processed all {len(self.scenes)} scenes.")
+
+    # ── Project save/load ────────────────────────────────────────────────
+
+    def _save_project(self):
+        if self.video_path is None:
+            QMessageBox.warning(self, "No video", "Open a video first.")
+            return
+
+        default_name = Path(self.video_path).stem + ".scripture"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Project", default_name,
+            "Scripture project (*.scripture);;All files (*)",
+        )
+        if not path:
+            return
+
+        axes_data = {}
+        for idx, axis in self.scene_axes.items():
+            axes_data[str(idx)] = {
+                "tip": list(axis.tip),
+                "base": list(axis.base),
+                "frame": axis.frame,
+            }
+
+        state = {
+            "video_path": self.video_path,
+            "splits": self.splits,
+            "axes": axes_data,
+        }
+        save_project(path, state)
+        self._set_status(f"Project saved to {Path(path).name}")
+
+    def _load_project(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Project", "",
+            "Scripture project (*.scripture);;All files (*)",
+        )
+        if not path:
+            return
+
+        state = load_project(path)
+        video_path = state["video_path"]
+
+        if self.cap is not None:
+            self.cap.release()
+        self.cap = cv2.VideoCapture(video_path)
+        if not self.cap.isOpened():
+            QMessageBox.critical(
+                self, "Video not found",
+                f"Cannot open: {video_path}",
+            )
+            return
+
+        self.video_path = video_path
+        self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 30.0
+        self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.frame_w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.frame_h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        self.splits = state["splits"]
+        self._rebuild_scenes(clear_annotations=False)
+
+        self.scene_axes.clear()
+        for idx_str, axis_data in state.get("axes", {}).items():
+            self.scene_axes[int(idx_str)] = AxisDefinition(
+                tip=tuple(axis_data["tip"]),
+                base=tuple(axis_data["base"]),
+                frame=axis_data.get("frame", 0),
+            )
+
+        self.scene_actions.clear()
+        self.current_frame_idx = 0
+        self._show_frame(0)
+        self._update_scene_label()
+
+        n_axes = len(self.scene_axes)
+        self._set_status(
+            f"Loaded project: {Path(path).name} — "
+            f"{len(self.scenes)} scenes, {n_axes} axes annotated"
+        )
 
     # ── Export ─────────────────────────────────────────────────────────
 

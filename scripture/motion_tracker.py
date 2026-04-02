@@ -10,6 +10,7 @@ import numpy as np
 class AxisDefinition:
     tip: tuple[int, int]
     base: tuple[int, int]
+    frame: int = 0  # the frame on which tip/base were marked
 
 
 @dataclass
