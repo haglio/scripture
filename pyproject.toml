@@ -7,7 +7,11 @@ dependencies = [
     "opencv-python>=4.8",
     "numpy>=1.24",
     "scipy>=1.11",
+    "PyQt6",
 ]
 
 [project.scripts]
 scripture = "scripture.main:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
