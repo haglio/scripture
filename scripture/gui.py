@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 from shared_ui.colors import (
     BG_PRIMARY, BG_SECONDARY, BG_TERTIARY, BG_BUTTON,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-    ACCENT_PRIMARY, BORDER_SUBTLE,
+    BLUE, BORDER_SUBTLE,
 )
 from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
 from shared_ui.spacing import MARGIN_STANDARD, GAP_SMALL, GAP_MEDIUM
@@ -50,7 +50,7 @@ _SLIDER_STYLE = f"""
         border-radius: 3px;
     }}
     QSlider::handle:horizontal {{
-        background: {ACCENT_PRIMARY.name()};
+        background: {BLUE.name()};
         width: 14px;
         margin: -4px 0;
         border-radius: 7px;
