@@ -1,27 +1,26 @@
-"""PyQt6 GUI for scripture: axis annotation, signal review, and export."""
+"""PyQt6 GUI for scripture: manual scene splitting, axis annotation, and export."""
 
 import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QBrush, QColor
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QLabel, QPushButton, QSlider, QFileDialog, QMessageBox, QProgressBar,
-    QDoubleSpinBox,
+    QLabel, QPushButton, QSlider, QFileDialog, QMessageBox,
 )
 
 from shared_ui.colors import (
     BG_PRIMARY, BG_SECONDARY, BG_TERTIARY, BG_BUTTON,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-    BLUE, BORDER_SUBTLE,
+    ACCENT_PRIMARY, BORDER_SUBTLE,
 )
-from shared_ui.fonts import FONT_UI, SIZE_BODY, SIZE_SMALL, make_font
+from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
 from shared_ui.spacing import MARGIN_STANDARD, GAP_SMALL, GAP_MEDIUM
 
-from scripture.scene_detect import Scene, build_scenes
+from scripture.scene import Scene, scenes_from_splits
 from scripture.motion_tracker import AxisDefinition, track_motion
 from scripture.stroke_extract import extract_strokes
 from scripture.funscript import build_funscript, save_funscript
@@ -51,50 +50,12 @@ _SLIDER_STYLE = f"""
         border-radius: 3px;
     }}
     QSlider::handle:horizontal {{
-        background: {BLUE.name()};
+        background: {ACCENT_PRIMARY.name()};
         width: 14px;
         margin: -4px 0;
         border-radius: 7px;
     }}
 """
-
-_PROGRESS_STYLE = f"""
-    QProgressBar {{
-        background: {BG_TERTIARY.name()};
-        border: 1px solid {BORDER_SUBTLE.name()};
-        border-radius: 3px;
-        text-align: center;
-        color: {TEXT_PRIMARY.name()};
-        height: 18px;
-    }}
-    QProgressBar::chunk {{
-        background: {BLUE.name()};
-        border-radius: 2px;
-    }}
-"""
-
-
-class SceneDetectWorker(QThread):
-    """Runs scene detection off the main thread."""
-    progress = pyqtSignal(float)
-    finished = pyqtSignal(list)  # list[Scene]
-    error = pyqtSignal(str)
-
-    def __init__(self, video_path: str, threshold: float = 27.0):
-        super().__init__()
-        self.video_path = video_path
-        self.threshold = threshold
-
-    def run(self):
-        try:
-            scenes = build_scenes(
-                self.video_path,
-                threshold=self.threshold,
-                progress=lambda p: self.progress.emit(p),
-            )
-            self.finished.emit(scenes)
-        except Exception as e:
-            self.error.emit(str(e))
 
 
 class FrameCanvas(QWidget):
@@ -175,11 +136,9 @@ class FrameCanvas(QWidget):
         ox = (self.width() - disp_w) // 2
         oy = (self.height() - disp_h) // 2
 
-        # Border around video area
         p.setPen(QPen(BORDER_SUBTLE))
         p.drawRect(ox - 1, oy - 1, disp_w + 1, disp_h + 1)
 
-        # Scaled frame
         scaled = self._pixmap.scaled(
             disp_w, disp_h,
             Qt.AspectRatioMode.KeepAspectRatio,
@@ -187,7 +146,6 @@ class FrameCanvas(QWidget):
         )
         p.drawPixmap(ox, oy, scaled)
 
-        # Draw axis or pending tip
         if self._axis is not None:
             self._draw_axis(p, self._axis)
         elif self._pending_tip is not None:
@@ -205,12 +163,10 @@ class FrameCanvas(QWidget):
         tx, ty = self._frame_to_canvas(*axis.tip)
         bx, by = self._frame_to_canvas(*axis.base)
 
-        # Dashed line
         pen = QPen(QColor(255, 220, 80), 2, Qt.PenStyle.DashLine)
         p.setPen(pen)
         p.drawLine(tx, ty, bx, by)
 
-        # Tip marker
         p.setPen(QPen(Qt.GlobalColor.white, 1))
         p.setBrush(QBrush(QColor(255, 80, 80)))
         p.drawEllipse(tx - 5, ty - 5, 10, 10)
@@ -218,7 +174,6 @@ class FrameCanvas(QWidget):
         p.setFont(make_font(size=SIZE_SMALL))
         p.drawText(tx + 10, ty + 4, "TIP")
 
-        # Base marker
         p.setPen(QPen(Qt.GlobalColor.white, 1))
         p.setBrush(QBrush(QColor(80, 140, 255)))
         p.drawEllipse(bx - 5, by - 5, 10, 10)
@@ -246,16 +201,15 @@ class App(QMainWindow):
         self.frame_w: int = 0
         self.frame_h: int = 0
 
+        # Manual scene splitting
+        self.splits: list[int] = []
         self.scenes: list[Scene] = []
         self.scene_axes: dict[int, AxisDefinition] = {}
         self.scene_actions: dict[int, list[dict]] = {}
 
-        self.current_scene_idx: int = 0
         self.current_frame_idx: int = 0
         self.click_state: str = "tip"
         self.current_tip: tuple[int, int] | None = None
-
-        self._worker: SceneDetectWorker | None = None
 
         self._build_ui()
 
@@ -266,7 +220,7 @@ class App(QMainWindow):
         root.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
         root.setSpacing(GAP_MEDIUM)
 
-        # --- Toolbar row 1: file + scene nav ---
+        # --- Toolbar ---
         toolbar = QHBoxLayout()
         toolbar.setSpacing(GAP_SMALL)
 
@@ -275,32 +229,18 @@ class App(QMainWindow):
         self.btn_open.clicked.connect(self._open_video)
         toolbar.addWidget(self.btn_open)
 
-        self.btn_detect = QPushButton("Detect Scenes")
-        self.btn_detect.setStyleSheet(_BTN_STYLE)
-        self.btn_detect.clicked.connect(self._detect_scenes)
-        toolbar.addWidget(self.btn_detect)
+        toolbar.addSpacing(12)
 
-        thresh_label = QLabel("Threshold:")
-        thresh_label.setFont(make_font(size=SIZE_SMALL))
-        thresh_label.setStyleSheet(f"color: {TEXT_SECONDARY.name()};")
-        toolbar.addWidget(thresh_label)
+        self.btn_split = QPushButton("Split Here")
+        self.btn_split.setStyleSheet(_BTN_STYLE)
+        self.btn_split.clicked.connect(self._split_here)
+        toolbar.addWidget(self.btn_split)
 
-        self.thresh_spin = QDoubleSpinBox()
-        self.thresh_spin.setRange(0.5, 20.0)
-        self.thresh_spin.setSingleStep(0.5)
-        self.thresh_spin.setValue(3.0)
-        self.thresh_spin.setFixedWidth(70)
-        self.thresh_spin.setToolTip("AdaptiveDetector threshold (ratio vs local average). Lower = more sensitive.")
-        self.thresh_spin.setStyleSheet(f"""
-            QDoubleSpinBox {{
-                color: {TEXT_PRIMARY.name()};
-                background: {BG_TERTIARY.name()};
-                border: 1px solid {BORDER_SUBTLE.name()};
-                border-radius: 3px;
-                padding: 2px 4px;
-            }}
-        """)
-        toolbar.addWidget(self.thresh_spin)
+        self.btn_merge = QPushButton("Merge \u2190")
+        self.btn_merge.setStyleSheet(_BTN_STYLE)
+        self.btn_merge.setToolTip("Remove split at start of current scene (merge with previous)")
+        self.btn_merge.clicked.connect(self._merge_left)
+        toolbar.addWidget(self.btn_merge)
 
         toolbar.addSpacing(12)
 
@@ -349,12 +289,6 @@ class App(QMainWindow):
 
         root.addLayout(toolbar)
 
-        # --- Progress bar (hidden by default) ---
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setStyleSheet(_PROGRESS_STYLE)
-        self.progress_bar.setVisible(False)
-        root.addWidget(self.progress_bar)
-
         # --- Frame canvas ---
         self.canvas = FrameCanvas()
         self.canvas.clicked.connect(self._on_canvas_click)
@@ -372,7 +306,7 @@ class App(QMainWindow):
         self.frame_scrubber = QSlider(Qt.Orientation.Horizontal)
         self.frame_scrubber.setStyleSheet(_SLIDER_STYLE)
         self.frame_scrubber.setMinimum(0)
-        self.frame_scrubber.setMaximum(1000)
+        self.frame_scrubber.setMaximum(10000)
         self.frame_scrubber.valueChanged.connect(self._on_scrub)
         scrub_row.addWidget(self.frame_scrubber, stretch=1)
 
@@ -404,6 +338,19 @@ class App(QMainWindow):
             return f"{h}:{m:02d}:{s:02d}"
         return f"{m}:{s:02d}"
 
+    def _current_scene_idx(self) -> int:
+        """Return the index of the scene containing the current frame."""
+        for i, scene in enumerate(self.scenes):
+            if self.current_frame_idx < scene.end_frame:
+                return i
+        return max(0, len(self.scenes) - 1)
+
+    def _rebuild_scenes(self):
+        """Rebuild scene list from splits. Clears axes and actions."""
+        self.scenes = scenes_from_splits(self.splits, self.total_frames)
+        self.scene_axes.clear()
+        self.scene_actions.clear()
+
     # ── Video loading ──────────────────────────────────────────────────
 
     def _open_video(self):
@@ -422,10 +369,12 @@ class App(QMainWindow):
         self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.frame_w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.frame_h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        self.scenes = []
+
+        self.splits = []
+        self.scenes = [Scene(0, self.total_frames)]
         self.scene_axes.clear()
         self.scene_actions.clear()
-        self.current_scene_idx = 0
+        self.current_frame_idx = 0
 
         duration = self._format_time(self.total_frames)
         self._set_status(
@@ -433,6 +382,7 @@ class App(QMainWindow):
             f"{self.fps:.1f} fps — {duration} — {self.frame_w}x{self.frame_h}"
         )
         self._show_frame(0)
+        self._update_scene_label()
 
     # ── Frame display ──────────────────────────────────────────────────
 
@@ -449,93 +399,93 @@ class App(QMainWindow):
         self.canvas._frame_h = self.frame_h
         self.canvas.set_frame(frame)
 
-        # Restore axis annotation visuals
-        if self.current_scene_idx in self.scene_axes:
-            self.canvas.set_axis(self.scene_axes[self.current_scene_idx])
+        idx = self._current_scene_idx()
+        if idx in self.scene_axes:
+            self.canvas.set_axis(self.scene_axes[idx])
         else:
             self.canvas.set_axis(None)
             self.canvas.set_pending_tip(self.current_tip)
 
         self.frame_info_label.setText(f"#{frame_idx} / {self._format_time(frame_idx)}")
+        self._update_scene_label()
 
-    # ── Scene detection ────────────────────────────────────────────────
+    def _update_scene_label(self):
+        if not self.scenes:
+            self.scene_label.setText("Scene: -/-")
+            return
+        idx = self._current_scene_idx()
+        scene = self.scenes[idx]
+        start_t = self._format_time(scene.start_frame)
+        end_t = self._format_time(scene.end_frame)
+        self.scene_label.setText(
+            f"Scene {idx + 1}/{len(self.scenes)}  "
+            f"[{start_t} \u2013 {end_t}]  "
+            f"frames {scene.start_frame}\u2013{scene.end_frame}"
+        )
 
-    def _detect_scenes(self):
-        if self.video_path is None:
-            QMessageBox.warning(self, "No video", "Open a video first.")
+    # ── Scene splitting ────────────────────────────────────────────────
+
+    def _split_here(self):
+        if self.total_frames == 0:
             return
 
-        self.btn_detect.setEnabled(False)
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setValue(0)
-        self._set_status("Detecting scenes...")
+        frame = self.current_frame_idx
+        if frame <= 0 or frame >= self.total_frames:
+            self._set_status("Cannot split at start or end of video.")
+            return
 
-        self._worker = SceneDetectWorker(self.video_path, self.thresh_spin.value())
-        self._worker.progress.connect(self._on_detect_progress)
-        self._worker.finished.connect(self._on_detect_finished)
-        self._worker.error.connect(self._on_detect_error)
-        self._worker.start()
+        if frame in self.splits:
+            self._set_status(f"Split already exists at frame {frame}.")
+            return
 
-    def _on_detect_progress(self, fraction: float):
-        self.progress_bar.setValue(int(fraction * 100))
+        self.splits.append(frame)
+        self._rebuild_scenes()
+        self._reset_click_state()
+        self._update_scene_label()
+        self._set_status(f"Split at frame {frame} ({self._format_time(frame)}). {len(self.scenes)} scenes.")
 
-    def _on_detect_finished(self, scenes: list[Scene]):
-        self.scenes = scenes
-        self.current_scene_idx = 0
-        self.progress_bar.setVisible(False)
-        self.btn_detect.setEnabled(True)
+    def _merge_left(self):
+        idx = self._current_scene_idx()
+        if idx == 0:
+            self._set_status("First scene — nothing to merge with.")
+            return
 
-        self._update_scene_display()
-        self._set_status(f"Found {len(self.scenes)} content scenes.")
-
-    def _on_detect_error(self, msg: str):
-        self.progress_bar.setVisible(False)
-        self.btn_detect.setEnabled(True)
-        QMessageBox.critical(self, "Scene detection failed", msg)
+        # The split at the start of the current scene
+        split_frame = self.scenes[idx].start_frame
+        if split_frame in self.splits:
+            self.splits.remove(split_frame)
+            self._rebuild_scenes()
+            self._reset_click_state()
+            self._update_scene_label()
+            self._set_status(f"Removed split at frame {split_frame}. {len(self.scenes)} scenes.")
 
     # ── Scene navigation ───────────────────────────────────────────────
 
-    def _scene_label_text(self) -> str:
-        if not self.scenes:
-            return "Scene: -/-"
-        scene = self.scenes[self.current_scene_idx]
-        start_t = self._format_time(scene.start_frame)
-        end_t = self._format_time(scene.end_frame)
-        return (
-            f"Scene {self.current_scene_idx + 1}/{len(self.scenes)}  "
-            f"[{start_t} – {end_t}]  "
-            f"frames {scene.start_frame}–{scene.end_frame}"
-        )
-
-    def _update_scene_display(self):
-        if not self.scenes:
-            return
-        scene = self.scenes[self.current_scene_idx]
-        self.scene_label.setText(self._scene_label_text())
-        self.frame_scrubber.blockSignals(True)
-        self.frame_scrubber.setValue(0)
-        self.frame_scrubber.blockSignals(False)
-        self._show_frame(scene.representative_frame)
-
     def _prev_scene(self):
-        if self.scenes and self.current_scene_idx > 0:
-            self.current_scene_idx -= 1
+        idx = self._current_scene_idx()
+        if idx > 0:
+            target = self.scenes[idx - 1].start_frame
             self._reset_click_state()
-            self._update_scene_display()
+            self.frame_scrubber.blockSignals(True)
+            self.frame_scrubber.setValue(int(target / self.total_frames * 10000))
+            self.frame_scrubber.blockSignals(False)
+            self._show_frame(target)
 
     def _next_scene(self):
-        if self.scenes and self.current_scene_idx < len(self.scenes) - 1:
-            self.current_scene_idx += 1
+        idx = self._current_scene_idx()
+        if idx < len(self.scenes) - 1:
+            target = self.scenes[idx + 1].start_frame
             self._reset_click_state()
-            self._update_scene_display()
+            self.frame_scrubber.blockSignals(True)
+            self.frame_scrubber.setValue(int(target / self.total_frames * 10000))
+            self.frame_scrubber.blockSignals(False)
+            self._show_frame(target)
 
     def _on_scrub(self, value: int):
-        if not self.scenes:
+        if self.total_frames == 0:
             return
-        scene = self.scenes[self.current_scene_idx]
-        frame_range = scene.end_frame - scene.start_frame
-        frame_idx = scene.start_frame + int(value / 1000 * frame_range)
-        frame_idx = min(frame_idx, scene.end_frame - 1)
+        frame_idx = int(value / 10000 * self.total_frames)
+        frame_idx = min(frame_idx, self.total_frames - 1)
         self._show_frame(frame_idx)
 
     # ── Axis annotation ────────────────────────────────────────────────
@@ -550,6 +500,8 @@ class App(QMainWindow):
         if not self.scenes:
             return
 
+        idx = self._current_scene_idx()
+
         if self.click_state == "tip":
             self.current_tip = (frame_x, frame_y)
             self.click_state = "base"
@@ -558,22 +510,22 @@ class App(QMainWindow):
             self.canvas.set_pending_tip(self.current_tip)
         else:
             axis = AxisDefinition(tip=self.current_tip, base=(frame_x, frame_y))
-            self.scene_axes[self.current_scene_idx] = axis
+            self.scene_axes[idx] = axis
             self.canvas.set_axis(axis)
             self._reset_click_state()
-            self._set_status(f"Axis set for scene {self.current_scene_idx + 1}")
+            self._set_status(f"Axis set for scene {idx + 1}")
 
     # ── Processing ─────────────────────────────────────────────────────
 
     def _process_scene(self):
-        idx = self.current_scene_idx
+        idx = self._current_scene_idx()
         if idx not in self.scene_axes:
             QMessageBox.warning(self, "No axis", "Define tip and base for this scene first.")
             return
 
         scene = self.scenes[idx]
         axis = self.scene_axes[idx]
-        self._set_status(f"Processing scene {idx + 1} (frames {scene.start_frame}–{scene.end_frame})...")
+        self._set_status(f"Processing scene {idx + 1} (frames {scene.start_frame}\u2013{scene.end_frame})...")
         QApplication.processEvents()
 
         result = track_motion(self.video_path, axis, scene.start_frame, scene.end_frame)
@@ -591,8 +543,13 @@ class App(QMainWindow):
             return
 
         for idx in range(len(self.scenes)):
-            self.current_scene_idx = idx
-            self._process_scene()
+            scene = self.scenes[idx]
+            axis = self.scene_axes[idx]
+            self._set_status(f"Processing scene {idx + 1}...")
+            QApplication.processEvents()
+            result = track_motion(self.video_path, axis, scene.start_frame, scene.end_frame)
+            actions = extract_strokes(result.positions, result.timestamps_ms, fps=self.fps)
+            self.scene_actions[idx] = actions
 
         self._set_status(f"Processed all {len(self.scenes)} scenes.")
 
