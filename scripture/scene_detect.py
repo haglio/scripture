@@ -51,6 +51,7 @@ def _frame_brightness(cap: cv2.VideoCapture, frame_idx: int) -> float:
 
 def build_scenes(
     video_path: str,
+    threshold: float = 27.0,
     min_scene_len_sec: float = 2.0,
     black_brightness: float = 15.0,
     num_samples: int = 10,
@@ -61,6 +62,10 @@ def build_scenes(
     Uses ContentDetector for cut detection with a minimum scene length to
     prevent motion-triggered false positives.  Returns only content scenes
     (black/blank and very short scenes are filtered out).
+
+    Args:
+        threshold: ContentDetector sensitivity. Lower = more sensitive.
+            Default 27.0.  Try 10-15 for content with subtle cuts.
     """
     video = open_video(video_path)
     fps = video.frame_rate
@@ -68,7 +73,10 @@ def build_scenes(
     min_scene_frames = int(min_scene_len_sec * fps)
 
     scene_manager = SceneManager()
-    scene_manager.add_detector(ContentDetector(min_scene_len=min_scene_frames))
+    scene_manager.add_detector(ContentDetector(
+        threshold=threshold,
+        min_scene_len=min_scene_frames,
+    ))
 
     frame_count = [0]
 

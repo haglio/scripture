@@ -10,6 +10,7 @@ from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QBrush, QColor
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QSlider, QFileDialog, QMessageBox, QProgressBar,
+    QDoubleSpinBox,
 )
 
 from shared_ui.colors import (
@@ -79,14 +80,16 @@ class SceneDetectWorker(QThread):
     finished = pyqtSignal(list)  # list[Scene]
     error = pyqtSignal(str)
 
-    def __init__(self, video_path: str):
+    def __init__(self, video_path: str, threshold: float = 27.0):
         super().__init__()
         self.video_path = video_path
+        self.threshold = threshold
 
     def run(self):
         try:
             scenes = build_scenes(
                 self.video_path,
+                threshold=self.threshold,
                 progress=lambda p: self.progress.emit(p),
             )
             self.finished.emit(scenes)
@@ -277,6 +280,28 @@ class App(QMainWindow):
         self.btn_detect.clicked.connect(self._detect_scenes)
         toolbar.addWidget(self.btn_detect)
 
+        thresh_label = QLabel("Threshold:")
+        thresh_label.setFont(make_font(size=SIZE_SMALL))
+        thresh_label.setStyleSheet(f"color: {TEXT_SECONDARY.name()};")
+        toolbar.addWidget(thresh_label)
+
+        self.thresh_spin = QDoubleSpinBox()
+        self.thresh_spin.setRange(1.0, 100.0)
+        self.thresh_spin.setSingleStep(1.0)
+        self.thresh_spin.setValue(27.0)
+        self.thresh_spin.setFixedWidth(70)
+        self.thresh_spin.setToolTip("ContentDetector threshold. Lower = more sensitive.")
+        self.thresh_spin.setStyleSheet(f"""
+            QDoubleSpinBox {{
+                color: {TEXT_PRIMARY.name()};
+                background: {BG_TERTIARY.name()};
+                border: 1px solid {BORDER_SUBTLE.name()};
+                border-radius: 3px;
+                padding: 2px 4px;
+            }}
+        """)
+        toolbar.addWidget(self.thresh_spin)
+
         toolbar.addSpacing(12)
 
         self.btn_prev = QPushButton("< Prev")
@@ -445,7 +470,7 @@ class App(QMainWindow):
         self.progress_bar.setValue(0)
         self._set_status("Detecting scenes...")
 
-        self._worker = SceneDetectWorker(self.video_path)
+        self._worker = SceneDetectWorker(self.video_path, self.thresh_spin.value())
         self._worker.progress.connect(self._on_detect_progress)
         self._worker.finished.connect(self._on_detect_finished)
         self._worker.error.connect(self._on_detect_error)
