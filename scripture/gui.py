@@ -556,24 +556,25 @@ class App(QMainWindow):
         self._set_status(f"Scene {idx + 1}: found {len(actions)} stroke points.")
 
     def _process_all(self):
-        unannotated = [i for i in range(len(self.scenes)) if i not in self.scene_axes]
-        if unannotated:
-            QMessageBox.warning(
-                self, "Missing axes",
-                f"Scenes {', '.join(str(i+1) for i in unannotated)} need tip/base annotation.",
-            )
+        annotated = [i for i in range(len(self.scenes)) if i in self.scene_axes]
+        if not annotated:
+            QMessageBox.warning(self, "No axes", "Annotate tip/base on at least one scene first.")
             return
 
-        for idx in range(len(self.scenes)):
+        for idx in annotated:
             scene = self.scenes[idx]
             axis = self.scene_axes[idx]
-            self._set_status(f"Processing scene {idx + 1}...")
+            self._set_status(f"Processing scene {idx + 1}/{len(self.scenes)}...")
             QApplication.processEvents()
             result = track_motion(self.video_path, axis, scene.start_frame, scene.end_frame)
             actions = extract_strokes(result.positions, result.timestamps_ms, fps=self.fps)
             self.scene_actions[idx] = actions
 
-        self._set_status(f"Processed all {len(self.scenes)} scenes.")
+        skipped = len(self.scenes) - len(annotated)
+        self._set_status(
+            f"Processed {len(annotated)} scenes"
+            f"{f', skipped {skipped} unannotated' if skipped else ''}."
+        )
 
     # ── Project save/load ────────────────────────────────────────────────
 
