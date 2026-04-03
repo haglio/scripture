@@ -15,7 +15,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QToolBar,
-    QLabel, QPushButton, QFileDialog, QMessageBox, QProgressBar, QMenu,
+    QLabel, QPushButton, QFileDialog, QMessageBox, QProgressBar, QMenu, QSizePolicy,
 )
 
 from shared_ui.colors import (
@@ -506,8 +506,12 @@ class App(QMainWindow):
         tb.setMovable(False)
         tb.setFloatable(False)
         tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        tb.setContentsMargins(MARGIN_STANDARD, 0, MARGIN_STANDARD, 0)
         self.addToolBar(tb)
+
+        # Left pad to match central widget margin
+        left_pad = QWidget()
+        left_pad.setFixedWidth(MARGIN_STANDARD)
+        tb.addWidget(left_pad)
 
         for icon, label, handler in [
             ("fa5s.folder-open", "New", self._open_video),
@@ -523,6 +527,11 @@ class App(QMainWindow):
         act.triggered.connect(self._export)
         tb.addAction(act)
 
+        # Spacer pushes progress bar to fill remaining toolbar space
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        tb.addWidget(spacer)
+
         # Progress bar + abort button embedded in toolbar (no layout shift)
         self._progress_sep = tb.addSeparator()
         self._progress_sep.setVisible(False)
@@ -536,6 +545,11 @@ class App(QMainWindow):
         self._abort_action.triggered.connect(self._abort_processing)
         self._abort_action.setVisible(False)
         tb.addAction(self._abort_action)
+
+        # Right pad
+        right_pad = QWidget()
+        right_pad.setFixedWidth(MARGIN_STANDARD)
+        tb.addWidget(right_pad)
 
         # --- Frame canvas ---
         self.canvas = FrameCanvas()
