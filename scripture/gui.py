@@ -523,7 +523,7 @@ class App(QMainWindow):
         act.triggered.connect(self._export)
         tb.addAction(act)
 
-        # Progress bar embedded in toolbar (no layout shift)
+        # Progress bar + abort button embedded in toolbar (no layout shift)
         self._progress_sep = tb.addSeparator()
         self._progress_sep.setVisible(False)
         self.progress_bar = QProgressBar()
@@ -532,6 +532,10 @@ class App(QMainWindow):
         self.progress_bar.setMinimumWidth(200)
         self._progress_action = tb.addWidget(self.progress_bar)
         self._progress_action.setVisible(False)
+        self._abort_action = QAction(qta.icon("fa5s.stop", color="#ff6666"), "Abort", self)
+        self._abort_action.triggered.connect(self._abort_processing)
+        self._abort_action.setVisible(False)
+        tb.addAction(self._abort_action)
 
         # --- Frame canvas ---
         self.canvas = FrameCanvas()
@@ -892,6 +896,7 @@ class App(QMainWindow):
         tf = sum(sc.end_frame - sc.start_frame for _, sc, _ in jobs)
         self._progress_sep.setVisible(True)
         self._progress_action.setVisible(True)
+        self._abort_action.setVisible(True)
         self.progress_bar.setMaximum(tf)
         self.progress_bar.setValue(0)
         self.btn_process_all.setEnabled(False)
@@ -926,10 +931,22 @@ class App(QMainWindow):
         el = time.monotonic() - self._process_start_time
         self._progress_sep.setVisible(False)
         self._progress_action.setVisible(False)
+        self._abort_action.setVisible(False)
         self.btn_process_all.setEnabled(True)
         self._worker = None
         total = sum(len(a) for a in self.scene_actions.values())
         self._set_status(f"Done \u2014 {total} actions in {self._fmt_duration(el)}.")
+
+    def _abort_processing(self):
+        if self._worker and self._worker.isRunning():
+            self._worker.terminate()
+            self._worker.wait()
+            self._worker = None
+        self._progress_sep.setVisible(False)
+        self._progress_action.setVisible(False)
+        self._abort_action.setVisible(False)
+        self.btn_process_all.setEnabled(True)
+        self._set_status("Processing aborted.")
 
     def _is_processing(self):
         return self._worker is not None and self._worker.isRunning()
