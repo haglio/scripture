@@ -46,9 +46,13 @@ def build_roi_mask(frame_shape: tuple[int, int], axis: AxisDefinition, margin: i
     return mask
 
 
+from typing import Callable
+
+
 def track_motion(video_path: str, axis: AxisDefinition,
                  start_frame: int, end_frame: int,
-                 margin: int = 80) -> TrackingResult:
+                 margin: int = 80,
+                 on_frame: Callable[[int], None] | None = None) -> TrackingResult:
     """Track motion along the defined axis using dense optical flow.
 
     Returns timestamps (ms) and normalized position (0=base, 1=tip) arrays.
@@ -101,6 +105,9 @@ def track_motion(video_path: str, axis: AxisDefinition,
         timestamps.append(frame_idx / fps * 1000)
 
         prev_gray = gray
+
+        if on_frame is not None:
+            on_frame(frame_idx)
 
     cap.release()
 

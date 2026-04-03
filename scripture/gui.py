@@ -76,7 +76,8 @@ _PROGRESS_STYLE = f"""
 
 class ProcessWorker(QThread):
     """Runs optical flow processing off the main thread."""
-    scene_done = pyqtSignal(int, int, list)  # scene_idx, total, actions
+    frame_progress = pyqtSignal(int)  # frames completed so far
+    scene_done = pyqtSignal(int, list)  # scene_idx, actions
     finished = pyqtSignal()
     error = pyqtSignal(int, str)  # scene_idx, error message
 
@@ -87,12 +88,22 @@ class ProcessWorker(QThread):
         self.fps = fps
 
     def run(self):
-        total = len(self.jobs)
-        for i, (idx, scene, axis) in enumerate(self.jobs):
+        # Compute frame offset for each job so progress is cumulative
+        offsets: dict[int, int] = {}
+        cumulative = 0
+        for idx, scene, _axis in self.jobs:
+            offsets[idx] = cumulative
+            cumulative += scene.end_frame - scene.start_frame
+
+        for idx, scene, axis in self.jobs:
+            offset = offsets[idx]
             try:
-                result = track_motion(self.video_path, axis, scene.start_frame, scene.end_frame)
+                result = track_motion(
+                    self.video_path, axis, scene.start_frame, scene.end_frame,
+                    on_frame=lambda f, _o=offset, _s=scene: self.frame_progress.emit(_o + f - _s.start_frame),
+                )
                 actions = extract_strokes(result.positions, result.timestamps_ms, fps=self.fps)
-                self.scene_done.emit(idx, total, actions)
+                self.scene_done.emit(idx, actions)
             except Exception as e:
                 self.error.emit(idx, str(e))
         self.finished.emit()
@@ -593,23 +604,29 @@ class App(QMainWindow):
         ]
 
     def _start_processing(self, jobs: list[tuple[int, Scene, AxisDefinition]]):
+        total_frames = sum(scene.end_frame - scene.start_frame for _, scene, _ in jobs)
         self.progress_bar.setVisible(True)
-        self.progress_bar.setMaximum(len(jobs))
+        self.progress_bar.setMaximum(total_frames)
         self.progress_bar.setValue(0)
+        self.progress_bar.setFormat(f"0 / {total_frames} frames (%p%)")
         self.btn_process.setEnabled(False)
         self.btn_process_all.setEnabled(False)
 
+        self._process_total_frames = total_frames
         self._worker = ProcessWorker(self.video_path, jobs, self.fps)
+        self._worker.frame_progress.connect(self._on_frame_progress)
         self._worker.scene_done.connect(self._on_scene_done)
         self._worker.error.connect(self._on_process_error)
         self._worker.finished.connect(self._on_process_finished)
         self._worker.start()
 
-    def _on_scene_done(self, scene_idx: int, total: int, actions: list[dict]):
+    def _on_frame_progress(self, frames_done: int):
+        self.progress_bar.setValue(frames_done)
+        self.progress_bar.setFormat(f"{frames_done} / {self._process_total_frames} frames (%p%)")
+
+    def _on_scene_done(self, scene_idx: int, actions: list[dict]):
         self.scene_actions[scene_idx] = actions
-        done = self.progress_bar.value() + 1
-        self.progress_bar.setValue(done)
-        self._set_status(f"Processed scene {scene_idx + 1} ({done}/{total}) — {len(actions)} stroke points.")
+        self._set_status(f"Scene {scene_idx + 1} done — {len(actions)} stroke points.")
 
     def _on_process_error(self, scene_idx: int, msg: str):
         self._set_status(f"Error processing scene {scene_idx + 1}: {msg}")
