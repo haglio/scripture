@@ -127,6 +127,8 @@ class ProcessWorker(QThread):
                 actions = extract_strokes(result.positions, result.timestamps_ms, fps=self.fps)
                 self.scene_done.emit(idx, actions, result)
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 self.error.emit(idx, str(e))
         self.finished.emit()
 
@@ -1119,6 +1121,7 @@ class App(QMainWindow):
 
     def _on_process_error(self, idx, msg):
         self._set_status(f"Error scene {idx+1}: {msg}")
+        QMessageBox.warning(self, f"Processing Error (Scene {idx+1})", msg)
 
     def _on_process_finished(self):
         el = time.monotonic() - self._process_start_time
