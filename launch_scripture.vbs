@@ -54,6 +54,6 @@ If pythonCmd = "" Then
 End If
 
 parentDir = fso.GetParentFolderName(projectRoot)
-cmd = "cmd /c cd /d " & Quote(projectRoot) & " && set PYTHONPATH=" & Quote(parentDir) & "&&" & pythonCmd & " -m scripture 1>>" & Quote(launcherLog) & " 2>&1"
+cmd = "cmd /c cd /d " & Quote(projectRoot) & " && set PYTHONPATH=" & parentDir & "&&" & pythonCmd & " -m scripture 1>>" & Quote(launcherLog) & " 2>&1"
 AppendLog "INFO: Launching with command: " & cmd
 shell.Run cmd, 0, False
