@@ -506,6 +506,7 @@ class App(QMainWindow):
         tb.setMovable(False)
         tb.setFloatable(False)
         tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        tb.setContentsMargins(MARGIN_STANDARD, 0, MARGIN_STANDARD, 0)
         self.addToolBar(tb)
 
         for icon, label, handler in [
