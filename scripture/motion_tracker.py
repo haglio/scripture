@@ -143,11 +143,8 @@ def track_motion(video_path: str, axis: AxisDefinition,
 
     half_width = 15
 
-    # ── Phase 1: Track axis via CoTracker3 ────────────────────────
+    # ── Phase 1: Track axis via CoTracker3 (no per-frame progress) ─
     tip_coords, base_coords = cotrack_axis(video_path, axis, start_frame, end_frame)
-
-    if on_frame is not None:
-        on_frame(end_frame - start_frame)  # Phase 1 complete
 
     # ── Phase 2: Forward optical flow with per-frame strip masks ──
     cap = cv2.VideoCapture(video_path)
@@ -184,7 +181,6 @@ def track_motion(video_path: str, axis: AxisDefinition,
     cumulative_displacement = 0.0
     displacements = [0.0]
     timestamps = [start_frame / fps * 1000]
-    progress = n_frames  # Phase 1 already counted
 
     for i in range(1, n_frames):
         ret, frame = cap.read()
@@ -212,9 +208,8 @@ def track_motion(video_path: str, axis: AxisDefinition,
         timestamps.append((start_frame + i) / fps * 1000)
 
         prev_gray = gray
-        progress += 1
         if on_frame is not None:
-            on_frame(progress)
+            on_frame(i)
 
     cap.release()
 

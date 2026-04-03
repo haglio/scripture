@@ -116,7 +116,7 @@ class ProcessWorker(QThread):
         cumulative = 0
         for idx, scene, _ in self.jobs:
             offsets[idx] = cumulative
-            cumulative += (scene.end_frame - scene.start_frame) * 2
+            cumulative += scene.end_frame - scene.start_frame
         for idx, scene, axis in self.jobs:
             offset = offsets[idx]
             try:
@@ -1086,13 +1086,14 @@ class App(QMainWindow):
         return f"{h}h {m:02d}m {s:02d}s"
 
     def _start_processing(self, jobs):
-        tf = sum(sc.end_frame - sc.start_frame for _, sc, _ in jobs) * 2  # Phase 1 + Phase 2
+        tf = sum(sc.end_frame - sc.start_frame for _, sc, _ in jobs)
         self._spacer_action.setVisible(False)
         self._progress_sep.setVisible(True)
         self._progress_action.setVisible(True)
         self._abort_action.setVisible(True)
-        self.progress_bar.setMaximum(tf)
+        self.progress_bar.setMaximum(0)  # indeterminate (pulsing) during Phase 1
         self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("Tracking axis with CoTracker3\u2026")
         self.btn_process_all.setEnabled(False)
         self._process_total_frames = tf
         self._process_start_time = time.monotonic()
@@ -1104,6 +1105,9 @@ class App(QMainWindow):
         self._worker.start()
 
     def _on_frame_progress(self, done):
+        # Switch from indeterminate to determinate on first progress update
+        if self.progress_bar.maximum() == 0:
+            self.progress_bar.setMaximum(self._process_total_frames)
         self.progress_bar.setValue(done)
         el = time.monotonic() - self._process_start_time
         if done > 0:
