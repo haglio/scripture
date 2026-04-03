@@ -71,7 +71,7 @@ def scale_coords(
 
 
 _TARGET_LONG_SIDE = 384
-_MAX_CHUNK_FRAMES = 2000  # fits comfortably in 16 GB VRAM at 384px
+_MAX_CHUNK_FRAMES = 300  # CoTracker3 internal attention uses ~50x the video tensor size
 
 
 def _get_video_geometry(video_path: str, start_frame: int):
