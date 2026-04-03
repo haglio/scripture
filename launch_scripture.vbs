@@ -19,7 +19,14 @@ Sub AppendLog(msg)
 End Sub
 
 Function FindPythonCommand()
-  Dim venvPython, candidates, i
+  Dim condaPython, venvPython, candidates, i
+  ' Prefer conda env (has torch+CUDA for CoTracker3)
+  condaPython = "C:\Users\Example\miniconda3\python.exe"
+  If fso.FileExists(condaPython) Then
+    FindPythonCommand = Quote(condaPython)
+    Exit Function
+  End If
+
   venvPython = projectRoot & "\.venv\Scripts\python.exe"
   If fso.FileExists(venvPython) Then
     FindPythonCommand = Quote(venvPython)
@@ -46,6 +53,7 @@ If pythonCmd = "" Then
   WScript.Quit 1
 End If
 
-cmd = "cmd /c cd /d " & Quote(projectRoot) & " && " & pythonCmd & " -m scripture 1>>" & Quote(launcherLog) & " 2>&1"
+parentDir = fso.GetParentFolderName(projectRoot)
+cmd = "cmd /c cd /d " & Quote(projectRoot) & " && set PYTHONPATH=" & Quote(parentDir) & "&&" & pythonCmd & " -m scripture 1>>" & Quote(launcherLog) & " 2>&1"
 AppendLog "INFO: Launching with command: " & cmd
 shell.Run cmd, 0, False
