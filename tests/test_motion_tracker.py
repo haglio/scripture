@@ -2,12 +2,20 @@ import tempfile
 
 import cv2
 import numpy as np
+import pytest
 
 from scripture.motion_tracker import (
     AxisDefinition, build_axis_strip_mask, compute_crop_bounds,
     subtract_camera_motion, rolling_normalize, track_motion, TrackingResult,
-    LKPointTracker,
 )
+
+try:
+    import torch
+    _has_cuda = torch.cuda.is_available()
+except ImportError:
+    _has_cuda = False
+
+requires_gpu = pytest.mark.skipif(not _has_cuda, reason="CoTracker3 requires CUDA GPU")
 
 
 class TestBuildAxisStripMask:
@@ -131,51 +139,6 @@ class TestRollingNormalize:
         assert result.min() >= 0.0
 
 
-class TestLKPointTracker:
-
-    def test_stationary_scene_no_drift(self):
-        """On identical frames, tracked point should not move."""
-        rng = np.random.RandomState(42)
-        frame = rng.randint(0, 255, (200, 200), dtype=np.uint8)
-        tracker = LKPointTracker(frame, center=(100, 100), radius=30)
-        pos = tracker.update(frame)
-        assert abs(pos[0] - 100) <= 2
-        assert abs(pos[1] - 100) <= 2
-
-    def test_tracks_known_shift(self):
-        """A textured patch shifted by a known amount should be tracked."""
-        rng = np.random.RandomState(42)
-        texture = rng.randint(0, 255, (200, 200), dtype=np.uint8)
-        # Frame 1: texture as-is
-        frame1 = texture.copy()
-        # Frame 2: shift texture 5px right, 3px down (via translation matrix)
-        M = np.float32([[1, 0, 5], [0, 1, 3]])
-        frame2 = cv2.warpAffine(texture, M, (200, 200))
-        tracker = LKPointTracker(frame1, center=(100, 100), radius=30)
-        pos = tracker.update(frame2)
-        assert abs(pos[0] - 105) <= 2
-        assert abs(pos[1] - 103) <= 2
-
-    def test_survives_multiple_steps(self):
-        """Track through 10 small shifts without crashing or losing track."""
-        rng = np.random.RandomState(42)
-        texture = rng.randint(0, 255, (300, 300), dtype=np.uint8)
-        frame = texture.copy()
-        tracker = LKPointTracker(frame, center=(150, 150), radius=30)
-        cumulative_dx, cumulative_dy = 0.0, 0.0
-        for _ in range(10):
-            dx, dy = 2, 1
-            cumulative_dx += dx
-            cumulative_dy += dy
-            M = np.float32([[1, 0, cumulative_dx], [0, 1, cumulative_dy]])
-            frame = cv2.warpAffine(texture, M, (300, 300))
-            pos = tracker.update(frame)
-        expected_x = 150 + cumulative_dx
-        expected_y = 150 + cumulative_dy
-        assert abs(pos[0] - expected_x) <= 5
-        assert abs(pos[1] - expected_y) <= 5
-
-
 class TestTrackingResultCompat:
 
     def test_default_none_fields(self):
@@ -223,6 +186,7 @@ def _make_synthetic_video(path, n_frames=60, fps=30, width=200, height=400):
     writer.release()
 
 
+@requires_gpu
 class TestTrackMotion:
 
     def test_returns_correct_types(self, tmp_path):

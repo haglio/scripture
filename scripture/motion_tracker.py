@@ -127,183 +127,64 @@ def compute_crop_bounds(
 
 
 
-class LKPointTracker:
-    """Track a point across frames using Lucas-Kanade sparse optical flow.
-
-    Seeds a cluster of feature points near the target, tracks them
-    frame-to-frame, takes the median displacement, and re-seeds lost points.
-    """
-
-    _lk_params = dict(
-        winSize=(21, 21),
-        maxLevel=3,
-        criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01),
-    )
-
-    def __init__(self, gray_frame: np.ndarray, center: tuple[int, int],
-                 radius: int = 30, n_points: int = 50):
-        self._prev_gray = gray_frame.copy()
-        self._center = np.array(center, dtype=np.float64)
-        self._radius = radius
-        self._n_points = n_points
-        self._points = self._seed_points(gray_frame, center, radius, n_points)
-
-    @staticmethod
-    def _seed_points(gray: np.ndarray, center: tuple[int, int],
-                     radius: int, n_points: int) -> np.ndarray:
-        """Find good feature points in a region around center."""
-        h, w = gray.shape[:2]
-        cx, cy = int(center[0]), int(center[1])
-        mask = np.zeros((h, w), dtype=np.uint8)
-        cv2.circle(mask, (cx, cy), radius, 255, -1)
-        corners = cv2.goodFeaturesToTrack(
-            gray, maxCorners=n_points, qualityLevel=0.01,
-            minDistance=3, mask=mask,
-        )
-        if corners is None or len(corners) == 0:
-            # Fall back to a grid if no good features found
-            pts = []
-            for dy in range(-radius, radius + 1, max(1, radius // 3)):
-                for dx in range(-radius, radius + 1, max(1, radius // 3)):
-                    if dx * dx + dy * dy <= radius * radius:
-                        px = max(0, min(w - 1, cx + dx))
-                        py = max(0, min(h - 1, cy + dy))
-                        pts.append([[float(px), float(py)]])
-            return np.array(pts, dtype=np.float32)
-        return corners
-
-    def update(self, gray_frame: np.ndarray) -> tuple[float, float]:
-        """Track points into gray_frame, return updated center (x, y)."""
-        if len(self._points) == 0:
-            return (float(self._center[0]), float(self._center[1]))
-
-        new_pts, status, _ = cv2.calcOpticalFlowPyrLK(
-            self._prev_gray, gray_frame, self._points, None, **self._lk_params,
-        )
-
-        # Keep only points that were successfully tracked
-        good_mask = status.ravel() == 1
-        if good_mask.sum() > 0:
-            old_good = self._points[good_mask]
-            new_good = new_pts[good_mask]
-            # Median displacement (robust to outliers)
-            displacements = new_good.reshape(-1, 2) - old_good.reshape(-1, 2)
-            med_dx = float(np.median(displacements[:, 0]))
-            med_dy = float(np.median(displacements[:, 1]))
-            self._center = self._center + np.array([med_dx, med_dy])
-            self._points = new_good.reshape(-1, 1, 2)
-        # else: keep previous center and points
-
-        # Re-seed if we've lost too many points
-        if len(self._points) < self._n_points // 3:
-            cx, cy = int(round(self._center[0])), int(round(self._center[1]))
-            self._points = self._seed_points(
-                gray_frame, (cx, cy), self._radius, self._n_points,
-            )
-
-        self._prev_gray = gray_frame.copy()
-        return (float(self._center[0]), float(self._center[1]))
-
-
-
 def track_motion(video_path: str, axis: AxisDefinition,
                  start_frame: int, end_frame: int,
                  margin: int = 80,
                  on_frame: Callable[[int], None] | None = None) -> TrackingResult:
     """Track motion along the defined axis using dense optical flow.
 
-    Tracks the base point per-frame using Lucas-Kanade sparse optical flow,
-    bidirectionally from axis.frame.  Builds a per-frame strip mask from the
-    tracked coordinates.
+    Uses CoTracker3 to track tip/base through the scene, then computes
+    Farneback flow along the tracked axis for position estimation.
 
     Returns timestamps (ms), normalized positions, and per-frame
     tip/base coordinates.
     """
+    from scripture.cotracker_tracking import cotrack_axis
+
     half_width = 15
 
+    # ── Phase 1: Track axis via CoTracker3 ────────────────────────
+    tip_coords, base_coords = cotrack_axis(video_path, axis, start_frame, end_frame)
+
+    if on_frame is not None:
+        on_frame(end_frame - start_frame)  # Phase 1 complete
+
+    # ── Phase 2: Forward optical flow with per-frame strip masks ──
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
-
-    # ── Read the representative frame and set up geometry ─────────
-    cap.set(cv2.CAP_PROP_POS_FRAMES, axis.frame)
-    ret_ref, ref_frame = cap.read()
-    if not ret_ref:
-        raise RuntimeError(f"Cannot read reference frame {axis.frame}")
-    ref_gray = cv2.cvtColor(ref_frame, cv2.COLOR_BGR2GRAY)
-    axis_vector = np.array(axis.tip, dtype=np.float64) - np.array(axis.base, dtype=np.float64)
-
-    frame_shape = ref_frame.shape[:2]
-    y_min, y_max, x_min, x_max = compute_crop_bounds(
-        axis, half_width, frame_shape, padding=80,
-    )
-    crop_shape = (y_max - y_min, x_max - x_min)
-    unit_vec = compute_axis_unit_vector(axis)
-
-    n_frames = end_frame - start_frame
-    ref_local = max(0, min(axis.frame - start_frame, n_frames - 1))
-    base_in_crop_ref = (axis.base[0] - x_min, axis.base[1] - y_min)
-
-    # ── Phase 1: Track base coordinates bidirectionally from axis.frame ─
-    progress = 0
-    base_coords_crop = [None] * n_frames
-    base_coords_crop[ref_local] = base_in_crop_ref
-    ref_crop_gray = ref_gray[y_min:y_max, x_min:x_max]
-
-    # Backward: ref_local-1 down to 0 (LK tracker, needs seeks)
-    if ref_local > 0:
-        tracker_bwd = LKPointTracker(ref_crop_gray, base_in_crop_ref, radius=40)
-        for i in range(ref_local - 1, -1, -1):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame + i)
-            ret, frame = cap.read()
-            if not ret:
-                base_coords_crop[i] = base_coords_crop[i + 1]
-            else:
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
-                pos = tracker_bwd.update(gray)
-                base_coords_crop[i] = pos
-            progress += 1
-            if on_frame is not None:
-                on_frame(progress)
-
-    # Forward: ref_local+1 to end (LK tracker, sequential read)
-    if ref_local < n_frames - 1:
-        tracker_fwd = LKPointTracker(ref_crop_gray, base_in_crop_ref, radius=40)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame + ref_local + 1)
-        for i in range(ref_local + 1, n_frames):
-            ret, frame = cap.read()
-            if not ret:
-                base_coords_crop[i] = base_coords_crop[i - 1]
-            else:
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
-                pos = tracker_fwd.update(gray)
-                base_coords_crop[i] = pos
-            progress += 1
-            if on_frame is not None:
-                on_frame(progress)
-
-    # Convert to frame coords
-    all_bases = [(bc[0] + x_min, bc[1] + y_min) for bc in base_coords_crop]
-    all_tips = [(bc[0] + x_min + axis_vector[0], bc[1] + y_min + axis_vector[1])
-                for bc in base_coords_crop]
-
-    def _build_strip(base_c, tip_c):
-        fa = AxisDefinition(
-            tip=(int(round(tip_c[0])), int(round(tip_c[1]))),
-            base=(int(round(base_c[0])), int(round(base_c[1]))),
-        )
-        mask = build_axis_strip_mask(crop_shape, fa, half_width)
-        return mask > 0
-
-    # ── Phase 2: Forward optical flow with pre-tracked strip masks ─
     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+
     ret, prev_frame = cap.read()
     if not ret:
         raise RuntimeError(f"Cannot read frame {start_frame}")
+
+    frame_shape = prev_frame.shape[:2]
+    # Compute crop large enough to contain all tracked positions
+    all_x = np.concatenate([tip_coords[:, 0], base_coords[:, 0]])
+    all_y = np.concatenate([tip_coords[:, 1], base_coords[:, 1]])
+    crop_pad = half_width + 30
+    y_min = max(0, int(all_y.min()) - crop_pad)
+    y_max = min(frame_shape[0], int(all_y.max()) + crop_pad)
+    x_min = max(0, int(all_x.min()) - crop_pad)
+    x_max = min(frame_shape[1], int(all_x.max()) + crop_pad)
+    crop_shape = (y_max - y_min, x_max - x_min)
+
+    unit_vec = compute_axis_unit_vector(axis)
     prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
+
+    n_frames = end_frame - start_frame
+
+    def _build_strip(tip_frame, base_frame):
+        tip_crop = (int(round(tip_frame[0] - x_min)), int(round(tip_frame[1] - y_min)))
+        base_crop = (int(round(base_frame[0] - x_min)), int(round(base_frame[1] - y_min)))
+        fa = AxisDefinition(tip=tip_crop, base=base_crop)
+        mask = build_axis_strip_mask(crop_shape, fa, half_width)
+        return mask > 0
 
     cumulative_displacement = 0.0
     displacements = [0.0]
     timestamps = [start_frame / fps * 1000]
+    progress = n_frames  # Phase 1 already counted
 
     for i in range(1, n_frames):
         ret, frame = cap.read()
@@ -312,13 +193,9 @@ def track_motion(video_path: str, axis: AxisDefinition,
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
 
-        # Per-frame strip mask from pre-tracked coordinates
-        bc = base_coords_crop[i]
-        tc = (bc[0] + axis_vector[0], bc[1] + axis_vector[1])
-        strip_pixels = _build_strip(bc, tc)
+        strip_pixels = _build_strip(tip_coords[i], base_coords[i])
         bg_pixels = ~strip_pixels
 
-        # Optical flow
         flow = cv2.calcOpticalFlowFarneback(
             prev_gray, gray, None,
             pyr_scale=0.5, levels=3, winsize=15,
@@ -344,13 +221,12 @@ def track_motion(video_path: str, axis: AxisDefinition,
     displacements = np.array(displacements)
     timestamps = np.array(timestamps)
 
-    # Rolling normalization (preserves strokes even with drift)
     norm_window = max(3, min(int(fps * 10), len(displacements)))
     positions = 1.0 - rolling_normalize(displacements, norm_window)
 
     return TrackingResult(
         timestamps_ms=timestamps,
         positions=positions,
-        tip_coords=np.array(all_tips, dtype=np.float64),
-        base_coords=np.array(all_bases, dtype=np.float64),
+        tip_coords=tip_coords,
+        base_coords=base_coords,
     )
