@@ -35,6 +35,26 @@ from scripture.project import save_project, load_project
 _ICON_COLOR = "#ddd"
 _LAST_SESSION_FILE = Path(__file__).resolve().parent.parent / "sessions" / ".last_session"
 
+_MENU_STYLE = f"""
+    QMenu {{
+        background: {BG_TERTIARY.name()};
+        color: {TEXT_PRIMARY.name()};
+        border: 1px solid {BORDER_SUBTLE.name()};
+        padding: 2px;
+    }}
+    QMenu::item {{
+        padding: 4px 16px 4px 8px;
+    }}
+    QMenu::item:selected {{
+        background: {BLUE.name()};
+    }}
+    QMenu::separator {{
+        height: 1px;
+        background: {BORDER_SUBTLE.name()};
+        margin: 2px 4px;
+    }}
+"""
+
 _BTN_STYLE = f"""
     QPushButton {{
         color: {TEXT_PRIMARY.name()};
@@ -502,11 +522,14 @@ class App(QMainWindow):
         act.triggered.connect(self._export)
         tb.addAction(act)
 
-        # --- Progress bar ---
+        # Progress bar embedded in toolbar (no layout shift)
+        tb.addSeparator()
         self.progress_bar = QProgressBar()
         self.progress_bar.setStyleSheet(_PROGRESS_STYLE)
+        self.progress_bar.setFixedHeight(20)
+        self.progress_bar.setMinimumWidth(200)
         self.progress_bar.setVisible(False)
-        root.addWidget(self.progress_bar)
+        tb.addWidget(self.progress_bar)
 
         # --- Frame canvas ---
         self.canvas = FrameCanvas()
@@ -680,27 +703,28 @@ class App(QMainWindow):
         idx = self._current_scene_idx()
         has_axis = idx in self.scene_axes
         menu = QMenu(self)
+        menu.setStyleSheet(_MENU_STYLE)
 
         if has_axis or self.pending_tip:
             menu.addAction("\u2717 Remove Tip", lambda: self._delete_point("tip"))
         else:
-            menu.addAction("Place Tip", lambda: self._place_point("tip"))
+            menu.addAction("Place Tip Here", lambda: self._place_point_at("tip", fx, fy))
 
         if has_axis or self.pending_base:
             menu.addAction("\u2717 Remove Base", lambda: self._delete_point("base"))
         else:
-            menu.addAction("Place Base", lambda: self._place_point("base"))
+            menu.addAction("Place Base Here", lambda: self._place_point_at("base", fx, fy))
 
         menu.exec(QCursor.pos())
 
     def _on_timeline_context_menu(self, frame, gx, gy):
         if self.total_frames == 0:
             return
-        # Navigate to this frame first
         self._show_frame(frame)
 
         idx = self._current_scene_idx()
         menu = QMenu(self)
+        menu.setStyleSheet(_MENU_STYLE)
 
         if frame in self.splits:
             menu.addAction("Unsplit", lambda: self._do_unsplit(frame))
@@ -711,7 +735,7 @@ class App(QMainWindow):
         if idx in self.scene_axes:
             if idx in self.scene_actions:
                 menu.addAction("Discard Scene Actions", lambda: self._discard_scene(idx))
-            else:
+            elif not self._is_processing():
                 menu.addAction("Process Scene Actions", lambda: self._process_scene(idx))
 
         menu.exec(QCursor.pos())
@@ -735,6 +759,42 @@ class App(QMainWindow):
     def _place_point(self, which):
         """Enter placement mode for tip or base."""
         self.placing = which
+
+    def _place_point_at(self, which, fx, fy):
+        """Place a point directly at (fx, fy) without entering placement mode."""
+        idx = self._current_scene_idx()
+
+        # If there's an existing axis on a different frame, confirm change
+        if idx in self.scene_axes and self.scene_axes[idx].frame != self.current_frame_idx:
+            reply = QMessageBox.question(
+                self, "Change representative frame?",
+                "Move axis to this frame?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            old = self.scene_axes.pop(idx)
+            if which == "tip":
+                self.pending_base = old.base
+            else:
+                self.pending_tip = old.tip
+            if idx in self.scene_actions:
+                del self.scene_actions[idx]
+
+        if which == "tip":
+            self.pending_tip = (fx, fy)
+        else:
+            self.pending_base = (fx, fy)
+
+        # If both placed, form axis
+        if self.pending_tip and self.pending_base:
+            self.scene_axes[idx] = AxisDefinition(
+                tip=self.pending_tip, base=self.pending_base, frame=self.current_frame_idx,
+            )
+            self.pending_tip = self.pending_base = None
+
+        self._mark_dirty()
+        self._show_frame(self.current_frame_idx)
 
     def _delete_point(self, which):
         idx = self._current_scene_idx()
@@ -867,7 +927,13 @@ class App(QMainWindow):
         total = sum(len(a) for a in self.scene_actions.values())
         self._set_status(f"Done \u2014 {total} actions in {self._fmt_duration(el)}.")
 
+    def _is_processing(self):
+        return self._worker is not None and self._worker.isRunning()
+
     def _process_scene(self, idx=None):
+        if self._is_processing():
+            self._set_status("Already processing \u2014 wait for it to finish.")
+            return
         if idx is None:
             idx = self._current_scene_idx()
         if idx not in self.scene_axes:
@@ -875,6 +941,9 @@ class App(QMainWindow):
         self._start_processing(self._build_jobs([idx]))
 
     def _process_all(self):
+        if self._is_processing():
+            self._set_status("Already processing \u2014 wait for it to finish.")
+            return
         annotated = [i for i in range(len(self.scenes)) if i in self.scene_axes]
         if not annotated:
             QMessageBox.warning(self, "No axes", "Annotate tip/base on at least one scene first.")
@@ -896,7 +965,10 @@ class App(QMainWindow):
         axes = {str(i): {"tip": list(a.tip), "base": list(a.base), "frame": a.frame}
                 for i, a in self.scene_axes.items()}
         acts = {str(i): a for i, a in self.scene_actions.items()}
-        return {"video_path": self.video_path, "splits": self.splits, "axes": axes, "actions": acts}
+        return {
+            "video_path": self.video_path, "splits": self.splits,
+            "axes": axes, "actions": acts, "current_frame": self.current_frame_idx,
+        }
 
     def _do_save(self, path):
         save_project(path, self._build_state())
@@ -960,8 +1032,8 @@ class App(QMainWindow):
         self._mark_clean()
         self._cancel_placing()
         self._save_last_session(path)
-        self.current_frame_idx = 0
-        self._show_frame(0)
+        self.current_frame_idx = state.get("current_frame", 0)
+        self._show_frame(self.current_frame_idx)
 
     def _save_last_session(self, path):
         try:
