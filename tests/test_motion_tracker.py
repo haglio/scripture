@@ -278,8 +278,8 @@ class TestTrackMotion:
         axis = AxisDefinition(tip=(100, 50), base=(100, 350))
         frames_seen = []
         result = track_motion(video_path, axis, 0, 20, on_frame=lambda f: frames_seen.append(f))
-        # Should be called for each frame after the first
-        assert len(frames_seen) == 19  # frames 1-19
+        # Called during both Phase 1 (tracking) and Phase 2 (flow)
+        assert len(frames_seen) >= 19
 
     def test_returns_per_frame_coords(self, tmp_path):
         video_path = str(tmp_path / "test.mp4")

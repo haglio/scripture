@@ -255,7 +255,7 @@ def track_motion(video_path: str, axis: AxisDefinition,
     base_coords_crop = [None] * n_frames
     base_coords_crop[ref_local] = base_in_crop_ref
 
-    # Backward: ref_local-1 down to 0 (seeks per frame, template match only)
+    # Backward: ref_local-1 down to 0 (needs seeks — reading backward)
     last = base_in_crop_ref
     for i in range(ref_local - 1, -1, -1):
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame + i)
@@ -266,11 +266,13 @@ def track_motion(video_path: str, axis: AxisDefinition,
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
         last, _ = track_base_in_frame(gray, base_template, last, search_radius=60)
         base_coords_crop[i] = last
+        if on_frame is not None:
+            on_frame(start_frame + i)
 
-    # Forward: ref_local+1 to end (seeks per frame, template match only)
+    # Forward: ref_local+1 to end (sequential read — fast)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame + ref_local + 1)
     last = base_in_crop_ref
     for i in range(ref_local + 1, n_frames):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame + i)
         ret, frame = cap.read()
         if not ret:
             base_coords_crop[i] = last
@@ -278,6 +280,8 @@ def track_motion(video_path: str, axis: AxisDefinition,
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
         last, _ = track_base_in_frame(gray, base_template, last, search_radius=60)
         base_coords_crop[i] = last
+        if on_frame is not None:
+            on_frame(start_frame + i)
 
     # Convert to frame coords
     all_bases = [(bc[0] + x_min, bc[1] + y_min) for bc in base_coords_crop]
