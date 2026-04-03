@@ -18,6 +18,8 @@ class AxisDefinition:
 class TrackingResult:
     timestamps_ms: np.ndarray
     positions: np.ndarray  # 0.0 (base) to 1.0 (tip)
+    tip_coords: np.ndarray | None = None   # (N, 2) per-frame [x, y]
+    base_coords: np.ndarray | None = None  # (N, 2) per-frame [x, y]
 
 
 def compute_axis_unit_vector(axis: AxisDefinition) -> np.ndarray:
@@ -121,73 +123,195 @@ def compute_crop_bounds(
     return y_min, y_max, x_min, x_max
 
 
+def extract_base_template(
+    gray_frame: np.ndarray,
+    base_point: tuple[int, int],
+    radius: int = 25,
+) -> np.ndarray:
+    """Extract a square grayscale template patch centered on base_point.
+
+    Returns a (2*radius+1, 2*radius+1) uint8 array.  Pixels outside
+    the frame are filled via replicate border padding.
+    """
+    bx, by = int(base_point[0]), int(base_point[1])
+    h, w = gray_frame.shape[:2]
+    size = 2 * radius + 1
+
+    # Compute how much padding is needed on each side
+    pad_left = max(0, radius - bx)
+    pad_right = max(0, (bx + radius + 1) - w)
+    pad_top = max(0, radius - by)
+    pad_bottom = max(0, (by + radius + 1) - h)
+
+    if pad_left or pad_right or pad_top or pad_bottom:
+        padded = cv2.copyMakeBorder(
+            gray_frame, pad_top, pad_bottom, pad_left, pad_right,
+            cv2.BORDER_REPLICATE,
+        )
+        # Shift coordinates into padded frame
+        bx += pad_left
+        by += pad_top
+        return padded[by - radius:by + radius + 1, bx - radius:bx + radius + 1].copy()
+
+    return gray_frame[by - radius:by + radius + 1, bx - radius:bx + radius + 1].copy()
+
+
+def track_base_in_frame(
+    gray_crop: np.ndarray,
+    template: np.ndarray,
+    last_pos_in_crop: tuple[int, int],
+    search_radius: int = 60,
+    min_confidence: float = 0.3,
+) -> tuple[tuple[int, int], float]:
+    """Find the base position in gray_crop via template matching.
+
+    Searches within a window around last_pos_in_crop.  Uses normalised
+    cross-correlation.  Returns (new_pos_in_crop, confidence).  Falls
+    back to last_pos_in_crop when confidence < min_confidence.
+    """
+    th, tw = template.shape[:2]
+    half_t = tw // 2
+    half_t_h = th // 2
+    ch, cw = gray_crop.shape[:2]
+
+    lx, ly = int(last_pos_in_crop[0]), int(last_pos_in_crop[1])
+
+    # Search region bounds (must leave room for the template to fit)
+    sx_min = max(half_t, lx - search_radius)
+    sx_max = min(cw - half_t - 1, lx + search_radius)
+    sy_min = max(half_t_h, ly - search_radius)
+    sy_max = min(ch - half_t_h - 1, ly + search_radius)
+
+    # If search region is too small for template matching, fall back
+    region_w = sx_max - sx_min + tw
+    region_h = sy_max - sy_min + th
+    if region_w < tw or region_h < th:
+        return (lx, ly), 0.0
+
+    search_sub = gray_crop[sy_min - half_t_h:sy_max + half_t_h + 1,
+                           sx_min - half_t:sx_max + half_t + 1]
+
+    if search_sub.shape[0] < th or search_sub.shape[1] < tw:
+        return (lx, ly), 0.0
+
+    result = cv2.matchTemplate(search_sub, template, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+    # max_loc is (x, y) offset in the result map
+    new_x = sx_min + max_loc[0]
+    new_y = sy_min + max_loc[1]
+
+    if max_val >= min_confidence:
+        return (new_x, new_y), float(max_val)
+    return (lx, ly), float(max_val)
+
+
 def track_motion(video_path: str, axis: AxisDefinition,
                  start_frame: int, end_frame: int,
                  margin: int = 80,
                  on_frame: Callable[[int], None] | None = None) -> TrackingResult:
     """Track motion along the defined axis using dense optical flow.
 
-    Uses a narrow strip mask along the axis (not a wide rectangle), crops
-    frames before computing flow (10-14x faster), subtracts camera motion,
-    and applies rolling normalization instead of global normalization.
+    Template-matches the base point per-frame so the axis follows the
+    anatomy.  Builds a per-frame strip mask from the tracked coordinates,
+    computes Farneback flow on a fixed crop, and applies rolling
+    normalization.
 
-    Returns timestamps (ms) and normalized position (0=base, 1=tip) arrays.
+    Returns timestamps (ms), normalized positions, and per-frame
+    tip/base coordinates.
     """
     half_width = 15
+    template_radius = 25
 
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
 
+    # ── Extract base template from the representative frame ───────
+    cap.set(cv2.CAP_PROP_POS_FRAMES, axis.frame)
+    ret_ref, ref_frame = cap.read()
+    if not ret_ref:
+        raise RuntimeError(f"Cannot read reference frame {axis.frame}")
+    ref_gray = cv2.cvtColor(ref_frame, cv2.COLOR_BGR2GRAY)
+    base_template = extract_base_template(ref_gray, axis.base, radius=template_radius)
+    axis_vector = np.array(axis.tip, dtype=np.float64) - np.array(axis.base, dtype=np.float64)
+
+    # ── Set up the fixed crop (generous padding for anatomy movement) ─
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     ret, prev_frame = cap.read()
     if not ret:
         raise RuntimeError(f"Cannot read frame {start_frame}")
 
     frame_shape = prev_frame.shape[:2]
-    strip_mask = build_axis_strip_mask(frame_shape, axis, half_width)
     y_min, y_max, x_min, x_max = compute_crop_bounds(
-        axis, half_width, frame_shape, padding=30,
+        axis, half_width, frame_shape, padding=80,
     )
-
-    # Crop the strip mask to match the cropped frames
-    strip_crop = strip_mask[y_min:y_max, x_min:x_max]
-    strip_pixels = strip_crop > 0
-    bg_pixels = ~strip_pixels
-
+    crop_shape = (y_max - y_min, x_max - x_min)
     unit_vec = compute_axis_unit_vector(axis)
 
-    prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
+    # ── Track base in the first frame ─────────────────────────────
+    prev_gray_full = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
+    prev_gray = prev_gray_full[y_min:y_max, x_min:x_max]
+
+    last_base_crop = (axis.base[0] - x_min, axis.base[1] - y_min)
+    last_base_crop, _ = track_base_in_frame(
+        prev_gray, base_template, last_base_crop, search_radius=60,
+    )
+
+    def _crop_coords_to_frame(cx, cy):
+        return (cx + x_min, cy + y_min)
+
+    def _build_strip(base_c, tip_c):
+        fa = AxisDefinition(
+            tip=(int(round(tip_c[0])), int(round(tip_c[1]))),
+            base=(int(round(base_c[0])), int(round(base_c[1]))),
+        )
+        mask = build_axis_strip_mask(crop_shape, fa, half_width)
+        return mask > 0
+
+    first_tip_crop = (last_base_crop[0] + axis_vector[0],
+                      last_base_crop[1] + axis_vector[1])
+    strip_pixels = _build_strip(last_base_crop, first_tip_crop)
+    bg_pixels = ~strip_pixels
+
+    all_bases = [_crop_coords_to_frame(*last_base_crop)]
+    all_tips = [_crop_coords_to_frame(first_tip_crop[0], first_tip_crop[1])]
 
     cumulative_displacement = 0.0
     displacements = [0.0]
     timestamps = [start_frame / fps * 1000]
 
+    # ── Main frame loop ───────────────────────────────────────────
     for frame_idx in range(start_frame + 1, end_frame):
         ret, frame = cap.read()
         if not ret:
             break
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
+
+        # Template-track the base
+        last_base_crop, _ = track_base_in_frame(
+            gray, base_template, last_base_crop, search_radius=60,
+        )
+        tip_crop = (last_base_crop[0] + axis_vector[0],
+                    last_base_crop[1] + axis_vector[1])
+
+        all_bases.append(_crop_coords_to_frame(*last_base_crop))
+        all_tips.append(_crop_coords_to_frame(tip_crop[0], tip_crop[1]))
+
+        # Per-frame strip mask
+        strip_pixels = _build_strip(last_base_crop, tip_crop)
+        bg_pixels = ~strip_pixels
+
+        # Optical flow
         flow = cv2.calcOpticalFlowFarneback(
             prev_gray, gray, None,
             pyr_scale=0.5, levels=3, winsize=15,
             iterations=3, poly_n=5, poly_sigma=1.2, flags=0,
         )
-
-        # Project flow onto axis direction
         projected = flow[:, :, 0] * unit_vec[0] + flow[:, :, 1] * unit_vec[1]
 
-        # Median motion on the strip (redacted + hand)
-        if strip_pixels.any():
-            roi_motion = float(np.median(projected[strip_pixels]))
-        else:
-            roi_motion = 0.0
-
-        # Median background motion (camera shake / body movement)
-        if bg_pixels.any():
-            bg_motion = float(np.median(projected[bg_pixels]))
-        else:
-            bg_motion = 0.0
+        roi_motion = float(np.median(projected[strip_pixels])) if strip_pixels.any() else 0.0
+        bg_motion = float(np.median(projected[bg_pixels])) if bg_pixels.any() else 0.0
 
         net_motion = subtract_camera_motion(roi_motion, bg_motion)
         cumulative_displacement += net_motion
@@ -206,7 +330,11 @@ def track_motion(video_path: str, axis: AxisDefinition,
 
     # Rolling normalization (preserves strokes even with drift)
     norm_window = max(3, min(int(fps * 10), len(displacements)))
-    # Positive displacement along tip→base means moving toward base (pos=0)
     positions = 1.0 - rolling_normalize(displacements, norm_window)
 
-    return TrackingResult(timestamps_ms=timestamps, positions=positions)
+    return TrackingResult(
+        timestamps_ms=timestamps,
+        positions=positions,
+        tip_coords=np.array(all_tips, dtype=np.float64),
+        base_coords=np.array(all_bases, dtype=np.float64),
+    )

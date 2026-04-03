@@ -754,9 +754,9 @@ class App(QMainWindow):
         actions = self.scene_actions.get(scene_idx, [])
         half_frame_ms = 500 / self.fps
 
+        local_idx = frame_idx - scene.start_frame
         result = self.scene_positions.get(scene_idx)
         if result is not None:
-            local_idx = frame_idx - scene.start_frame
             if local_idx < 0 or local_idx >= len(result.positions):
                 return None
             pos_frac = float(result.positions[local_idx])
@@ -775,14 +775,28 @@ class App(QMainWindow):
         else:
             return None
 
+        # Use per-frame tracked coordinates when available
+        if (result is not None
+                and result.tip_coords is not None
+                and result.base_coords is not None
+                and 0 <= local_idx < len(result.tip_coords)):
+            tip = result.tip_coords[local_idx]
+            base = result.base_coords[local_idx]
+        else:
+            tip = np.array(axis.tip, dtype=np.float64)
+            base = np.array(axis.base, dtype=np.float64)
+
         # Contact point: lerp between base (pos=0) and tip (pos=1)
-        tip = np.array(axis.tip, dtype=np.float64)
-        base = np.array(axis.base, dtype=np.float64)
         contact = base + pos_frac * (tip - base)
         contact_pt = (int(round(contact[0])), int(round(contact[1])))
 
+        frame_axis = AxisDefinition(
+            tip=(int(round(tip[0])), int(round(tip[1]))),
+            base=(int(round(base[0])), int(round(base[1]))),
+            frame=axis.frame,
+        )
         return {
-            "axis": axis,
+            "axis": frame_axis,
             "contact_pt": contact_pt,
             "pos": pos_100,
             "is_action": is_action,

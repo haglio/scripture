@@ -6,6 +6,7 @@ import numpy as np
 from scripture.motion_tracker import (
     AxisDefinition, build_axis_strip_mask, compute_crop_bounds,
     subtract_camera_motion, rolling_normalize, track_motion, TrackingResult,
+    extract_base_template, track_base_in_frame,
 )
 
 
@@ -130,6 +131,92 @@ class TestRollingNormalize:
         assert result.min() >= 0.0
 
 
+class TestExtractBaseTemplate:
+
+    def test_patch_size(self):
+        gray = np.zeros((200, 200), dtype=np.uint8)
+        tpl = extract_base_template(gray, (100, 100), radius=25)
+        assert tpl.shape == (51, 51)
+        assert tpl.dtype == np.uint8
+
+    def test_center_pixel_matches(self):
+        gray = np.arange(200 * 200, dtype=np.uint8).reshape(200, 200)
+        tpl = extract_base_template(gray, (100, 100), radius=2)
+        assert tpl[2, 2] == gray[100, 100]
+
+    def test_near_top_left_corner(self):
+        gray = np.full((200, 200), 42, dtype=np.uint8)
+        tpl = extract_base_template(gray, (5, 5), radius=25)
+        assert tpl.shape == (51, 51)
+
+    def test_at_exact_corner(self):
+        gray = np.full((200, 200), 42, dtype=np.uint8)
+        tpl = extract_base_template(gray, (0, 0), radius=10)
+        assert tpl.shape == (21, 21)
+
+
+class TestTrackBaseInFrame:
+
+    def _make_image_with_patch(self, size=200, patch_center=(100, 100), radius=25):
+        """Create a random image with a distinctive patch at a known location."""
+        rng = np.random.RandomState(42)
+        gray = rng.randint(0, 50, (size, size), dtype=np.uint8)
+        patch = rng.randint(150, 255, (2 * radius + 1, 2 * radius + 1), dtype=np.uint8)
+        cx, cy = patch_center
+        gray[cy - radius:cy + radius + 1, cx - radius:cx + radius + 1] = patch
+        return gray, patch
+
+    def test_exact_match(self):
+        gray, _ = self._make_image_with_patch(patch_center=(100, 100), radius=25)
+        template = extract_base_template(gray, (100, 100), radius=25)
+        pos, conf = track_base_in_frame(gray, template, (100, 100))
+        assert abs(pos[0] - 100) <= 1
+        assert abs(pos[1] - 100) <= 1
+        assert conf > 0.9
+
+    def test_shifted_patch_detected(self):
+        gray, patch = self._make_image_with_patch(patch_center=(110, 115), radius=25)
+        template = patch  # the distinctive patch itself
+        pos, conf = track_base_in_frame(gray, template, (100, 100), search_radius=60)
+        assert abs(pos[0] - 110) <= 1
+        assert abs(pos[1] - 115) <= 1
+        assert conf > 0.5
+
+    def test_low_confidence_falls_back(self):
+        rng = np.random.RandomState(42)
+        gray = rng.randint(0, 255, (200, 200), dtype=np.uint8)
+        template = np.random.RandomState(99).randint(0, 255, (51, 51), dtype=np.uint8)
+        pos, conf = track_base_in_frame(gray, template, (100, 100), min_confidence=0.9)
+        assert pos == (100, 100)  # fell back
+
+    def test_search_near_edge(self):
+        gray, _ = self._make_image_with_patch(patch_center=(15, 15), radius=10)
+        template = extract_base_template(gray, (15, 15), radius=10)
+        pos, conf = track_base_in_frame(gray, template, (15, 15), search_radius=60)
+        assert abs(pos[0] - 15) <= 1
+        assert abs(pos[1] - 15) <= 1
+
+
+class TestTrackingResultCompat:
+
+    def test_default_none_fields(self):
+        result = TrackingResult(timestamps_ms=np.array([0.0]), positions=np.array([0.5]))
+        assert result.tip_coords is None
+        assert result.base_coords is None
+
+    def test_with_coords(self):
+        tips = np.array([[100, 50], [101, 51]], dtype=np.float64)
+        bases = np.array([[100, 350], [101, 351]], dtype=np.float64)
+        result = TrackingResult(
+            timestamps_ms=np.array([0.0, 33.3]),
+            positions=np.array([0.5, 0.6]),
+            tip_coords=tips,
+            base_coords=bases,
+        )
+        assert result.tip_coords.shape == (2, 2)
+        assert result.base_coords.shape == (2, 2)
+
+
 def _make_synthetic_video(path, n_frames=60, fps=30, width=200, height=400):
     """Create a synthetic video with a textured bar oscillating vertically.
 
@@ -193,3 +280,24 @@ class TestTrackMotion:
         result = track_motion(video_path, axis, 0, 20, on_frame=lambda f: frames_seen.append(f))
         # Should be called for each frame after the first
         assert len(frames_seen) == 19  # frames 1-19
+
+    def test_returns_per_frame_coords(self, tmp_path):
+        video_path = str(tmp_path / "test.mp4")
+        _make_synthetic_video(video_path, n_frames=30)
+        axis = AxisDefinition(tip=(100, 50), base=(100, 350))
+        result = track_motion(video_path, axis, 0, 30)
+        assert result.tip_coords is not None
+        assert result.base_coords is not None
+        assert result.tip_coords.shape == (30, 2)
+        assert result.base_coords.shape == (30, 2)
+
+    def test_tip_base_vector_preserved(self, tmp_path):
+        """Per-frame tip - base should equal original axis vector."""
+        video_path = str(tmp_path / "test.mp4")
+        _make_synthetic_video(video_path, n_frames=30)
+        axis = AxisDefinition(tip=(100, 50), base=(100, 350))
+        result = track_motion(video_path, axis, 0, 30)
+        expected_vec = np.array(axis.tip) - np.array(axis.base)  # (0, -300)
+        actual_vecs = result.tip_coords - result.base_coords
+        for i in range(len(actual_vecs)):
+            np.testing.assert_array_equal(actual_vecs[i], expected_vec)
