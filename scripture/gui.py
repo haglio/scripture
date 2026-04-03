@@ -506,6 +506,8 @@ class App(QMainWindow):
         QShortcut(QKeySequence(Qt.Key.Key_Right), self, self._frame_forward)
         QShortcut(QKeySequence(Qt.Key.Key_Tab), self, self._next_poi)
         QShortcut(QKeySequence("Shift+Tab"), self, self._prev_poi)
+        QShortcut(QKeySequence("]"), self, self._next_action_frame)
+        QShortcut(QKeySequence("["), self, self._prev_action_frame)
 
     def _frame_back(self):
         if self.current_frame_idx > 0:
@@ -541,6 +543,34 @@ class App(QMainWindow):
                 self._show_frame(p)
                 return
         self._show_frame(pois[-1])  # wrap
+
+    def _action_frames_for_current_scene(self):
+        """Return sorted list of frame indices for actions in the current scene."""
+        idx = self._current_scene_idx()
+        actions = self.scene_actions.get(idx, [])
+        if not actions:
+            return []
+        return sorted(int(round(a["at"] / 1000 * self.fps)) for a in actions)
+
+    def _next_action_frame(self):
+        frames = self._action_frames_for_current_scene()
+        if not frames:
+            return
+        for f in frames:
+            if f > self.current_frame_idx:
+                self._show_frame(f)
+                return
+        self._show_frame(frames[0])  # wrap
+
+    def _prev_action_frame(self):
+        frames = self._action_frames_for_current_scene()
+        if not frames:
+            return
+        for f in reversed(frames):
+            if f < self.current_frame_idx:
+                self._show_frame(f)
+                return
+        self._show_frame(frames[-1])  # wrap
 
     def _build_ui(self):
         central = QWidget()
