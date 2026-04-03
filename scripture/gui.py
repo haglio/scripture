@@ -708,9 +708,18 @@ class App(QMainWindow):
             return
         idx = self._current_scene_idx()
         sc = self.scenes[idx]
-        sc_info = f"Scene {idx+1}/{len(self.scenes)} [{self._format_time(sc.start_frame)} \u2013 {self._format_time(sc.end_frame)}]"
-        fr_info = f"{self.current_frame_idx} / {self.total_frames} \u2014 {self._format_time(self.current_frame_idx)} / {self._format_time(self.total_frames)}"
-        self._set_status(f"{sc_info}    {fr_info}")
+        sc_len = sc.end_frame - sc.start_frame
+        sc_info = (
+            f"scene {idx+1} / {len(self.scenes)} : "
+            f"frames {sc.start_frame} \u2013 {sc.end_frame} "
+            f"({self._format_time(sc.start_frame)} \u2013 {self._format_time(sc.end_frame)}), "
+            f"total {sc_len} frames ({self._format_time(sc_len)} duration)"
+        )
+        fr_info = (
+            f"frame {self.current_frame_idx} / {self.total_frames} "
+            f"({self._format_time(self.current_frame_idx)}  / {self._format_time(self.total_frames)})"
+        )
+        self._set_status(f"{sc_info}  |  {fr_info}")
 
     # ── Video loading ──────────────────────────────────────────────
 
