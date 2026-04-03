@@ -713,16 +713,37 @@ class App(QMainWindow):
     # ── Frame display ──────────────────────────────────────────────
 
     def _build_overlay(self, scene_idx, frame_idx):
-        """Build debug overlay dict for a processed scene's frame."""
-        axis = self.scene_axes[scene_idx]
-        result = self.scene_positions[scene_idx]
-        scene = self.scenes[scene_idx]
-        local_idx = frame_idx - scene.start_frame
-        if local_idx < 0 or local_idx >= len(result.positions):
-            return None
+        """Build debug overlay dict for a processed scene's frame.
 
-        pos_frac = float(result.positions[local_idx])  # 0.0=base, 1.0=tip
-        pos_100 = int(round(pos_frac * 100))
+        Uses full per-frame positions when available (just processed), or
+        interpolates from stored actions (loaded session).
+        """
+        axis = self.scene_axes[scene_idx]
+        scene = self.scenes[scene_idx]
+        frame_ms = frame_idx / self.fps * 1000
+        actions = self.scene_actions.get(scene_idx, [])
+        half_frame_ms = 500 / self.fps
+
+        result = self.scene_positions.get(scene_idx)
+        if result is not None:
+            local_idx = frame_idx - scene.start_frame
+            if local_idx < 0 or local_idx >= len(result.positions):
+                return None
+            pos_frac = float(result.positions[local_idx])
+            pos_100 = int(round(pos_frac * 100))
+            ts = result.timestamps_ms[local_idx]
+            is_action = any(abs(a["at"] - ts) < half_frame_ms for a in actions)
+            if is_action:
+                for a in actions:
+                    if abs(a["at"] - ts) < half_frame_ms:
+                        pos_100 = a["pos"]
+                        break
+        elif actions:
+            # Interpolate from action list only
+            pos_100, is_action = self._interpolate_actions(actions, frame_ms, half_frame_ms)
+            pos_frac = pos_100 / 100.0
+        else:
+            return None
 
         # Contact point: lerp between base (pos=0) and tip (pos=1)
         tip = np.array(axis.tip, dtype=np.float64)
@@ -730,22 +751,36 @@ class App(QMainWindow):
         contact = base + pos_frac * (tip - base)
         contact_pt = (int(round(contact[0])), int(round(contact[1])))
 
-        # Check if this frame is an action frame
-        frame_ms = result.timestamps_ms[local_idx]
-        is_action = False
-        actions = self.scene_actions.get(scene_idx, [])
-        for a in actions:
-            if abs(a["at"] - frame_ms) < (500 / self.fps):  # within half a frame
-                pos_100 = a["pos"]
-                is_action = True
-                break
-
         return {
             "axis": axis,
             "contact_pt": contact_pt,
             "pos": pos_100,
             "is_action": is_action,
         }
+
+    @staticmethod
+    def _interpolate_actions(actions, frame_ms, half_frame_ms):
+        """Interpolate pos from action list for a given timestamp."""
+        if not actions:
+            return 50, False
+        is_action = False
+        for a in actions:
+            if abs(a["at"] - frame_ms) < half_frame_ms:
+                return a["pos"], True
+        # Before first action
+        if frame_ms <= actions[0]["at"]:
+            return actions[0]["pos"], False
+        # After last action
+        if frame_ms >= actions[-1]["at"]:
+            return actions[-1]["pos"], False
+        # Between two actions — linear interpolation
+        for i in range(len(actions) - 1):
+            a0, a1 = actions[i], actions[i + 1]
+            if a0["at"] <= frame_ms <= a1["at"]:
+                t = (frame_ms - a0["at"]) / (a1["at"] - a0["at"])
+                pos = a0["pos"] + t * (a1["pos"] - a0["pos"])
+                return int(round(pos)), False
+        return 50, False
 
     def _show_frame(self, frame_idx):
         if not self.cap:
@@ -767,8 +802,8 @@ class App(QMainWindow):
             self.canvas.set_pending_tip(self.pending_tip)
             self.canvas.set_pending_base(self.pending_base)
 
-        # Debug overlay for processed scenes
-        if idx in self.scene_positions and idx in self.scene_axes:
+        # Debug overlay for processed scenes (works with full positions or just actions)
+        if idx in self.scene_axes and (idx in self.scene_positions or idx in self.scene_actions):
             self.canvas.set_overlay(self._build_overlay(idx, frame_idx))
         else:
             self.canvas.set_overlay(None)
