@@ -523,13 +523,14 @@ class App(QMainWindow):
         tb.addAction(act)
 
         # Progress bar embedded in toolbar (no layout shift)
-        tb.addSeparator()
+        self._progress_sep = tb.addSeparator()
+        self._progress_sep.setVisible(False)
         self.progress_bar = QProgressBar()
         self.progress_bar.setStyleSheet(_PROGRESS_STYLE)
         self.progress_bar.setFixedHeight(20)
         self.progress_bar.setMinimumWidth(200)
-        self.progress_bar.setVisible(False)
-        tb.addWidget(self.progress_bar)
+        self._progress_action = tb.addWidget(self.progress_bar)
+        self._progress_action.setVisible(False)
 
         # --- Frame canvas ---
         self.canvas = FrameCanvas()
@@ -888,7 +889,8 @@ class App(QMainWindow):
 
     def _start_processing(self, jobs):
         tf = sum(sc.end_frame - sc.start_frame for _, sc, _ in jobs)
-        self.progress_bar.setVisible(True)
+        self._progress_sep.setVisible(True)
+        self._progress_action.setVisible(True)
         self.progress_bar.setMaximum(tf)
         self.progress_bar.setValue(0)
         self.btn_process_all.setEnabled(False)
@@ -921,7 +923,8 @@ class App(QMainWindow):
 
     def _on_process_finished(self):
         el = time.monotonic() - self._process_start_time
-        self.progress_bar.setVisible(False)
+        self._progress_sep.setVisible(False)
+        self._progress_action.setVisible(False)
         self.btn_process_all.setEnabled(True)
         self._worker = None
         total = sum(len(a) for a in self.scene_actions.values())
