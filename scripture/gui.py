@@ -527,10 +527,10 @@ class App(QMainWindow):
         act.triggered.connect(self._export)
         tb.addAction(act)
 
-        # Spacer pushes progress bar to fill remaining toolbar space
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        tb.addWidget(spacer)
+        # Spacer — fills toolbar when progress bar is hidden
+        self._spacer = QWidget()
+        self._spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self._spacer_action = tb.addWidget(self._spacer)
 
         # Progress bar + abort button embedded in toolbar (no layout shift)
         self._progress_sep = tb.addSeparator()
@@ -538,7 +538,7 @@ class App(QMainWindow):
         self.progress_bar = QProgressBar()
         self.progress_bar.setStyleSheet(_PROGRESS_STYLE)
         self.progress_bar.setFixedHeight(20)
-        self.progress_bar.setMinimumWidth(200)
+        self.progress_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._progress_action = tb.addWidget(self.progress_bar)
         self._progress_action.setVisible(False)
         self._abort_action = QAction(qta.icon("fa5s.stop", color="#ff6666"), "Abort", self)
@@ -908,6 +908,7 @@ class App(QMainWindow):
 
     def _start_processing(self, jobs):
         tf = sum(sc.end_frame - sc.start_frame for _, sc, _ in jobs)
+        self._spacer_action.setVisible(False)
         self._progress_sep.setVisible(True)
         self._progress_action.setVisible(True)
         self._abort_action.setVisible(True)
@@ -943,6 +944,7 @@ class App(QMainWindow):
 
     def _on_process_finished(self):
         el = time.monotonic() - self._process_start_time
+        self._spacer_action.setVisible(True)
         self._progress_sep.setVisible(False)
         self._progress_action.setVisible(False)
         self._abort_action.setVisible(False)
@@ -956,6 +958,7 @@ class App(QMainWindow):
             self._worker.terminate()
             self._worker.wait()
             self._worker = None
+        self._spacer_action.setVisible(True)
         self._progress_sep.setVisible(False)
         self._progress_action.setVisible(False)
         self._abort_action.setVisible(False)
