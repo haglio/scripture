@@ -1,6 +1,7 @@
 """PyQt6 GUI for scripture: manual scene splitting, axis annotation, and export."""
 
 import sys
+import time
 from pathlib import Path
 
 import cv2
@@ -603,16 +604,28 @@ class App(QMainWindow):
             for idx in scene_indices
         ]
 
+    @staticmethod
+    def _fmt_duration(seconds: float) -> str:
+        s = int(seconds)
+        if s < 60:
+            return f"{s}s"
+        m, s = divmod(s, 60)
+        if m < 60:
+            return f"{m}m {s:02d}s"
+        h, m = divmod(m, 60)
+        return f"{h}h {m:02d}m {s:02d}s"
+
     def _start_processing(self, jobs: list[tuple[int, Scene, AxisDefinition]]):
         total_frames = sum(scene.end_frame - scene.start_frame for _, scene, _ in jobs)
         self.progress_bar.setVisible(True)
         self.progress_bar.setMaximum(total_frames)
         self.progress_bar.setValue(0)
-        self.progress_bar.setFormat(f"0 / {total_frames} frames (%p%)")
+        self.progress_bar.setFormat(f"0 / {total_frames} frames (0%)")
         self.btn_process.setEnabled(False)
         self.btn_process_all.setEnabled(False)
 
         self._process_total_frames = total_frames
+        self._process_start_time = time.monotonic()
         self._worker = ProcessWorker(self.video_path, jobs, self.fps)
         self._worker.frame_progress.connect(self._on_frame_progress)
         self._worker.scene_done.connect(self._on_scene_done)
@@ -622,22 +635,40 @@ class App(QMainWindow):
 
     def _on_frame_progress(self, frames_done: int):
         self.progress_bar.setValue(frames_done)
-        self.progress_bar.setFormat(f"{frames_done} / {self._process_total_frames} frames (%p%)")
+        elapsed = time.monotonic() - self._process_start_time
+        elapsed_str = self._fmt_duration(elapsed)
+
+        if frames_done > 0:
+            eta = elapsed / frames_done * (self._process_total_frames - frames_done)
+            eta_str = self._fmt_duration(eta)
+            self.progress_bar.setFormat(
+                f"{frames_done} / {self._process_total_frames} frames (%p%)  "
+                f"— {elapsed_str} elapsed, ~{eta_str} remaining"
+            )
+        else:
+            self.progress_bar.setFormat(
+                f"0 / {self._process_total_frames} frames (0%)  — {elapsed_str} elapsed"
+            )
 
     def _on_scene_done(self, scene_idx: int, actions: list[dict]):
         self.scene_actions[scene_idx] = actions
-        self._set_status(f"Scene {scene_idx + 1} done — {len(actions)} stroke points.")
 
     def _on_process_error(self, scene_idx: int, msg: str):
         self._set_status(f"Error processing scene {scene_idx + 1}: {msg}")
 
     def _on_process_finished(self):
+        elapsed = time.monotonic() - self._process_start_time
+        elapsed_str = self._fmt_duration(elapsed)
+
         self.progress_bar.setVisible(False)
         self.btn_process.setEnabled(True)
         self.btn_process_all.setEnabled(True)
 
         total_actions = sum(len(a) for a in self.scene_actions.values())
-        self._set_status(f"Done — {len(self.scene_actions)} scenes, {total_actions} total stroke points.")
+        self._set_status(
+            f"Done — {len(self.scene_actions)} scenes, {total_actions} stroke points "
+            f"in {elapsed_str}."
+        )
 
     def _process_scene(self):
         idx = self._current_scene_idx()
