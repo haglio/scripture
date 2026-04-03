@@ -123,87 +123,87 @@ def compute_crop_bounds(
     return y_min, y_max, x_min, x_max
 
 
-def extract_base_template(
-    gray_frame: np.ndarray,
-    base_point: tuple[int, int],
-    radius: int = 25,
-) -> np.ndarray:
-    """Extract a square grayscale template patch centered on base_point.
 
-    Returns a (2*radius+1, 2*radius+1) uint8 array.  Pixels outside
-    the frame are filled via replicate border padding.
+
+
+
+class LKPointTracker:
+    """Track a point across frames using Lucas-Kanade sparse optical flow.
+
+    Seeds a cluster of feature points near the target, tracks them
+    frame-to-frame, takes the median displacement, and re-seeds lost points.
     """
-    bx, by = int(base_point[0]), int(base_point[1])
-    h, w = gray_frame.shape[:2]
-    size = 2 * radius + 1
 
-    # Compute how much padding is needed on each side
-    pad_left = max(0, radius - bx)
-    pad_right = max(0, (bx + radius + 1) - w)
-    pad_top = max(0, radius - by)
-    pad_bottom = max(0, (by + radius + 1) - h)
+    _lk_params = dict(
+        winSize=(21, 21),
+        maxLevel=3,
+        criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01),
+    )
 
-    if pad_left or pad_right or pad_top or pad_bottom:
-        padded = cv2.copyMakeBorder(
-            gray_frame, pad_top, pad_bottom, pad_left, pad_right,
-            cv2.BORDER_REPLICATE,
+    def __init__(self, gray_frame: np.ndarray, center: tuple[int, int],
+                 radius: int = 30, n_points: int = 50):
+        self._prev_gray = gray_frame.copy()
+        self._center = np.array(center, dtype=np.float64)
+        self._radius = radius
+        self._n_points = n_points
+        self._points = self._seed_points(gray_frame, center, radius, n_points)
+
+    @staticmethod
+    def _seed_points(gray: np.ndarray, center: tuple[int, int],
+                     radius: int, n_points: int) -> np.ndarray:
+        """Find good feature points in a region around center."""
+        h, w = gray.shape[:2]
+        cx, cy = int(center[0]), int(center[1])
+        mask = np.zeros((h, w), dtype=np.uint8)
+        cv2.circle(mask, (cx, cy), radius, 255, -1)
+        corners = cv2.goodFeaturesToTrack(
+            gray, maxCorners=n_points, qualityLevel=0.01,
+            minDistance=3, mask=mask,
         )
-        # Shift coordinates into padded frame
-        bx += pad_left
-        by += pad_top
-        return padded[by - radius:by + radius + 1, bx - radius:bx + radius + 1].copy()
+        if corners is None or len(corners) == 0:
+            # Fall back to a grid if no good features found
+            pts = []
+            for dy in range(-radius, radius + 1, max(1, radius // 3)):
+                for dx in range(-radius, radius + 1, max(1, radius // 3)):
+                    if dx * dx + dy * dy <= radius * radius:
+                        px = max(0, min(w - 1, cx + dx))
+                        py = max(0, min(h - 1, cy + dy))
+                        pts.append([[float(px), float(py)]])
+            return np.array(pts, dtype=np.float32)
+        return corners
 
-    return gray_frame[by - radius:by + radius + 1, bx - radius:bx + radius + 1].copy()
+    def update(self, gray_frame: np.ndarray) -> tuple[float, float]:
+        """Track points into gray_frame, return updated center (x, y)."""
+        if len(self._points) == 0:
+            return (float(self._center[0]), float(self._center[1]))
 
+        new_pts, status, _ = cv2.calcOpticalFlowPyrLK(
+            self._prev_gray, gray_frame, self._points, None, **self._lk_params,
+        )
 
-def track_base_in_frame(
-    gray_crop: np.ndarray,
-    template: np.ndarray,
-    last_pos_in_crop: tuple[int, int],
-    search_radius: int = 60,
-    min_confidence: float = 0.3,
-) -> tuple[tuple[int, int], float]:
-    """Find the base position in gray_crop via template matching.
+        # Keep only points that were successfully tracked
+        good_mask = status.ravel() == 1
+        if good_mask.sum() > 0:
+            old_good = self._points[good_mask]
+            new_good = new_pts[good_mask]
+            # Median displacement (robust to outliers)
+            displacements = new_good.reshape(-1, 2) - old_good.reshape(-1, 2)
+            med_dx = float(np.median(displacements[:, 0]))
+            med_dy = float(np.median(displacements[:, 1]))
+            self._center = self._center + np.array([med_dx, med_dy])
+            self._points = new_good.reshape(-1, 1, 2)
+        # else: keep previous center and points
 
-    Searches within a window around last_pos_in_crop.  Uses normalised
-    cross-correlation.  Returns (new_pos_in_crop, confidence).  Falls
-    back to last_pos_in_crop when confidence < min_confidence.
-    """
-    th, tw = template.shape[:2]
-    half_t = tw // 2
-    half_t_h = th // 2
-    ch, cw = gray_crop.shape[:2]
+        # Re-seed if we've lost too many points
+        if len(self._points) < self._n_points // 3:
+            cx, cy = int(round(self._center[0])), int(round(self._center[1]))
+            self._points = self._seed_points(
+                gray_frame, (cx, cy), self._radius, self._n_points,
+            )
 
-    lx, ly = int(last_pos_in_crop[0]), int(last_pos_in_crop[1])
+        self._prev_gray = gray_frame.copy()
+        return (float(self._center[0]), float(self._center[1]))
 
-    # Search region bounds (must leave room for the template to fit)
-    sx_min = max(half_t, lx - search_radius)
-    sx_max = min(cw - half_t - 1, lx + search_radius)
-    sy_min = max(half_t_h, ly - search_radius)
-    sy_max = min(ch - half_t_h - 1, ly + search_radius)
-
-    # If search region is too small for template matching, fall back
-    region_w = sx_max - sx_min + tw
-    region_h = sy_max - sy_min + th
-    if region_w < tw or region_h < th:
-        return (lx, ly), 0.0
-
-    search_sub = gray_crop[sy_min - half_t_h:sy_max + half_t_h + 1,
-                           sx_min - half_t:sx_max + half_t + 1]
-
-    if search_sub.shape[0] < th or search_sub.shape[1] < tw:
-        return (lx, ly), 0.0
-
-    result = cv2.matchTemplate(search_sub, template, cv2.TM_CCOEFF_NORMED)
-    _, max_val, _, max_loc = cv2.minMaxLoc(result)
-
-    # max_loc is (x, y) offset in the result map
-    new_x = sx_min + max_loc[0]
-    new_y = sy_min + max_loc[1]
-
-    if max_val >= min_confidence:
-        return (new_x, new_y), float(max_val)
-    return (lx, ly), float(max_val)
 
 
 def track_motion(video_path: str, axis: AxisDefinition,
@@ -212,35 +212,27 @@ def track_motion(video_path: str, axis: AxisDefinition,
                  on_frame: Callable[[int], None] | None = None) -> TrackingResult:
     """Track motion along the defined axis using dense optical flow.
 
-    Template-matches the base point per-frame so the axis follows the
-    anatomy.  Tracks **bidirectionally** from axis.frame (where the user
-    defined the axis) to avoid drift from a distant start_frame.
+    Tracks the base point per-frame using Lucas-Kanade sparse optical flow,
+    bidirectionally from axis.frame.  Builds a per-frame strip mask from the
+    tracked coordinates.
 
     Returns timestamps (ms), normalized positions, and per-frame
     tip/base coordinates.
     """
     half_width = 15
-    template_radius = 25
 
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
 
-    # ── Extract base template from the representative frame ───────
+    # ── Read the representative frame and set up geometry ─────────
     cap.set(cv2.CAP_PROP_POS_FRAMES, axis.frame)
     ret_ref, ref_frame = cap.read()
     if not ret_ref:
         raise RuntimeError(f"Cannot read reference frame {axis.frame}")
     ref_gray = cv2.cvtColor(ref_frame, cv2.COLOR_BGR2GRAY)
-    base_template = extract_base_template(ref_gray, axis.base, radius=template_radius)
     axis_vector = np.array(axis.tip, dtype=np.float64) - np.array(axis.base, dtype=np.float64)
 
-    # ── Set up the fixed crop ─────────────────────────────────────
-    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    ret, first_frame = cap.read()
-    if not ret:
-        raise RuntimeError(f"Cannot read frame {start_frame}")
-
-    frame_shape = first_frame.shape[:2]
+    frame_shape = ref_frame.shape[:2]
     y_min, y_max, x_min, x_max = compute_crop_bounds(
         axis, half_width, frame_shape, padding=80,
     )
@@ -252,40 +244,42 @@ def track_motion(video_path: str, axis: AxisDefinition,
     base_in_crop_ref = (axis.base[0] - x_min, axis.base[1] - y_min)
 
     # ── Phase 1: Track base coordinates bidirectionally from axis.frame ─
-    # on_frame receives a monotonic counter: 0 .. 2*n_frames-1
     progress = 0
     base_coords_crop = [None] * n_frames
     base_coords_crop[ref_local] = base_in_crop_ref
+    ref_crop_gray = ref_gray[y_min:y_max, x_min:x_max]
 
-    # Backward: ref_local-1 down to 0 (needs seeks — reading backward)
-    last = base_in_crop_ref
-    for i in range(ref_local - 1, -1, -1):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame + i)
-        ret, frame = cap.read()
-        if not ret:
-            base_coords_crop[i] = last
-        else:
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
-            last, _ = track_base_in_frame(gray, base_template, last, search_radius=60)
-            base_coords_crop[i] = last
-        progress += 1
-        if on_frame is not None:
-            on_frame(progress)
+    # Backward: ref_local-1 down to 0 (LK tracker, needs seeks)
+    if ref_local > 0:
+        tracker_bwd = LKPointTracker(ref_crop_gray, base_in_crop_ref, radius=40)
+        for i in range(ref_local - 1, -1, -1):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame + i)
+            ret, frame = cap.read()
+            if not ret:
+                base_coords_crop[i] = base_coords_crop[i + 1]
+            else:
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
+                pos = tracker_bwd.update(gray)
+                base_coords_crop[i] = pos
+            progress += 1
+            if on_frame is not None:
+                on_frame(progress)
 
-    # Forward: ref_local+1 to end (sequential read — fast)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame + ref_local + 1)
-    last = base_in_crop_ref
-    for i in range(ref_local + 1, n_frames):
-        ret, frame = cap.read()
-        if not ret:
-            base_coords_crop[i] = last
-        else:
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
-            last, _ = track_base_in_frame(gray, base_template, last, search_radius=60)
-            base_coords_crop[i] = last
-        progress += 1
-        if on_frame is not None:
-            on_frame(progress)
+    # Forward: ref_local+1 to end (LK tracker, sequential read)
+    if ref_local < n_frames - 1:
+        tracker_fwd = LKPointTracker(ref_crop_gray, base_in_crop_ref, radius=40)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame + ref_local + 1)
+        for i in range(ref_local + 1, n_frames):
+            ret, frame = cap.read()
+            if not ret:
+                base_coords_crop[i] = base_coords_crop[i - 1]
+            else:
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
+                pos = tracker_fwd.update(gray)
+                base_coords_crop[i] = pos
+            progress += 1
+            if on_frame is not None:
+                on_frame(progress)
 
     # Convert to frame coords
     all_bases = [(bc[0] + x_min, bc[1] + y_min) for bc in base_coords_crop]

@@ -6,7 +6,7 @@ import numpy as np
 from scripture.motion_tracker import (
     AxisDefinition, build_axis_strip_mask, compute_crop_bounds,
     subtract_camera_motion, rolling_normalize, track_motion, TrackingResult,
-    extract_base_template, track_base_in_frame,
+    LKPointTracker,
 )
 
 
@@ -131,70 +131,49 @@ class TestRollingNormalize:
         assert result.min() >= 0.0
 
 
-class TestExtractBaseTemplate:
+class TestLKPointTracker:
 
-    def test_patch_size(self):
-        gray = np.zeros((200, 200), dtype=np.uint8)
-        tpl = extract_base_template(gray, (100, 100), radius=25)
-        assert tpl.shape == (51, 51)
-        assert tpl.dtype == np.uint8
-
-    def test_center_pixel_matches(self):
-        gray = np.arange(200 * 200, dtype=np.uint8).reshape(200, 200)
-        tpl = extract_base_template(gray, (100, 100), radius=2)
-        assert tpl[2, 2] == gray[100, 100]
-
-    def test_near_top_left_corner(self):
-        gray = np.full((200, 200), 42, dtype=np.uint8)
-        tpl = extract_base_template(gray, (5, 5), radius=25)
-        assert tpl.shape == (51, 51)
-
-    def test_at_exact_corner(self):
-        gray = np.full((200, 200), 42, dtype=np.uint8)
-        tpl = extract_base_template(gray, (0, 0), radius=10)
-        assert tpl.shape == (21, 21)
-
-
-class TestTrackBaseInFrame:
-
-    def _make_image_with_patch(self, size=200, patch_center=(100, 100), radius=25):
-        """Create a random image with a distinctive patch at a known location."""
+    def test_stationary_scene_no_drift(self):
+        """On identical frames, tracked point should not move."""
         rng = np.random.RandomState(42)
-        gray = rng.randint(0, 50, (size, size), dtype=np.uint8)
-        patch = rng.randint(150, 255, (2 * radius + 1, 2 * radius + 1), dtype=np.uint8)
-        cx, cy = patch_center
-        gray[cy - radius:cy + radius + 1, cx - radius:cx + radius + 1] = patch
-        return gray, patch
+        frame = rng.randint(0, 255, (200, 200), dtype=np.uint8)
+        tracker = LKPointTracker(frame, center=(100, 100), radius=30)
+        pos = tracker.update(frame)
+        assert abs(pos[0] - 100) <= 2
+        assert abs(pos[1] - 100) <= 2
 
-    def test_exact_match(self):
-        gray, _ = self._make_image_with_patch(patch_center=(100, 100), radius=25)
-        template = extract_base_template(gray, (100, 100), radius=25)
-        pos, conf = track_base_in_frame(gray, template, (100, 100))
-        assert abs(pos[0] - 100) <= 1
-        assert abs(pos[1] - 100) <= 1
-        assert conf > 0.9
-
-    def test_shifted_patch_detected(self):
-        gray, patch = self._make_image_with_patch(patch_center=(110, 115), radius=25)
-        template = patch  # the distinctive patch itself
-        pos, conf = track_base_in_frame(gray, template, (100, 100), search_radius=60)
-        assert abs(pos[0] - 110) <= 1
-        assert abs(pos[1] - 115) <= 1
-        assert conf > 0.5
-
-    def test_low_confidence_falls_back(self):
+    def test_tracks_known_shift(self):
+        """A textured patch shifted by a known amount should be tracked."""
         rng = np.random.RandomState(42)
-        gray = rng.randint(0, 255, (200, 200), dtype=np.uint8)
-        template = np.random.RandomState(99).randint(0, 255, (51, 51), dtype=np.uint8)
-        pos, conf = track_base_in_frame(gray, template, (100, 100), min_confidence=0.9)
-        assert pos == (100, 100)  # fell back
+        texture = rng.randint(0, 255, (200, 200), dtype=np.uint8)
+        # Frame 1: texture as-is
+        frame1 = texture.copy()
+        # Frame 2: shift texture 5px right, 3px down (via translation matrix)
+        M = np.float32([[1, 0, 5], [0, 1, 3]])
+        frame2 = cv2.warpAffine(texture, M, (200, 200))
+        tracker = LKPointTracker(frame1, center=(100, 100), radius=30)
+        pos = tracker.update(frame2)
+        assert abs(pos[0] - 105) <= 2
+        assert abs(pos[1] - 103) <= 2
 
-    def test_search_near_edge(self):
-        gray, _ = self._make_image_with_patch(patch_center=(15, 15), radius=10)
-        template = extract_base_template(gray, (15, 15), radius=10)
-        pos, conf = track_base_in_frame(gray, template, (15, 15), search_radius=60)
-        assert abs(pos[0] - 15) <= 1
-        assert abs(pos[1] - 15) <= 1
+    def test_survives_multiple_steps(self):
+        """Track through 10 small shifts without crashing or losing track."""
+        rng = np.random.RandomState(42)
+        texture = rng.randint(0, 255, (300, 300), dtype=np.uint8)
+        frame = texture.copy()
+        tracker = LKPointTracker(frame, center=(150, 150), radius=30)
+        cumulative_dx, cumulative_dy = 0.0, 0.0
+        for _ in range(10):
+            dx, dy = 2, 1
+            cumulative_dx += dx
+            cumulative_dy += dy
+            M = np.float32([[1, 0, cumulative_dx], [0, 1, cumulative_dy]])
+            frame = cv2.warpAffine(texture, M, (300, 300))
+            pos = tracker.update(frame)
+        expected_x = 150 + cumulative_dx
+        expected_y = 150 + cumulative_dy
+        assert abs(pos[0] - expected_x) <= 5
+        assert abs(pos[1] - expected_y) <= 5
 
 
 class TestTrackingResultCompat:
