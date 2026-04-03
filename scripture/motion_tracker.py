@@ -266,8 +266,7 @@ def track_motion(video_path: str, axis: AxisDefinition,
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
         last, _ = track_base_in_frame(gray, base_template, last, search_radius=60)
         base_coords_crop[i] = last
-        if on_frame is not None:
-            on_frame(start_frame + i)
+        # No on_frame here — backward progress would confuse the progress bar
 
     # Forward: ref_local+1 to end (sequential read — fast)
     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame + ref_local + 1)
