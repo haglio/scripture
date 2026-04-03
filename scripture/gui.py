@@ -27,7 +27,7 @@ from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
 from shared_ui.spacing import MARGIN_STANDARD, GAP_SMALL, GAP_MEDIUM
 
 from scripture.scene import Scene, scenes_from_splits
-from scripture.motion_tracker import AxisDefinition, track_motion
+from scripture.motion_tracker import AxisDefinition, TrackingResult, track_motion
 from scripture.stroke_extract import extract_strokes
 from scripture.funscript import build_funscript, save_funscript
 from scripture.project import save_project, load_project
@@ -101,7 +101,7 @@ _AXIS_COLOR = QColor(255, 220, 80)
 
 class ProcessWorker(QThread):
     frame_progress = pyqtSignal(int)
-    scene_done = pyqtSignal(int, list)
+    scene_done = pyqtSignal(int, list, object)  # idx, actions, TrackingResult
     finished = pyqtSignal()
     error = pyqtSignal(int, str)
 
@@ -125,7 +125,7 @@ class ProcessWorker(QThread):
                     on_frame=lambda f, _o=offset, _s=scene: self.frame_progress.emit(_o + f - _s.start_frame),
                 )
                 actions = extract_strokes(result.positions, result.timestamps_ms, fps=self.fps)
-                self.scene_done.emit(idx, actions)
+                self.scene_done.emit(idx, actions, result)
             except Exception as e:
                 self.error.emit(idx, str(e))
         self.finished.emit()
@@ -264,6 +264,7 @@ class FrameCanvas(QWidget):
         self._pending_base = None
         self._zoom = 1.0
         self._dragging_point = None  # "tip", "base", or None
+        self._overlay = None  # dict with axis, contact_pt, pos, is_action
 
     @property
     def zoom(self):
@@ -294,8 +295,16 @@ class FrameCanvas(QWidget):
         self._pending_base = base
         self.update()
 
+    def set_overlay(self, overlay):
+        """Set debug overlay data (or None to clear).
+
+        overlay dict keys: axis, contact_pt, pos (0-100), is_action (bool).
+        """
+        self._overlay = overlay
+        self.update()
+
     def clear(self):
-        self._pixmap = self._axis = self._pending_tip = self._pending_base = None
+        self._pixmap = self._axis = self._pending_tip = self._pending_base = self._overlay = None
         self.update()
 
     def _display_scale(self):
@@ -351,6 +360,8 @@ class FrameCanvas(QWidget):
         p.drawRect(ox - 1, oy - 1, dw + 1, dh + 1)
         p.drawPixmap(ox, oy, self._pixmap.scaled(dw, dh, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
+        if self._overlay:
+            self._draw_overlay(p)
         if self._axis:
             self._draw_axis(p, self._axis)
         else:
@@ -376,6 +387,42 @@ class FrameCanvas(QWidget):
         p.drawLine(tx, ty, bx, by)
         self._draw_point(p, axis.tip, _TIP_COLOR, "TIP")
         self._draw_point(p, axis.base, _BASE_COLOR, "BASE")
+
+    def _draw_overlay(self, p):
+        """Draw semi-transparent debug overlay: axis, tip/base, contact, pos."""
+        ov = self._overlay
+        axis = ov["axis"]
+        tx, ty = self._frame_to_canvas(*axis.tip)
+        bx, by = self._frame_to_canvas(*axis.base)
+
+        # Faint axis line
+        faint_axis = QColor(_AXIS_COLOR)
+        faint_axis.setAlpha(80)
+        p.setPen(QPen(faint_axis, 1))
+        p.drawLine(tx, ty, bx, by)
+
+        # Small semi-transparent tip/base dots (no labels)
+        for pt, color in [(axis.tip, _TIP_COLOR), (axis.base, _BASE_COLOR)]:
+            cx, cy = self._frame_to_canvas(*pt)
+            faint = QColor(color)
+            faint.setAlpha(100)
+            p.setPen(QPen(Qt.GlobalColor.transparent))
+            p.setBrush(QBrush(faint))
+            p.drawEllipse(cx - 3, cy - 3, 6, 6)
+
+        # Contact point (green, solid)
+        ct = ov["contact_pt"]
+        ccx, ccy = self._frame_to_canvas(*ct)
+        contact_color = QColor(80, 255, 80)
+        p.setPen(QPen(Qt.GlobalColor.white, 1))
+        p.setBrush(QBrush(contact_color))
+        p.drawEllipse(ccx - 4, ccy - 4, 8, 8)
+
+        # Pos value on action frames
+        if ov["is_action"]:
+            p.setPen(QPen(contact_color))
+            p.setFont(make_font(size=SIZE_BODY, bold=True))
+            p.drawText(ccx + 10, ccy + 5, str(ov["pos"]))
 
     def mousePressEvent(self, event):
         if not self._frame_w:
@@ -432,6 +479,7 @@ class App(QMainWindow):
         self.scenes = []
         self.scene_axes = {}
         self.scene_actions = {}
+        self.scene_positions = {}  # idx -> TrackingResult (for debug overlay)
         self.current_frame_idx = 0
         self.placing = None
         self.pending_tip = self.pending_base = None
@@ -600,16 +648,20 @@ class App(QMainWindow):
 
     def _rebuild_scenes(self, clear_annotations=True):
         old_axes, old_actions = dict(self.scene_axes), dict(self.scene_actions)
+        old_positions = dict(self.scene_positions)
         self.scenes = scenes_from_splits(self.splits, self.total_frames)
         if clear_annotations:
             self.scene_axes.clear()
             self.scene_actions.clear()
+            self.scene_positions.clear()
             for _oi, axis in old_axes.items():
                 for ni, sc in enumerate(self.scenes):
                     if sc.start_frame <= axis.frame < sc.end_frame:
                         self.scene_axes[ni] = axis
                         if _oi in old_actions:
                             self.scene_actions[ni] = old_actions[_oi]
+                        if _oi in old_positions:
+                            self.scene_positions[ni] = old_positions[_oi]
                         break
 
     def _update_timeline(self):
@@ -642,6 +694,7 @@ class App(QMainWindow):
         self.scenes = [Scene(0, self.total_frames)]
         self.scene_axes.clear()
         self.scene_actions.clear()
+        self.scene_positions.clear()
         self.current_frame_idx = 0
         self._project_path = None
         self._mark_dirty()
@@ -658,6 +711,41 @@ class App(QMainWindow):
         self.frame_h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     # ── Frame display ──────────────────────────────────────────────
+
+    def _build_overlay(self, scene_idx, frame_idx):
+        """Build debug overlay dict for a processed scene's frame."""
+        axis = self.scene_axes[scene_idx]
+        result = self.scene_positions[scene_idx]
+        scene = self.scenes[scene_idx]
+        local_idx = frame_idx - scene.start_frame
+        if local_idx < 0 or local_idx >= len(result.positions):
+            return None
+
+        pos_frac = float(result.positions[local_idx])  # 0.0=base, 1.0=tip
+        pos_100 = int(round(pos_frac * 100))
+
+        # Contact point: lerp between base (pos=0) and tip (pos=1)
+        tip = np.array(axis.tip, dtype=np.float64)
+        base = np.array(axis.base, dtype=np.float64)
+        contact = base + pos_frac * (tip - base)
+        contact_pt = (int(round(contact[0])), int(round(contact[1])))
+
+        # Check if this frame is an action frame
+        frame_ms = result.timestamps_ms[local_idx]
+        is_action = False
+        actions = self.scene_actions.get(scene_idx, [])
+        for a in actions:
+            if abs(a["at"] - frame_ms) < (500 / self.fps):  # within half a frame
+                pos_100 = a["pos"]
+                is_action = True
+                break
+
+        return {
+            "axis": axis,
+            "contact_pt": contact_pt,
+            "pos": pos_100,
+            "is_action": is_action,
+        }
 
     def _show_frame(self, frame_idx):
         if not self.cap:
@@ -678,6 +766,12 @@ class App(QMainWindow):
             self.canvas.set_axis(None)
             self.canvas.set_pending_tip(self.pending_tip)
             self.canvas.set_pending_base(self.pending_base)
+
+        # Debug overlay for processed scenes
+        if idx in self.scene_positions and idx in self.scene_axes:
+            self.canvas.set_overlay(self._build_overlay(idx, frame_idx))
+        else:
+            self.canvas.set_overlay(None)
 
         self._update_info()
         self._update_timeline()
@@ -800,6 +894,7 @@ class App(QMainWindow):
                 self.pending_tip = old.tip
             if idx in self.scene_actions:
                 del self.scene_actions[idx]
+                self.scene_positions.pop(idx, None)
 
         if which == "tip":
             self.pending_tip = (fx, fy)
@@ -826,6 +921,7 @@ class App(QMainWindow):
                 self.pending_tip = old.tip
             if idx in self.scene_actions:
                 del self.scene_actions[idx]
+                self.scene_positions.pop(idx, None)
         if which == "tip":
             self.pending_tip = None
         else:
@@ -854,6 +950,7 @@ class App(QMainWindow):
                 self.pending_tip = old.tip
             if idx in self.scene_actions:
                 del self.scene_actions[idx]
+                self.scene_positions.pop(idx, None)
 
         if self.placing == "tip":
             self.pending_tip = (fx, fy)
@@ -880,6 +977,7 @@ class App(QMainWindow):
                 self.scene_axes[idx] = AxisDefinition(tip=old.tip, base=(fx, fy), frame=old.frame)
             if idx in self.scene_actions:
                 del self.scene_actions[idx]
+                self.scene_positions.pop(idx, None)
             self._mark_dirty()
             self.canvas.set_axis(self.scene_axes[idx])
             self._update_timeline()
@@ -934,8 +1032,9 @@ class App(QMainWindow):
                 f"{self._fmt_duration(el)} elapsed, ~{self._fmt_duration(eta)} left"
             )
 
-    def _on_scene_done(self, idx, actions):
+    def _on_scene_done(self, idx, actions, tracking_result):
         self.scene_actions[idx] = actions
+        self.scene_positions[idx] = tracking_result
         self._mark_dirty()
         self._update_timeline()
 
@@ -993,6 +1092,7 @@ class App(QMainWindow):
             idx = self._current_scene_idx()
         if idx in self.scene_actions:
             del self.scene_actions[idx]
+            self.scene_positions.pop(idx, None)
             self._mark_dirty()
             self._update_timeline()
             self._set_status(f"Discarded actions for scene {idx+1}.")
@@ -1063,6 +1163,7 @@ class App(QMainWindow):
         for k, v in state.get("axes", {}).items():
             self.scene_axes[int(k)] = AxisDefinition(tip=tuple(v["tip"]), base=tuple(v["base"]), frame=v.get("frame", 0))
         self.scene_actions.clear()
+        self.scene_positions.clear()
         for k, v in state.get("actions", {}).items():
             self.scene_actions[int(k)] = v
 
