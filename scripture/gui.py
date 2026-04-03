@@ -6,17 +6,22 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QRect
-from PyQt6.QtGui import QIcon, QImage, QPixmap, QPainter, QPen, QBrush, QColor, QShortcut, QKeySequence
+import qtawesome as qta
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import (
+    QAction, QIcon, QImage, QPixmap, QPainter, QPen, QBrush, QColor,
+    QShortcut, QKeySequence, QPolygonF, QWheelEvent,
+)
+from PyQt6.QtCore import QPointF
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QLabel, QPushButton, QSlider, QFileDialog, QMessageBox, QProgressBar,
+    QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QToolBar,
+    QLabel, QPushButton, QFileDialog, QMessageBox, QProgressBar, QSizePolicy,
 )
 
 from shared_ui.colors import (
     BG_PRIMARY, BG_SECONDARY, BG_TERTIARY, BG_BUTTON,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-    BLUE, BORDER_SUBTLE,
+    BLUE, GREEN, RED, BORDER_SUBTLE,
 )
 from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
 from shared_ui.spacing import MARGIN_STANDARD, GAP_SMALL, GAP_MEDIUM
@@ -27,6 +32,7 @@ from scripture.stroke_extract import extract_strokes
 from scripture.funscript import build_funscript, save_funscript
 from scripture.project import save_project, load_project
 
+_ICON_COLOR = "#ddd"
 
 _BTN_STYLE = f"""
     QPushButton {{
@@ -35,6 +41,7 @@ _BTN_STYLE = f"""
         border: 1px solid {BORDER_SUBTLE.name()};
         padding: 4px 10px;
         border-radius: 3px;
+        font-size: {SIZE_SMALL}pt;
     }}
     QPushButton:hover {{
         background: {BG_TERTIARY.name()};
@@ -52,23 +59,18 @@ _BTN_ACTIVE_STYLE = f"""
         border: 1px solid {BLUE.name()};
         padding: 4px 10px;
         border-radius: 3px;
-    }}
-    QPushButton:hover {{
-        background: {BLUE.name()};
+        font-size: {SIZE_SMALL}pt;
     }}
 """
 
-_SLIDER_STYLE = f"""
-    QSlider::groove:horizontal {{
-        background: {BG_TERTIARY.name()};
-        height: 6px;
+_BTN_DELETE_STYLE = f"""
+    QPushButton {{
+        color: {TEXT_PRIMARY.name()};
+        background: {RED.name()};
+        border: 1px solid {RED.name()};
+        padding: 4px 10px;
         border-radius: 3px;
-    }}
-    QSlider::handle:horizontal {{
-        background: {BLUE.name()};
-        width: 14px;
-        margin: -4px 0;
-        border-radius: 7px;
+        font-size: {SIZE_SMALL}pt;
     }}
 """
 
@@ -87,18 +89,17 @@ _PROGRESS_STYLE = f"""
     }}
 """
 
-# Timeline scene state colors
-_SCENE_EMPTY = QColor(35, 35, 35)       # no annotation
-_SCENE_ANNOTATED = QColor(55, 65, 80)   # has tip+base
-_SCENE_PROCESSED = QColor(70, 100, 70)  # has been processed
-_SCENE_BORDER = QColor(80, 80, 80)
+_SCENE_EMPTY = QColor(35, 35, 35)
+_SCENE_ANNOTATED = QColor(55, 65, 80)
+_SCENE_PROCESSED = QColor(70, 100, 70)
+_SCENE_BORDER = QColor(100, 100, 100)
 _REP_FRAME_COLOR = QColor(255, 220, 80)
+_HANDLE_HEIGHT = 8
 
 
 class ProcessWorker(QThread):
-    """Runs optical flow processing off the main thread."""
     frame_progress = pyqtSignal(int)
-    scene_done = pyqtSignal(int, list)  # scene_idx, actions
+    scene_done = pyqtSignal(int, list)
     finished = pyqtSignal()
     error = pyqtSignal(int, str)
 
@@ -130,83 +131,118 @@ class ProcessWorker(QThread):
 
 
 class TimelineWidget(QWidget):
-    """Timeline bar showing scene breaks, annotation state, and representative frames."""
+    """Timeline bar with scene breaks, state coloring, handles, and drag support."""
 
-    clicked = pyqtSignal(int)  # frame index
+    frame_changed = pyqtSignal(int)
 
     def __init__(self):
         super().__init__()
-        self.setFixedHeight(28)
+        self.setFixedHeight(28 + _HANDLE_HEIGHT)
         self.setMinimumWidth(100)
         self.scenes: list[Scene] = []
         self.scene_axes: dict[int, AxisDefinition] = {}
         self.scene_actions: dict[int, list[dict]] = {}
+        self.splits: list[int] = []
         self.total_frames: int = 0
         self.current_frame: int = 0
+        self._dragging = False
 
-    def set_state(self, scenes, scene_axes, scene_actions, total_frames, current_frame):
+    def set_state(self, scenes, scene_axes, scene_actions, splits, total_frames, current_frame):
         self.scenes = scenes
         self.scene_axes = scene_axes
         self.scene_actions = scene_actions
+        self.splits = splits
         self.total_frames = total_frames
         self.current_frame = current_frame
         self.update()
+
+    def _frame_to_x(self, frame: int) -> int:
+        if self.total_frames == 0:
+            return 0
+        return int(frame / self.total_frames * self.width())
+
+    def _x_to_frame(self, x: int) -> int:
+        if self.width() == 0:
+            return 0
+        frame = int(x / self.width() * self.total_frames)
+        return max(0, min(frame, self.total_frames - 1))
 
     def paintEvent(self, event):
         if self.total_frames == 0:
             return
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        w, h = self.width(), self.height()
+        w, h_total = self.width(), self.height()
+        bar_y = _HANDLE_HEIGHT
+        bar_h = h_total - _HANDLE_HEIGHT
 
+        # Scene blocks
         for i, scene in enumerate(self.scenes):
-            x1 = int(scene.start_frame / self.total_frames * w)
-            x2 = int(scene.end_frame / self.total_frames * w)
+            x1 = self._frame_to_x(scene.start_frame)
+            x2 = self._frame_to_x(scene.end_frame)
 
-            # Scene state color
             if i in self.scene_actions:
                 color = _SCENE_PROCESSED
             elif i in self.scene_axes:
                 color = _SCENE_ANNOTATED
             else:
                 color = _SCENE_EMPTY
+            p.fillRect(x1, bar_y, x2 - x1, bar_h, color)
 
-            p.fillRect(x1, 0, x2 - x1, h, color)
+        # Scene break lines + handles
+        for split in self.splits:
+            sx = self._frame_to_x(split)
+            p.setPen(QPen(_SCENE_BORDER, 3))
+            p.drawLine(sx, bar_y, sx, bar_y + bar_h)
+            # Handle triangle above
+            self._draw_handle(p, sx, _SCENE_BORDER)
 
-            # Scene border (left edge)
-            if i > 0:
-                p.setPen(QPen(_SCENE_BORDER, 1))
-                p.drawLine(x1, 0, x1, h)
-
-            # Representative frame marker
-            if i in self.scene_axes:
-                rep = self.scene_axes[i].frame
-                rx = int(rep / self.total_frames * w)
-                p.setPen(QPen(_REP_FRAME_COLOR, 2))
-                p.drawLine(rx, 0, rx, h)
+        # Representative frame markers + handles
+        for i, axis in self.scene_axes.items():
+            rx = self._frame_to_x(axis.frame)
+            p.setPen(QPen(_REP_FRAME_COLOR, 2))
+            p.drawLine(rx, bar_y, rx, bar_y + bar_h)
+            self._draw_handle(p, rx, _REP_FRAME_COLOR)
 
         # Current frame cursor
-        cx = int(self.current_frame / self.total_frames * w)
+        cx = self._frame_to_x(self.current_frame)
         p.setPen(QPen(Qt.GlobalColor.white, 2))
-        p.drawLine(cx, 0, cx, h)
+        p.drawLine(cx, bar_y, cx, bar_y + bar_h)
 
-        # Outer border
-        p.setPen(QPen(_SCENE_BORDER))
-        p.drawRect(0, 0, w - 1, h - 1)
+        # Border
+        p.setPen(QPen(BORDER_SUBTLE))
+        p.drawRect(0, bar_y, w - 1, bar_h - 1)
 
         p.end()
 
+    def _draw_handle(self, p: QPainter, x: int, color: QColor):
+        """Draw a small downward-pointing triangle handle above the timeline."""
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(color))
+        tri = QPolygonF([
+            QPointF(x - 4, 0),
+            QPointF(x + 4, 0),
+            QPointF(x, _HANDLE_HEIGHT),
+        ])
+        p.drawPolygon(tri)
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.total_frames > 0:
-            frame = int(event.position().x() / self.width() * self.total_frames)
-            frame = max(0, min(frame, self.total_frames - 1))
-            self.clicked.emit(frame)
+            self._dragging = True
+            self.frame_changed.emit(self._x_to_frame(int(event.position().x())))
+
+    def mouseMoveEvent(self, event):
+        if self._dragging and self.total_frames > 0:
+            self.frame_changed.emit(self._x_to_frame(int(event.position().x())))
+
+    def mouseReleaseEvent(self, event):
+        self._dragging = False
 
 
 class FrameCanvas(QWidget):
-    """Displays a video frame scaled to 1/3 canvas, accepts clicks for axis annotation."""
+    """Displays a video frame, accepts clicks for axis annotation, scroll wheel zoom."""
 
-    clicked = pyqtSignal(int, int)  # frame-space x, y
+    clicked = pyqtSignal(int, int)
+    zoom_changed = pyqtSignal(float)
 
     def __init__(self):
         super().__init__()
@@ -217,6 +253,16 @@ class FrameCanvas(QWidget):
         self._axis: AxisDefinition | None = None
         self._pending_tip: tuple[int, int] | None = None
         self._pending_base: tuple[int, int] | None = None
+        self._zoom: float = 1.0  # 1.0 = fit to canvas
+
+    @property
+    def zoom(self) -> float:
+        return self._zoom
+
+    @zoom.setter
+    def zoom(self, value: float):
+        self._zoom = max(0.1, min(value, 3.0))
+        self.update()
 
     def set_frame(self, frame_bgr: np.ndarray):
         h, w = frame_bgr.shape[:2]
@@ -251,10 +297,8 @@ class FrameCanvas(QWidget):
     def _display_scale(self) -> float:
         if self._frame_w == 0 or self._frame_h == 0:
             return 1.0
-        return min(
-            self.width() / (3 * self._frame_w),
-            self.height() / (3 * self._frame_h),
-        )
+        fit = min(self.width() / self._frame_w, self.height() / self._frame_h)
+        return fit * self._zoom
 
     def _frame_to_canvas(self, fx: int, fy: int) -> tuple[int, int]:
         scale = self._display_scale()
@@ -333,6 +377,14 @@ class FrameCanvas(QWidget):
             fx, fy = self._canvas_to_frame(int(event.position().x()), int(event.position().y()))
             self.clicked.emit(fx, fy)
 
+    def wheelEvent(self, event: QWheelEvent):
+        delta = event.angleDelta().y()
+        if delta > 0:
+            self.zoom *= 1.15
+        elif delta < 0:
+            self.zoom /= 1.15
+        self.zoom_changed.emit(self._zoom)
+
 
 class App(QMainWindow):
 
@@ -356,6 +408,7 @@ class App(QMainWindow):
         self.scenes: list[Scene] = []
         self.scene_axes: dict[int, AxisDefinition] = {}
         self.scene_actions: dict[int, list[dict]] = {}
+        self.scene_zoom: dict[int, float] = {}
 
         self.current_frame_idx: int = 0
         self.placing: str | None = None  # None, "tip", or "base"
@@ -363,10 +416,17 @@ class App(QMainWindow):
         self.pending_base: tuple[int, int] | None = None
 
         self._worker: ProcessWorker | None = None
-        self._project_path: str | None = None  # for Save overwrite
+        self._project_path: str | None = None
+        self._dirty: bool = False
 
         self._build_ui()
         self._build_shortcuts()
+
+    def _mark_dirty(self):
+        self._dirty = True
+
+    def _mark_clean(self):
+        self._dirty = False
 
     def _build_shortcuts(self):
         QShortcut(QKeySequence("B"), self, self._toggle_base)
@@ -379,47 +439,36 @@ class App(QMainWindow):
         root.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
         root.setSpacing(GAP_MEDIUM)
 
-        # --- Row 1: file + scene splitting ---
-        row1 = QHBoxLayout()
-        row1.setSpacing(GAP_SMALL)
+        # --- Row 1: File I/O toolbar (Evolver style) ---
+        file_toolbar = QToolBar()
+        file_toolbar.setMovable(False)
+        file_toolbar.setFloatable(False)
+        file_toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.addToolBar(file_toolbar)
 
-        self.btn_open = QPushButton("Open Video")
-        self.btn_open.setStyleSheet(_BTN_STYLE)
-        self.btn_open.clicked.connect(self._open_video)
-        row1.addWidget(self.btn_open)
+        self.act_new = QAction(qta.icon("fa5s.folder-open", color=_ICON_COLOR), "New", self)
+        self.act_new.triggered.connect(self._open_video)
+        file_toolbar.addAction(self.act_new)
 
-        self.btn_save = QPushButton("Save")
-        self.btn_save.setStyleSheet(_BTN_STYLE)
-        self.btn_save.clicked.connect(self._save_project)
-        row1.addWidget(self.btn_save)
+        self.act_save = QAction(qta.icon("fa5s.save", color=_ICON_COLOR), "Save", self)
+        self.act_save.triggered.connect(self._save_project)
+        file_toolbar.addAction(self.act_save)
 
-        self.btn_save_as = QPushButton("Save As")
-        self.btn_save_as.setStyleSheet(_BTN_STYLE)
-        self.btn_save_as.clicked.connect(self._save_project_as)
-        row1.addWidget(self.btn_save_as)
+        self.act_save_as = QAction(qta.icon("fa5s.copy", color=_ICON_COLOR), "Save As", self)
+        self.act_save_as.triggered.connect(self._save_project_as)
+        file_toolbar.addAction(self.act_save_as)
 
-        self.btn_load = QPushButton("Load")
-        self.btn_load.setStyleSheet(_BTN_STYLE)
-        self.btn_load.clicked.connect(self._load_project)
-        row1.addWidget(self.btn_load)
+        self.act_load = QAction(qta.icon("fa5s.folder", color=_ICON_COLOR), "Load", self)
+        self.act_load.triggered.connect(self._load_project)
+        file_toolbar.addAction(self.act_load)
 
-        row1.addSpacing(12)
+        file_toolbar.addSeparator()
 
-        self.btn_split = QPushButton("Split Here")
-        self.btn_split.setStyleSheet(_BTN_STYLE)
-        self.btn_split.clicked.connect(self._split_here)
-        row1.addWidget(self.btn_split)
+        self.act_export = QAction(qta.icon("fa5s.file-export", color=_ICON_COLOR), "Export", self)
+        self.act_export.triggered.connect(self._export)
+        file_toolbar.addAction(self.act_export)
 
-        self.btn_merge = QPushButton("Merge \u2190")
-        self.btn_merge.setStyleSheet(_BTN_STYLE)
-        self.btn_merge.setToolTip("Remove split at start of current scene (merge with previous)")
-        self.btn_merge.clicked.connect(self._merge_left)
-        row1.addWidget(self.btn_merge)
-
-        row1.addStretch()
-        root.addLayout(row1)
-
-        # --- Row 2: nav + annotation + processing ---
+        # --- Row 2: Intra-session controls ---
         row2 = QHBoxLayout()
         row2.setSpacing(GAP_SMALL)
 
@@ -443,23 +492,24 @@ class App(QMainWindow):
 
         row2.addSpacing(12)
 
-        # Tip/Base toggle buttons
         self.btn_tip = QPushButton("Tip (T)")
-        self.btn_tip.setFixedWidth(80)
+        self.btn_tip.setFixedWidth(90)
         self.btn_tip.setStyleSheet(_BTN_STYLE)
         self.btn_tip.clicked.connect(self._toggle_tip)
         row2.addWidget(self.btn_tip)
 
         self.btn_base = QPushButton("Base (B)")
-        self.btn_base.setFixedWidth(80)
+        self.btn_base.setFixedWidth(90)
         self.btn_base.setStyleSheet(_BTN_STYLE)
         self.btn_base.clicked.connect(self._toggle_base)
         row2.addWidget(self.btn_base)
 
-        self.btn_clear_axis = QPushButton("Clear Axis")
-        self.btn_clear_axis.setStyleSheet(_BTN_STYLE)
-        self.btn_clear_axis.clicked.connect(self._clear_axis)
-        row2.addWidget(self.btn_clear_axis)
+        row2.addSpacing(12)
+
+        self.btn_split = QPushButton("Split Here")
+        self.btn_split.setStyleSheet(_BTN_STYLE)
+        self.btn_split.clicked.connect(self._split_or_unsplit)
+        row2.addWidget(self.btn_split)
 
         row2.addStretch()
 
@@ -479,11 +529,6 @@ class App(QMainWindow):
         self.btn_process_all.clicked.connect(self._process_all)
         row2.addWidget(self.btn_process_all)
 
-        self.btn_export = QPushButton("Export .funscript")
-        self.btn_export.setStyleSheet(_BTN_STYLE)
-        self.btn_export.clicked.connect(self._export)
-        row2.addWidget(self.btn_export)
-
         root.addLayout(row2)
 
         # --- Progress bar ---
@@ -495,36 +540,25 @@ class App(QMainWindow):
         # --- Frame canvas ---
         self.canvas = FrameCanvas()
         self.canvas.clicked.connect(self._on_canvas_click)
+        self.canvas.zoom_changed.connect(self._on_zoom_changed)
         root.addWidget(self.canvas, stretch=1)
 
-        # --- Timeline ---
+        # --- Timeline + frame info ---
+        timeline_row = QHBoxLayout()
+        timeline_row.setSpacing(GAP_SMALL)
+
         self.timeline = TimelineWidget()
-        self.timeline.clicked.connect(self._on_timeline_click)
-        root.addWidget(self.timeline)
-
-        # --- Scrubber row ---
-        scrub_row = QHBoxLayout()
-        scrub_row.setSpacing(GAP_SMALL)
-
-        scrub_label = QLabel("Frame:")
-        scrub_label.setFont(make_font(size=SIZE_SMALL))
-        scrub_label.setStyleSheet(f"color: {TEXT_SECONDARY.name()};")
-        scrub_row.addWidget(scrub_label)
-
-        self.frame_scrubber = QSlider(Qt.Orientation.Horizontal)
-        self.frame_scrubber.setStyleSheet(_SLIDER_STYLE)
-        self.frame_scrubber.setMinimum(0)
-        self.frame_scrubber.setMaximum(10000)
-        self.frame_scrubber.valueChanged.connect(self._on_scrub)
-        scrub_row.addWidget(self.frame_scrubber, stretch=1)
+        self.timeline.frame_changed.connect(self._on_timeline_frame)
+        timeline_row.addWidget(self.timeline, stretch=1)
 
         self.frame_info_label = QLabel("")
-        self.frame_info_label.setFixedWidth(150)
+        self.frame_info_label.setFixedWidth(220)
         self.frame_info_label.setFont(make_font(size=SIZE_SMALL))
         self.frame_info_label.setStyleSheet(f"color: {TEXT_SECONDARY.name()};")
-        scrub_row.addWidget(self.frame_info_label)
+        self.frame_info_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        timeline_row.addWidget(self.frame_info_label)
 
-        root.addLayout(scrub_row)
+        root.addLayout(timeline_row)
 
         # --- Status bar ---
         self.status = QLabel("Open a video to begin.")
@@ -561,33 +595,50 @@ class App(QMainWindow):
     def _update_timeline(self):
         self.timeline.set_state(
             self.scenes, self.scene_axes, self.scene_actions,
-            self.total_frames, self.current_frame_idx,
+            self.splits, self.total_frames, self.current_frame_idx,
         )
 
     def _update_annotation_buttons(self):
-        """Update tip/base button styles based on current placing mode."""
         idx = self._current_scene_idx()
         has_axis = idx in self.scene_axes
+        has_tip = has_axis or self.pending_tip is not None
+        has_base = has_axis or self.pending_base is not None
 
+        # Tip button
         if self.placing == "tip":
+            self.btn_tip.setText("Cancel")
             self.btn_tip.setStyleSheet(_BTN_ACTIVE_STYLE)
-            self.btn_tip.setText("Cancel Tip")
-        elif has_axis or self.pending_tip is not None:
-            self.btn_tip.setStyleSheet(_BTN_STYLE)
-            self.btn_tip.setText("Move Tip (T)")
+        elif has_tip:
+            self.btn_tip.setText("\u2717 Tip")
+            self.btn_tip.setStyleSheet(_BTN_DELETE_STYLE)
         else:
-            self.btn_tip.setStyleSheet(_BTN_STYLE)
             self.btn_tip.setText("Tip (T)")
+            self.btn_tip.setStyleSheet(_BTN_STYLE)
 
+        # Base button
         if self.placing == "base":
+            self.btn_base.setText("Cancel")
             self.btn_base.setStyleSheet(_BTN_ACTIVE_STYLE)
-            self.btn_base.setText("Cancel Base")
-        elif has_axis or self.pending_base is not None:
-            self.btn_base.setStyleSheet(_BTN_STYLE)
-            self.btn_base.setText("Move Base (B)")
+        elif has_base:
+            self.btn_base.setText("\u2717 Base")
+            self.btn_base.setStyleSheet(_BTN_DELETE_STYLE)
         else:
-            self.btn_base.setStyleSheet(_BTN_STYLE)
             self.btn_base.setText("Base (B)")
+            self.btn_base.setStyleSheet(_BTN_STYLE)
+
+        # Split/Unsplit button
+        on_split = self.current_frame_idx in self.splits
+        if on_split:
+            self.btn_split.setText("Unsplit")
+        else:
+            self.btn_split.setText("Split Here")
+
+    def _update_frame_info(self):
+        total_time = self._format_time(self.total_frames)
+        cur_time = self._format_time(self.current_frame_idx)
+        self.frame_info_label.setText(
+            f"{self.current_frame_idx} / {self.total_frames} \u2014 {cur_time} / {total_time}"
+        )
 
     # ── Video loading ──────────────────────────────────────────────────
 
@@ -612,8 +663,10 @@ class App(QMainWindow):
         self.scenes = [Scene(0, self.total_frames)]
         self.scene_axes.clear()
         self.scene_actions.clear()
+        self.scene_zoom.clear()
         self.current_frame_idx = 0
         self._project_path = None
+        self._mark_dirty()
 
         duration = self._format_time(self.total_frames)
         self._set_status(
@@ -621,8 +674,6 @@ class App(QMainWindow):
             f"{self.fps:.1f} fps \u2014 {duration} \u2014 {self.frame_w}x{self.frame_h}"
         )
         self._show_frame(0)
-        self._update_scene_label()
-        self._update_timeline()
 
     # ── Frame display ──────────────────────────────────────────────────
 
@@ -635,21 +686,24 @@ class App(QMainWindow):
             return
 
         self.current_frame_idx = frame_idx
+        idx = self._current_scene_idx()
+
+        # Restore per-scene zoom
+        self.canvas.zoom = self.scene_zoom.get(idx, 1.0)
+
         self.canvas._frame_w = self.frame_w
         self.canvas._frame_h = self.frame_h
         self.canvas.set_frame(frame)
 
-        idx = self._current_scene_idx()
         # Only show axis on the representative frame
         if idx in self.scene_axes and self.scene_axes[idx].frame == frame_idx:
             self.canvas.set_axis(self.scene_axes[idx])
         else:
             self.canvas.set_axis(None)
-            # Show pending points only if they were placed on this frame
-            self.canvas.set_pending_tip(self.pending_tip if self.pending_tip is not None else None)
-            self.canvas.set_pending_base(self.pending_base if self.pending_base is not None else None)
+            self.canvas.set_pending_tip(self.pending_tip)
+            self.canvas.set_pending_base(self.pending_base)
 
-        self.frame_info_label.setText(f"#{frame_idx} / {self._format_time(frame_idx)}")
+        self._update_frame_info()
         self._update_scene_label()
         self._update_timeline()
         self._update_annotation_buttons()
@@ -664,43 +718,40 @@ class App(QMainWindow):
         end_t = self._format_time(scene.end_frame)
         self.scene_label.setText(
             f"Scene {idx + 1}/{len(self.scenes)}  "
-            f"[{start_t} \u2013 {end_t}]  "
-            f"frames {scene.start_frame}\u2013{scene.end_frame}"
+            f"[{start_t} \u2013 {end_t}]"
         )
+
+    def _on_zoom_changed(self, zoom: float):
+        idx = self._current_scene_idx()
+        self.scene_zoom[idx] = zoom
 
     # ── Scene splitting ────────────────────────────────────────────────
 
-    def _split_here(self):
+    def _split_or_unsplit(self):
         if self.total_frames == 0:
             return
         frame = self.current_frame_idx
+
+        if frame in self.splits:
+            # Unsplit
+            self.splits.remove(frame)
+            self._rebuild_scenes()
+            self._cancel_placing()
+            self._mark_dirty()
+            self._show_frame(frame)
+            self._set_status(f"Removed split at frame {frame}. {len(self.scenes)} scenes.")
+            return
+
         if frame <= 0 or frame >= self.total_frames:
             self._set_status("Cannot split at start or end of video.")
-            return
-        if frame in self.splits:
-            self._set_status(f"Split already exists at frame {frame}.")
             return
 
         self.splits.append(frame)
         self._rebuild_scenes()
         self._cancel_placing()
-        self._update_scene_label()
-        self._update_timeline()
+        self._mark_dirty()
+        self._show_frame(frame)
         self._set_status(f"Split at frame {frame} ({self._format_time(frame)}). {len(self.scenes)} scenes.")
-
-    def _merge_left(self):
-        idx = self._current_scene_idx()
-        if idx == 0:
-            self._set_status("First scene \u2014 nothing to merge with.")
-            return
-        split_frame = self.scenes[idx].start_frame
-        if split_frame in self.splits:
-            self.splits.remove(split_frame)
-            self._rebuild_scenes()
-            self._cancel_placing()
-            self._update_scene_label()
-            self._update_timeline()
-            self._set_status(f"Removed split at frame {split_frame}. {len(self.scenes)} scenes.")
 
     # ── Scene navigation ───────────────────────────────────────────────
 
@@ -710,9 +761,6 @@ class App(QMainWindow):
         else:
             target = self.scenes[scene_idx].start_frame
         self._cancel_placing()
-        self.frame_scrubber.blockSignals(True)
-        self.frame_scrubber.setValue(int(target / self.total_frames * 10000))
-        self.frame_scrubber.blockSignals(False)
         self._show_frame(target)
 
     def _prev_scene(self):
@@ -725,17 +773,7 @@ class App(QMainWindow):
         if idx < len(self.scenes) - 1:
             self._navigate_to_scene(idx + 1)
 
-    def _on_scrub(self, value: int):
-        if self.total_frames == 0:
-            return
-        frame_idx = int(value / 10000 * self.total_frames)
-        frame_idx = min(frame_idx, self.total_frames - 1)
-        self._show_frame(frame_idx)
-
-    def _on_timeline_click(self, frame: int):
-        self.frame_scrubber.blockSignals(True)
-        self.frame_scrubber.setValue(int(frame / self.total_frames * 10000))
-        self.frame_scrubber.blockSignals(False)
+    def _on_timeline_frame(self, frame: int):
         self._show_frame(frame)
 
     # ── Axis annotation ────────────────────────────────────────────────
@@ -747,30 +785,47 @@ class App(QMainWindow):
         self._update_annotation_buttons()
 
     def _toggle_tip(self):
+        idx = self._current_scene_idx()
+        has_axis = idx in self.scene_axes
+        has_tip = has_axis or self.pending_tip is not None
+
         if self.placing == "tip":
+            # Cancel placement mode
             self.placing = None
+        elif has_tip and self.placing is None:
+            # Delete tip
+            if has_axis:
+                old = self.scene_axes.pop(idx)
+                self.pending_base = old.base
+                if idx in self.scene_actions:
+                    del self.scene_actions[idx]
+            self.pending_tip = None
+            self._mark_dirty()
+            self._show_frame(self.current_frame_idx)
         else:
+            # Enter tip placement mode
             self.placing = "tip"
         self._update_annotation_buttons()
 
     def _toggle_base(self):
+        idx = self._current_scene_idx()
+        has_axis = idx in self.scene_axes
+        has_base = has_axis or self.pending_base is not None
+
         if self.placing == "base":
             self.placing = None
+        elif has_base and self.placing is None:
+            if has_axis:
+                old = self.scene_axes.pop(idx)
+                self.pending_tip = old.tip
+                if idx in self.scene_actions:
+                    del self.scene_actions[idx]
+            self.pending_base = None
+            self._mark_dirty()
+            self._show_frame(self.current_frame_idx)
         else:
             self.placing = "base"
         self._update_annotation_buttons()
-
-    def _clear_axis(self):
-        idx = self._current_scene_idx()
-        if idx in self.scene_axes:
-            del self.scene_axes[idx]
-        if idx in self.scene_actions:
-            del self.scene_actions[idx]
-        self.pending_tip = None
-        self.pending_base = None
-        self.placing = None
-        self._show_frame(self.current_frame_idx)
-        self._set_status(f"Cleared axis for scene {idx + 1}")
 
     def _on_canvas_click(self, frame_x: int, frame_y: int):
         if not self.scenes or self.placing is None:
@@ -787,13 +842,13 @@ class App(QMainWindow):
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
-            # Moving to new frame — start fresh
-            old_axis = self.scene_axes[idx]
+            old_axis = self.scene_axes.pop(idx)
             if self.placing == "tip":
                 self.pending_base = old_axis.base
             else:
                 self.pending_tip = old_axis.tip
-            del self.scene_axes[idx]
+            if idx in self.scene_actions:
+                del self.scene_actions[idx]
 
         if self.placing == "tip":
             self.pending_tip = (frame_x, frame_y)
@@ -804,7 +859,7 @@ class App(QMainWindow):
             self.placing = None
             self.canvas.set_pending_base(self.pending_base)
 
-        # If both are placed, create the axis
+        # If both placed, create axis
         if self.pending_tip is not None and self.pending_base is not None:
             axis = AxisDefinition(
                 tip=self.pending_tip, base=self.pending_base,
@@ -816,16 +871,14 @@ class App(QMainWindow):
             self.canvas.set_axis(axis)
             self._set_status(f"Axis set for scene {idx + 1}")
 
+        self._mark_dirty()
         self._update_annotation_buttons()
         self._update_timeline()
 
     # ── Processing ─────────────────────────────────────────────────────
 
     def _build_jobs(self, scene_indices: list[int]) -> list[tuple[int, Scene, AxisDefinition]]:
-        return [
-            (idx, self.scenes[idx], self.scene_axes[idx])
-            for idx in scene_indices
-        ]
+        return [(idx, self.scenes[idx], self.scene_axes[idx]) for idx in scene_indices]
 
     @staticmethod
     def _fmt_duration(seconds: float) -> str:
@@ -860,21 +913,16 @@ class App(QMainWindow):
         self.progress_bar.setValue(frames_done)
         elapsed = time.monotonic() - self._process_start_time
         elapsed_str = self._fmt_duration(elapsed)
-
         if frames_done > 0:
             eta = elapsed / frames_done * (self._process_total_frames - frames_done)
-            eta_str = self._fmt_duration(eta)
             self.progress_bar.setFormat(
                 f"{frames_done} / {self._process_total_frames} frames (%p%)  "
-                f"\u2014 {elapsed_str} elapsed, ~{eta_str} remaining"
-            )
-        else:
-            self.progress_bar.setFormat(
-                f"0 / {self._process_total_frames} frames (0%)  \u2014 {elapsed_str} elapsed"
+                f"\u2014 {elapsed_str} elapsed, ~{self._fmt_duration(eta)} remaining"
             )
 
     def _on_scene_done(self, scene_idx: int, actions: list[dict]):
         self.scene_actions[scene_idx] = actions
+        self._mark_dirty()
         self._update_timeline()
 
     def _on_process_error(self, scene_idx: int, msg: str):
@@ -882,18 +930,14 @@ class App(QMainWindow):
 
     def _on_process_finished(self):
         elapsed = time.monotonic() - self._process_start_time
-        elapsed_str = self._fmt_duration(elapsed)
-
         self.progress_bar.setVisible(False)
         self.btn_process.setEnabled(True)
         self.btn_process_all.setEnabled(True)
-
         total_actions = sum(len(a) for a in self.scene_actions.values())
         self._set_status(
             f"Done \u2014 {len(self.scene_actions)} scenes, {total_actions} actions "
-            f"in {elapsed_str}."
+            f"in {self._fmt_duration(elapsed)}."
         )
-        self._update_timeline()
 
     def _process_scene(self):
         idx = self._current_scene_idx()
@@ -913,6 +957,7 @@ class App(QMainWindow):
         idx = self._current_scene_idx()
         if idx in self.scene_actions:
             del self.scene_actions[idx]
+            self._mark_dirty()
             self._update_timeline()
             self._set_status(f"Discarded actions for scene {idx + 1}.")
         else:
@@ -924,14 +969,9 @@ class App(QMainWindow):
         axes_data = {}
         for idx, axis in self.scene_axes.items():
             axes_data[str(idx)] = {
-                "tip": list(axis.tip),
-                "base": list(axis.base),
-                "frame": axis.frame,
+                "tip": list(axis.tip), "base": list(axis.base), "frame": axis.frame,
             }
-        actions_data = {}
-        for idx, actions in self.scene_actions.items():
-            actions_data[str(idx)] = actions
-
+        actions_data = {str(idx): actions for idx, actions in self.scene_actions.items()}
         return {
             "video_path": self.video_path,
             "splits": self.splits,
@@ -942,6 +982,7 @@ class App(QMainWindow):
     def _do_save(self, path: str):
         save_project(path, self._build_state())
         self._project_path = path
+        self._mark_clean()
         self._set_status(f"Saved to {Path(path).name}")
 
     def _save_project(self):
@@ -957,9 +998,10 @@ class App(QMainWindow):
         if self.video_path is None:
             QMessageBox.warning(self, "No video", "Open a video first.")
             return
+        sessions_dir = str(Path(__file__).resolve().parent.parent / "sessions")
         default_name = Path(self.video_path).stem + ".scripture"
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Project As", default_name,
+            self, "Save Project As", str(Path(sessions_dir) / default_name),
             "Scripture project (*.scripture);;All files (*)",
         )
         if not path:
@@ -967,8 +1009,9 @@ class App(QMainWindow):
         self._do_save(path)
 
     def _load_project(self):
+        sessions_dir = str(Path(__file__).resolve().parent.parent / "sessions")
         path, _ = QFileDialog.getOpenFileName(
-            self, "Load Project", "",
+            self, "Load Project", sessions_dir,
             "Scripture project (*.scripture);;All files (*)",
         )
         if not path:
@@ -994,23 +1037,21 @@ class App(QMainWindow):
         self._rebuild_scenes(clear_annotations=False)
 
         self.scene_axes.clear()
-        for idx_str, axis_data in state.get("axes", {}).items():
+        for idx_str, ad in state.get("axes", {}).items():
             self.scene_axes[int(idx_str)] = AxisDefinition(
-                tip=tuple(axis_data["tip"]),
-                base=tuple(axis_data["base"]),
-                frame=axis_data.get("frame", 0),
+                tip=tuple(ad["tip"]), base=tuple(ad["base"]), frame=ad.get("frame", 0),
             )
 
         self.scene_actions.clear()
         for idx_str, actions in state.get("actions", {}).items():
             self.scene_actions[int(idx_str)] = actions
 
+        self.scene_zoom.clear()
         self._project_path = path
+        self._mark_clean()
         self._cancel_placing()
         self.current_frame_idx = 0
         self._show_frame(0)
-        self._update_scene_label()
-        self._update_timeline()
 
         n_axes = len(self.scene_axes)
         n_processed = len(self.scene_actions)
@@ -1043,3 +1084,24 @@ class App(QMainWindow):
 
         save_funscript(funscript, path)
         self._set_status(f"Exported {len(all_actions)} actions to {Path(path).name}")
+
+    # ── Close guard ───────────────────────────────────────────────────
+
+    def closeEvent(self, event):
+        if not self._dirty:
+            event.accept()
+            return
+        reply = QMessageBox.question(
+            self, "Unsaved changes",
+            "You have unsaved changes. Save before closing?",
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel,
+        )
+        if reply == QMessageBox.StandardButton.Save:
+            self._save_project()
+            event.accept()
+        elif reply == QMessageBox.StandardButton.Discard:
+            event.accept()
+        else:
+            event.ignore()
