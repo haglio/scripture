@@ -208,7 +208,8 @@ class TimelineWidget(QWidget):
         p.setPen(QPen(Qt.GlobalColor.white, 2))
         p.drawLine(cx, bar_y, cx, bar_y + bar_h)
 
-        # Border
+        # Border (reset brush to avoid fill leak from _draw_handle)
+        p.setBrush(Qt.BrushStyle.NoBrush)
         p.setPen(QPen(BORDER_SUBTLE))
         p.drawRect(0, bar_y, w - 1, bar_h - 1)
 
@@ -225,10 +226,36 @@ class TimelineWidget(QWidget):
         ])
         p.drawPolygon(tri)
 
+    def _nearest_handle_frame(self, x: int, y: int) -> int | None:
+        """If click is in the handle zone, return the nearest handle's frame."""
+        if y > _HANDLE_HEIGHT:
+            return None
+        # Collect all handle frames with their x positions
+        handles: list[tuple[int, int]] = []  # (pixel_x, frame)
+        for split in self.splits:
+            handles.append((self._frame_to_x(split), split))
+        for _i, axis in self.scene_axes.items():
+            handles.append((self._frame_to_x(axis.frame), axis.frame))
+        # Find nearest within 6px
+        best_frame = None
+        best_dist = 7
+        for hx, hf in handles:
+            dist = abs(hx - x)
+            if dist < best_dist:
+                best_dist = dist
+                best_frame = hf
+        return best_frame
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.total_frames > 0:
-            self._dragging = True
-            self.frame_changed.emit(self._x_to_frame(int(event.position().x())))
+            x = int(event.position().x())
+            y = int(event.position().y())
+            snap = self._nearest_handle_frame(x, y)
+            if snap is not None:
+                self.frame_changed.emit(snap)
+            else:
+                self._dragging = True
+                self.frame_changed.emit(self._x_to_frame(x))
 
     def mouseMoveEvent(self, event):
         if self._dragging and self.total_frames > 0:
@@ -242,7 +269,6 @@ class FrameCanvas(QWidget):
     """Displays a video frame, accepts clicks for axis annotation, scroll wheel zoom."""
 
     clicked = pyqtSignal(int, int)
-    zoom_changed = pyqtSignal(float)
 
     def __init__(self):
         super().__init__()
@@ -383,7 +409,6 @@ class FrameCanvas(QWidget):
             self.zoom *= 1.15
         elif delta < 0:
             self.zoom /= 1.15
-        self.zoom_changed.emit(self._zoom)
 
 
 class App(QMainWindow):
@@ -408,8 +433,6 @@ class App(QMainWindow):
         self.scenes: list[Scene] = []
         self.scene_axes: dict[int, AxisDefinition] = {}
         self.scene_actions: dict[int, list[dict]] = {}
-        self.scene_zoom: dict[int, float] = {}
-
         self.current_frame_idx: int = 0
         self.placing: str | None = None  # None, "tip", or "base"
         self.pending_tip: tuple[int, int] | None = None
@@ -431,6 +454,16 @@ class App(QMainWindow):
     def _build_shortcuts(self):
         QShortcut(QKeySequence("B"), self, self._toggle_base)
         QShortcut(QKeySequence("T"), self, self._toggle_tip)
+        QShortcut(QKeySequence(Qt.Key.Key_Left), self, self._frame_back)
+        QShortcut(QKeySequence(Qt.Key.Key_Right), self, self._frame_forward)
+
+    def _frame_back(self):
+        if self.current_frame_idx > 0:
+            self._show_frame(self.current_frame_idx - 1)
+
+    def _frame_forward(self):
+        if self.current_frame_idx < self.total_frames - 1:
+            self._show_frame(self.current_frame_idx + 1)
 
     def _build_ui(self):
         central = QWidget()
@@ -540,7 +573,6 @@ class App(QMainWindow):
         # --- Frame canvas ---
         self.canvas = FrameCanvas()
         self.canvas.clicked.connect(self._on_canvas_click)
-        self.canvas.zoom_changed.connect(self._on_zoom_changed)
         root.addWidget(self.canvas, stretch=1)
 
         # --- Timeline + frame info ---
@@ -587,10 +619,24 @@ class App(QMainWindow):
         return max(0, len(self.scenes) - 1)
 
     def _rebuild_scenes(self, clear_annotations: bool = True):
+        """Rebuild scenes from splits. Remaps axes/actions to new indices by
+        matching each axis's representative frame to its new scene."""
+        old_axes = dict(self.scene_axes)
+        old_actions = dict(self.scene_actions)
+
         self.scenes = scenes_from_splits(self.splits, self.total_frames)
+
         if clear_annotations:
+            # Remap by finding which new scene contains each axis's frame
             self.scene_axes.clear()
             self.scene_actions.clear()
+            for old_idx, axis in old_axes.items():
+                for new_idx, scene in enumerate(self.scenes):
+                    if scene.start_frame <= axis.frame < scene.end_frame:
+                        self.scene_axes[new_idx] = axis
+                        if old_idx in old_actions:
+                            self.scene_actions[new_idx] = old_actions[old_idx]
+                        break
 
     def _update_timeline(self):
         self.timeline.set_state(
@@ -663,7 +709,6 @@ class App(QMainWindow):
         self.scenes = [Scene(0, self.total_frames)]
         self.scene_axes.clear()
         self.scene_actions.clear()
-        self.scene_zoom.clear()
         self.current_frame_idx = 0
         self._project_path = None
         self._mark_dirty()
@@ -687,9 +732,6 @@ class App(QMainWindow):
 
         self.current_frame_idx = frame_idx
         idx = self._current_scene_idx()
-
-        # Restore per-scene zoom
-        self.canvas.zoom = self.scene_zoom.get(idx, 1.0)
 
         self.canvas._frame_w = self.frame_w
         self.canvas._frame_h = self.frame_h
@@ -721,10 +763,6 @@ class App(QMainWindow):
             f"[{start_t} \u2013 {end_t}]"
         )
 
-    def _on_zoom_changed(self, zoom: float):
-        idx = self._current_scene_idx()
-        self.scene_zoom[idx] = zoom
-
     # ── Scene splitting ────────────────────────────────────────────────
 
     def _split_or_unsplit(self):
@@ -733,7 +771,19 @@ class App(QMainWindow):
         frame = self.current_frame_idx
 
         if frame in self.splits:
-            # Unsplit
+            # Unsplit — check if both adjacent scenes have axes
+            idx = self._current_scene_idx()
+            left_idx = idx - 1 if idx > 0 and self.scenes[idx].start_frame == frame else idx
+            right_idx = left_idx + 1
+            left_has = left_idx in self.scene_axes
+            right_has = right_idx < len(self.scenes) and right_idx in self.scene_axes
+            if left_has and right_has:
+                QMessageBox.warning(
+                    self, "Cannot unsplit",
+                    "Both adjacent scenes have axes. Delete one axis first.",
+                )
+                return
+
             self.splits.remove(frame)
             self._rebuild_scenes()
             self._cancel_placing()
@@ -1046,7 +1096,6 @@ class App(QMainWindow):
         for idx_str, actions in state.get("actions", {}).items():
             self.scene_actions[int(idx_str)] = actions
 
-        self.scene_zoom.clear()
         self._project_path = path
         self._mark_clean()
         self._cancel_placing()
