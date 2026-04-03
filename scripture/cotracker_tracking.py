@@ -71,46 +71,58 @@ def scale_coords(
 
 
 _TARGET_LONG_SIDE = 384
+_MAX_CHUNK_FRAMES = 2000  # fits comfortably in 16 GB VRAM at 384px
 
 
-def _read_scene_frames(video_path: str, start_frame: int, end_frame: int):
-    """Read frames from video, downscale to _TARGET_LONG_SIDE on long edge.
-
-    Returns (frames_tensor, orig_size, scaled_size).
-    frames_tensor: (1, T, 3, H, W) float32 on GPU.
-    """
-    import torch
-
+def _get_video_geometry(video_path: str, start_frame: int):
+    """Read one frame to determine original and scaled sizes."""
     cap = cv2.VideoCapture(video_path)
     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    n_frames = end_frame - start_frame
-
-    ret, first = cap.read()
+    ret, frame = cap.read()
+    cap.release()
     if not ret:
         raise RuntimeError(f"Cannot read frame {start_frame}")
-    orig_h, orig_w = first.shape[:2]
+    orig_h, orig_w = frame.shape[:2]
     scale = _TARGET_LONG_SIDE / max(orig_h, orig_w)
     new_w, new_h = int(orig_w * scale), int(orig_h * scale)
-    orig_size = (orig_h, orig_w)
-    scaled_size = (new_h, new_w)
+    return (orig_h, orig_w), (new_h, new_w)
 
+
+def _read_chunk(video_path: str, start_frame: int, n_frames: int,
+                scaled_size: tuple[int, int]):
+    """Read n_frames starting at start_frame, downscale, return GPU tensor."""
+    import torch
+
+    new_h, new_w = scaled_size
+    cap = cv2.VideoCapture(video_path)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     frames = []
-    resized = cv2.resize(first, (new_w, new_h))
-    frames.append(cv2.cvtColor(resized, cv2.COLOR_BGR2RGB))
-
-    for _ in range(1, n_frames):
+    for _ in range(n_frames):
         ret, frame = cap.read()
         if not ret:
             break
         resized = cv2.resize(frame, (new_w, new_h))
         frames.append(cv2.cvtColor(resized, cv2.COLOR_BGR2RGB))
-
     cap.release()
 
     arr = np.stack(frames)  # (T, H, W, 3)
     tensor = torch.from_numpy(arr).permute(0, 3, 1, 2).float()  # (T, 3, H, W)
-    tensor = tensor.unsqueeze(0).to("cuda")  # (1, T, 3, H, W)
-    return tensor, orig_size, scaled_size
+    return tensor.unsqueeze(0).to("cuda")  # (1, T, 3, H, W)
+
+
+def _track_chunk(model, video_chunk, queries):
+    """Run CoTracker3 on a single chunk, return tracks and visibility on CPU."""
+    import torch
+
+    with torch.no_grad():
+        pred_tracks, pred_visibility = model(
+            video_chunk, queries=queries, backward_tracking=True,
+        )
+    tracks = pred_tracks[0].cpu().numpy()
+    visibility = pred_visibility[0].cpu().numpy()
+    del video_chunk, pred_tracks, pred_visibility
+    torch.cuda.empty_cache()
+    return tracks, visibility
 
 
 def cotrack_axis(
@@ -127,6 +139,9 @@ def cotrack_axis(
     all of them, then reconstructs per-frame tip/base via line fitting
     from whichever points are visible.
 
+    For long scenes, processes in chunks of _MAX_CHUNK_FRAMES to stay
+    within GPU memory.
+
     Returns (tip_coords, base_coords) as (N_frames, 2) arrays in
     original frame coordinates.
     """
@@ -136,45 +151,94 @@ def cotrack_axis(
     n_frames = end_frame - start_frame
     ref_local = max(0, min(axis.frame - start_frame, n_frames - 1))
 
-    # Read and downscale video
-    video, orig_size, scaled_size = _read_scene_frames(video_path, start_frame, end_frame)
-    actual_frames = video.shape[1]
+    orig_size, scaled_size = _get_video_geometry(video_path, start_frame)
 
-    # Generate query points along the axis
+    # Generate query points along the axis (in scaled coordinates)
     tip = np.array(axis.tip, dtype=np.float64)
     base = np.array(axis.base, dtype=np.float64)
-    t_params = np.linspace(0, 1, n_points)  # 0=base, 1=tip
-    axis_points = np.array([base + t * (tip - base) for t in t_params])  # (N, 2) in orig coords
+    t_params = np.linspace(0, 1, n_points)
+    axis_points = np.array([base + t * (tip - base) for t in t_params])
     axis_points_scaled = scale_coords(axis_points, orig_size, scaled_size)
 
-    # Build queries: (1, N, 3) as (frame_idx, x, y)
-    queries = torch.zeros(1, n_points, 3, device="cuda")
-    queries[0, :, 0] = ref_local
-    queries[0, :, 1] = torch.from_numpy(axis_points_scaled[:, 0]).float()
-    queries[0, :, 2] = torch.from_numpy(axis_points_scaled[:, 1]).float()
+    # Allocate output arrays (in scaled coords, converted at the end)
+    all_tracks = np.zeros((n_frames, n_points, 2), dtype=np.float64)
+    all_vis = np.zeros((n_frames, n_points), dtype=np.float64)
 
-    # Run CoTracker3
-    with torch.no_grad():
-        pred_tracks, pred_visibility = model(
-            video, queries=queries, backward_tracking=True,
-        )
-    # pred_tracks: (1, T, N, 2), pred_visibility: (1, T, N)
-    tracks = pred_tracks[0].cpu().numpy()       # (T, N, 2)
-    visibility = pred_visibility[0].cpu().numpy()  # (T, N)
+    if n_frames <= _MAX_CHUNK_FRAMES:
+        # Small enough to process in one shot
+        video = _read_chunk(video_path, start_frame, n_frames, scaled_size)
+        queries = torch.zeros(1, n_points, 3, device="cuda")
+        queries[0, :, 0] = ref_local
+        queries[0, :, 1] = torch.from_numpy(axis_points_scaled[:, 0]).float()
+        queries[0, :, 2] = torch.from_numpy(axis_points_scaled[:, 1]).float()
+        tracks, vis = _track_chunk(model, video, queries)
+        actual = min(tracks.shape[0], n_frames)
+        all_tracks[:actual] = tracks[:actual]
+        all_vis[:actual] = vis[:actual]
+    else:
+        # Process in overlapping chunks, each seeded from the reference frame
+        # or from the last tracked positions at the chunk boundary.
+        chunk_size = _MAX_CHUNK_FRAMES
+        overlap = min(100, chunk_size // 4)
 
-    # Free GPU memory
-    del video, pred_tracks, pred_visibility, queries
-    torch.cuda.empty_cache()
+        # Build chunk ranges covering [0, n_frames), each ≤ chunk_size
+        # and each containing the ref_local frame if possible.
+        chunk_starts = []
+        pos = 0
+        while pos < n_frames:
+            chunk_end = min(pos + chunk_size, n_frames)
+            chunk_starts.append((pos, chunk_end))
+            pos = chunk_end - overlap
+            if chunk_end == n_frames:
+                break
+
+        for c_start, c_end in chunk_starts:
+            c_len = c_end - c_start
+            video = _read_chunk(video_path, start_frame + c_start, c_len, scaled_size)
+
+            # Query frame: use ref_local if it falls within this chunk,
+            # otherwise use the overlap region where we have prior data
+            if c_start <= ref_local < c_end:
+                q_frame = ref_local - c_start
+                q_points = axis_points_scaled
+            elif c_start > 0:
+                # Seed from the last tracked positions at the overlap start
+                src = c_start  # first frame of this chunk = overlap region
+                q_frame = 0
+                q_points = all_tracks[src]
+            else:
+                q_frame = 0
+                q_points = axis_points_scaled
+
+            queries = torch.zeros(1, n_points, 3, device="cuda")
+            queries[0, :, 0] = q_frame
+            queries[0, :, 1] = torch.from_numpy(q_points[:, 0].copy()).float()
+            queries[0, :, 2] = torch.from_numpy(q_points[:, 1].copy()).float()
+
+            tracks, vis = _track_chunk(model, video, queries)
+            actual = min(tracks.shape[0], c_len)
+
+            # Write results, but don't overwrite frames we already have
+            # better data for (from a chunk that contains the ref frame)
+            for i in range(actual):
+                global_i = c_start + i
+                if global_i >= n_frames:
+                    break
+                # Overwrite if we don't have data yet, or if this chunk
+                # contains the reference frame (higher quality)
+                if all_vis[global_i].sum() == 0 or (c_start <= ref_local < c_end):
+                    all_tracks[global_i] = tracks[i]
+                    all_vis[global_i] = vis[i]
 
     # Reconstruct per-frame tip/base via line fitting
-    tip_coords = np.zeros((actual_frames, 2), dtype=np.float64)
-    base_coords = np.zeros((actual_frames, 2), dtype=np.float64)
+    tip_coords = np.zeros((n_frames, 2), dtype=np.float64)
+    base_coords = np.zeros((n_frames, 2), dtype=np.float64)
     last_tip = axis_points_scaled[n_points - 1]
     last_base = axis_points_scaled[0]
 
-    for i in range(actual_frames):
-        vis = visibility[i] > 0.5
-        result = fit_axis_from_points(tracks[i], t_params, vis)
+    for i in range(n_frames):
+        visible = all_vis[i] > 0.5
+        result = fit_axis_from_points(all_tracks[i], t_params, visible)
         if result is not None:
             last_tip, last_base = result
         tip_coords[i] = last_tip
