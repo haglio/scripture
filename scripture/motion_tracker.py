@@ -252,6 +252,8 @@ def track_motion(video_path: str, axis: AxisDefinition,
     base_in_crop_ref = (axis.base[0] - x_min, axis.base[1] - y_min)
 
     # ── Phase 1: Track base coordinates bidirectionally from axis.frame ─
+    # on_frame receives a monotonic counter: 0 .. 2*n_frames-1
+    progress = 0
     base_coords_crop = [None] * n_frames
     base_coords_crop[ref_local] = base_in_crop_ref
 
@@ -262,11 +264,13 @@ def track_motion(video_path: str, axis: AxisDefinition,
         ret, frame = cap.read()
         if not ret:
             base_coords_crop[i] = last
-            continue
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
-        last, _ = track_base_in_frame(gray, base_template, last, search_radius=60)
-        base_coords_crop[i] = last
-        # No on_frame here — backward progress would confuse the progress bar
+        else:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
+            last, _ = track_base_in_frame(gray, base_template, last, search_radius=60)
+            base_coords_crop[i] = last
+        progress += 1
+        if on_frame is not None:
+            on_frame(progress)
 
     # Forward: ref_local+1 to end (sequential read — fast)
     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame + ref_local + 1)
@@ -275,12 +279,13 @@ def track_motion(video_path: str, axis: AxisDefinition,
         ret, frame = cap.read()
         if not ret:
             base_coords_crop[i] = last
-            continue
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
-        last, _ = track_base_in_frame(gray, base_template, last, search_radius=60)
-        base_coords_crop[i] = last
+        else:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
+            last, _ = track_base_in_frame(gray, base_template, last, search_radius=60)
+            base_coords_crop[i] = last
+        progress += 1
         if on_frame is not None:
-            on_frame(start_frame + i)
+            on_frame(progress)
 
     # Convert to frame coords
     all_bases = [(bc[0] + x_min, bc[1] + y_min) for bc in base_coords_crop]
@@ -336,9 +341,9 @@ def track_motion(video_path: str, axis: AxisDefinition,
         timestamps.append((start_frame + i) / fps * 1000)
 
         prev_gray = gray
-
+        progress += 1
         if on_frame is not None:
-            on_frame(start_frame + i)
+            on_frame(progress)
 
     cap.release()
 

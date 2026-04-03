@@ -116,13 +116,13 @@ class ProcessWorker(QThread):
         cumulative = 0
         for idx, scene, _ in self.jobs:
             offsets[idx] = cumulative
-            cumulative += scene.end_frame - scene.start_frame
+            cumulative += (scene.end_frame - scene.start_frame) * 2
         for idx, scene, axis in self.jobs:
             offset = offsets[idx]
             try:
                 result = track_motion(
                     self.video_path, axis, scene.start_frame, scene.end_frame,
-                    on_frame=lambda f, _o=offset, _s=scene: self.frame_progress.emit(_o + f - _s.start_frame),
+                    on_frame=lambda f, _o=offset: self.frame_progress.emit(_o + f),
                 )
                 actions = extract_strokes(result.positions, result.timestamps_ms, fps=self.fps)
                 self.scene_done.emit(idx, actions, result)
@@ -1084,7 +1084,7 @@ class App(QMainWindow):
         return f"{h}h {m:02d}m {s:02d}s"
 
     def _start_processing(self, jobs):
-        tf = sum(sc.end_frame - sc.start_frame for _, sc, _ in jobs)
+        tf = sum(sc.end_frame - sc.start_frame for _, sc, _ in jobs) * 2  # Phase 1 + Phase 2
         self._spacer_action.setVisible(False)
         self._progress_sep.setVisible(True)
         self._progress_action.setVisible(True)
