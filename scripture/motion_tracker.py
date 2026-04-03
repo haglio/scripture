@@ -213,9 +213,8 @@ def track_motion(video_path: str, axis: AxisDefinition,
     """Track motion along the defined axis using dense optical flow.
 
     Template-matches the base point per-frame so the axis follows the
-    anatomy.  Builds a per-frame strip mask from the tracked coordinates,
-    computes Farneback flow on a fixed crop, and applies rolling
-    normalization.
+    anatomy.  Tracks **bidirectionally** from axis.frame (where the user
+    defined the axis) to avoid drift from a distant start_frame.
 
     Returns timestamps (ms), normalized positions, and per-frame
     tip/base coordinates.
@@ -235,30 +234,55 @@ def track_motion(video_path: str, axis: AxisDefinition,
     base_template = extract_base_template(ref_gray, axis.base, radius=template_radius)
     axis_vector = np.array(axis.tip, dtype=np.float64) - np.array(axis.base, dtype=np.float64)
 
-    # ── Set up the fixed crop (generous padding for anatomy movement) ─
+    # ── Set up the fixed crop ─────────────────────────────────────
     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    ret, prev_frame = cap.read()
+    ret, first_frame = cap.read()
     if not ret:
         raise RuntimeError(f"Cannot read frame {start_frame}")
 
-    frame_shape = prev_frame.shape[:2]
+    frame_shape = first_frame.shape[:2]
     y_min, y_max, x_min, x_max = compute_crop_bounds(
         axis, half_width, frame_shape, padding=80,
     )
     crop_shape = (y_max - y_min, x_max - x_min)
     unit_vec = compute_axis_unit_vector(axis)
 
-    # ── Track base in the first frame ─────────────────────────────
-    prev_gray_full = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
-    prev_gray = prev_gray_full[y_min:y_max, x_min:x_max]
+    n_frames = end_frame - start_frame
+    ref_local = max(0, min(axis.frame - start_frame, n_frames - 1))
+    base_in_crop_ref = (axis.base[0] - x_min, axis.base[1] - y_min)
 
-    last_base_crop = (axis.base[0] - x_min, axis.base[1] - y_min)
-    last_base_crop, _ = track_base_in_frame(
-        prev_gray, base_template, last_base_crop, search_radius=60,
-    )
+    # ── Phase 1: Track base coordinates bidirectionally from axis.frame ─
+    base_coords_crop = [None] * n_frames
+    base_coords_crop[ref_local] = base_in_crop_ref
 
-    def _crop_coords_to_frame(cx, cy):
-        return (cx + x_min, cy + y_min)
+    # Backward: ref_local-1 down to 0 (seeks per frame, template match only)
+    last = base_in_crop_ref
+    for i in range(ref_local - 1, -1, -1):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame + i)
+        ret, frame = cap.read()
+        if not ret:
+            base_coords_crop[i] = last
+            continue
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
+        last, _ = track_base_in_frame(gray, base_template, last, search_radius=60)
+        base_coords_crop[i] = last
+
+    # Forward: ref_local+1 to end (seeks per frame, template match only)
+    last = base_in_crop_ref
+    for i in range(ref_local + 1, n_frames):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame + i)
+        ret, frame = cap.read()
+        if not ret:
+            base_coords_crop[i] = last
+            continue
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
+        last, _ = track_base_in_frame(gray, base_template, last, search_radius=60)
+        base_coords_crop[i] = last
+
+    # Convert to frame coords
+    all_bases = [(bc[0] + x_min, bc[1] + y_min) for bc in base_coords_crop]
+    all_tips = [(bc[0] + x_min + axis_vector[0], bc[1] + y_min + axis_vector[1])
+                for bc in base_coords_crop]
 
     def _build_strip(base_c, tip_c):
         fa = AxisDefinition(
@@ -268,38 +292,28 @@ def track_motion(video_path: str, axis: AxisDefinition,
         mask = build_axis_strip_mask(crop_shape, fa, half_width)
         return mask > 0
 
-    first_tip_crop = (last_base_crop[0] + axis_vector[0],
-                      last_base_crop[1] + axis_vector[1])
-    strip_pixels = _build_strip(last_base_crop, first_tip_crop)
-    bg_pixels = ~strip_pixels
-
-    all_bases = [_crop_coords_to_frame(*last_base_crop)]
-    all_tips = [_crop_coords_to_frame(first_tip_crop[0], first_tip_crop[1])]
+    # ── Phase 2: Forward optical flow with pre-tracked strip masks ─
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    ret, prev_frame = cap.read()
+    if not ret:
+        raise RuntimeError(f"Cannot read frame {start_frame}")
+    prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
 
     cumulative_displacement = 0.0
     displacements = [0.0]
     timestamps = [start_frame / fps * 1000]
 
-    # ── Main frame loop ───────────────────────────────────────────
-    for frame_idx in range(start_frame + 1, end_frame):
+    for i in range(1, n_frames):
         ret, frame = cap.read()
         if not ret:
             break
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[y_min:y_max, x_min:x_max]
 
-        # Template-track the base
-        last_base_crop, _ = track_base_in_frame(
-            gray, base_template, last_base_crop, search_radius=60,
-        )
-        tip_crop = (last_base_crop[0] + axis_vector[0],
-                    last_base_crop[1] + axis_vector[1])
-
-        all_bases.append(_crop_coords_to_frame(*last_base_crop))
-        all_tips.append(_crop_coords_to_frame(tip_crop[0], tip_crop[1]))
-
-        # Per-frame strip mask
-        strip_pixels = _build_strip(last_base_crop, tip_crop)
+        # Per-frame strip mask from pre-tracked coordinates
+        bc = base_coords_crop[i]
+        tc = (bc[0] + axis_vector[0], bc[1] + axis_vector[1])
+        strip_pixels = _build_strip(bc, tc)
         bg_pixels = ~strip_pixels
 
         # Optical flow
@@ -316,12 +330,12 @@ def track_motion(video_path: str, axis: AxisDefinition,
         net_motion = subtract_camera_motion(roi_motion, bg_motion)
         cumulative_displacement += net_motion
         displacements.append(cumulative_displacement)
-        timestamps.append(frame_idx / fps * 1000)
+        timestamps.append((start_frame + i) / fps * 1000)
 
         prev_gray = gray
 
         if on_frame is not None:
-            on_frame(frame_idx)
+            on_frame(start_frame + i)
 
     cap.release()
 
