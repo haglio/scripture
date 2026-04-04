@@ -317,8 +317,9 @@ class FrameCanvas(QWidget):
         self._pending_tip = None
         self._pending_base = None
         self._zoom = 1.0
-        self._dragging_point = None  # "tip", "base", or None
+        self._dragging_point = None  # "tip", "base", "contact", or None
         self._overlay = None  # dict with axis, contact_pt, pos, is_action
+        self._gt = None  # ground truth dict: tip, base, contact, is_action, pos
 
     @property
     def zoom(self):
@@ -357,8 +358,13 @@ class FrameCanvas(QWidget):
         self._overlay = overlay
         self.update()
 
+    def set_gt(self, gt):
+        """Set ground truth annotation for this frame (or None)."""
+        self._gt = gt
+        self.update()
+
     def clear(self):
-        self._pixmap = self._axis = self._pending_tip = self._pending_base = self._overlay = None
+        self._pixmap = self._axis = self._pending_tip = self._pending_base = self._overlay = self._gt = None
         self.update()
 
     def _display_scale(self):
@@ -379,12 +385,21 @@ class FrameCanvas(QWidget):
         return int((cx - ox) / s), int((cy - oy) / s)
 
     def _hit_point(self, cx, cy):
-        """Return 'tip', 'base', or None based on which point was hit."""
+        """Return 'tip', 'base', 'contact', or None based on which point was hit."""
+        # Check GT points first (on top visually, so should catch clicks first)
+        if self._gt:
+            for label in ("contact", "tip", "base"):
+                pt = self._gt.get(label)
+                if pt is None:
+                    continue
+                px, py = self._frame_to_canvas(*pt)
+                if (cx - px) ** 2 + (cy - py) ** 2 <= 100:
+                    return label
         for label, pt in [("tip", self._get_tip()), ("base", self._get_base())]:
             if pt is None:
                 continue
             px, py = self._frame_to_canvas(*pt)
-            if (cx - px) ** 2 + (cy - py) ** 2 <= 100:  # 10px radius
+            if (cx - px) ** 2 + (cy - py) ** 2 <= 100:
                 return label
         return None
 
@@ -423,6 +438,8 @@ class FrameCanvas(QWidget):
                 self._draw_point(p, self._pending_tip, _TIP_COLOR, "TIP")
             if self._pending_base:
                 self._draw_point(p, self._pending_base, _BASE_COLOR, "BASE")
+        if self._gt:
+            self._draw_gt(p)
         p.end()
 
     def _draw_point(self, p, pt, color, label):
@@ -507,6 +524,57 @@ class FrameCanvas(QWidget):
         p.setFont(make_font(size=SIZE_SMALL, bold=ov["is_action"]))
         p.drawText(ccx + 12, ccy + 4, str(ov["pos"]))
 
+    def _draw_gt(self, p):
+        """Draw ground truth annotation points."""
+        gt = self._gt
+        # Axis line from base to tip
+        if gt.get("tip") and gt.get("base"):
+            tx, ty = self._frame_to_canvas(*gt["tip"])
+            bx, by = self._frame_to_canvas(*gt["base"])
+            p.setPen(QPen(_AXIS_COLOR, 2, Qt.PenStyle.DashLine))
+            p.drawLine(tx, ty, bx, by)
+            # Tip marker
+            p.setPen(QPen(Qt.GlobalColor.white, 1))
+            p.setBrush(QBrush(_TIP_COLOR))
+            p.drawEllipse(tx - 5, ty - 5, 10, 10)
+            p.setPen(QPen(_TIP_COLOR))
+            p.setFont(make_font(size=SIZE_SMALL))
+            p.drawText(tx + 10, ty + 4, "T")
+            # Base marker
+            p.setPen(QPen(Qt.GlobalColor.white, 1))
+            p.setBrush(QBrush(_BASE_COLOR))
+            p.drawEllipse(bx - 5, by - 5, 10, 10)
+            p.setPen(QPen(_BASE_COLOR))
+            p.setFont(make_font(size=SIZE_SMALL))
+            p.drawText(bx + 10, by + 4, "B")
+
+        # Contact marker
+        contact = gt.get("contact")
+        contact_color = QColor(80, 255, 80)
+        if contact is not None:
+            ccx, ccy = self._frame_to_canvas(*contact)
+            if gt.get("is_action"):
+                p.setPen(QPen(contact_color, 3))
+                p.setBrush(QBrush(Qt.GlobalColor.transparent))
+                p.drawEllipse(ccx - 8, ccy - 8, 16, 16)
+            else:
+                p.setPen(QPen(Qt.GlobalColor.white, 1))
+                p.setBrush(QBrush(contact_color))
+                p.drawEllipse(ccx - 5, ccy - 5, 10, 10)
+            # Pos label
+            pos = gt.get("pos", "?")
+            p.setPen(QPen(contact_color))
+            p.setFont(make_font(size=SIZE_BODY, bold=gt.get("is_action", False)))
+            p.drawText(ccx + 12, ccy + 5, str(pos))
+        else:
+            # No contact indicator — show "—" near the axis midpoint
+            if gt.get("tip") and gt.get("base"):
+                mx = (tx + bx) // 2
+                my = (ty + by) // 2
+                p.setPen(QPen(QColor(255, 150, 50)))
+                p.setFont(make_font(size=SIZE_BODY, bold=True))
+                p.drawText(mx + 10, my + 5, "no contact")
+
     def mousePressEvent(self, event):
         if not self._frame_w:
             return
@@ -563,6 +631,7 @@ class App(QMainWindow):
         self.scene_axes = {}
         self.scene_actions = {}
         self.scene_positions = {}  # idx -> TrackingResult (for debug overlay)
+        self.ground_truth = {}    # idx -> {frame_idx: {tip, base, contact, is_action}}
         self.current_frame_idx = 0
         self.placing = None
         self.pending_tip = self.pending_base = None
@@ -591,6 +660,9 @@ class App(QMainWindow):
         QShortcut(QKeySequence("Shift+Tab"), self, self._prev_poi)
         QShortcut(QKeySequence("]"), self, self._next_action_frame)
         QShortcut(QKeySequence("["), self, self._prev_action_frame)
+        QShortcut(QKeySequence("A"), self, self._toggle_gt_action)
+        QShortcut(QKeySequence("N"), self, self._toggle_gt_no_contact)
+        QShortcut(QKeySequence("C"), self, self._place_gt_contact)
 
     def _frame_back(self):
         if self.current_frame_idx > 0:
@@ -654,6 +726,88 @@ class App(QMainWindow):
                 self._show_frame(f)
                 return
         self._show_frame(frames[-1])  # wrap
+
+    # ── Ground truth annotation ────────────────────────────────────
+
+    def _ensure_gt_frame(self):
+        """Ensure the current frame has a GT entry, inheriting from nearest."""
+        idx = self._current_scene_idx()
+        frame = self.current_frame_idx
+        if idx not in self.ground_truth:
+            self.ground_truth[idx] = {}
+        gt_scene = self.ground_truth[idx]
+        if frame in gt_scene:
+            return gt_scene[frame]
+        # Inherit from nearest annotated frame
+        if gt_scene:
+            nearest = min(gt_scene.keys(), key=lambda f: abs(f - frame))
+            entry = dict(gt_scene[nearest])  # shallow copy
+        elif idx in self.scene_axes:
+            axis = self.scene_axes[idx]
+            entry = {"tip": axis.tip, "base": axis.base, "contact": None, "is_action": False}
+        else:
+            return None
+        gt_scene[frame] = entry
+        return entry
+
+    def _get_gt_for_frame(self, scene_idx, frame_idx):
+        """Get GT data for display (read-only, does not create entries)."""
+        gt_scene = self.ground_truth.get(scene_idx, {})
+        if frame_idx in gt_scene:
+            gt = dict(gt_scene[frame_idx])
+        elif gt_scene:
+            nearest = min(gt_scene.keys(), key=lambda f: abs(f - frame_idx))
+            gt = dict(gt_scene[nearest])
+            gt["is_action"] = False  # inherited frames aren't action frames
+        else:
+            return None
+        # Compute pos from tip/base/contact
+        if gt.get("contact") and gt.get("tip") and gt.get("base"):
+            from scripture.cotracker_tracking import compute_pos_from_points
+            gt["pos"] = compute_pos_from_points(gt["base"], gt["tip"], gt["contact"])
+        else:
+            gt["pos"] = "—"
+        return gt
+
+    def _toggle_gt_action(self):
+        entry = self._ensure_gt_frame()
+        if entry is None:
+            return
+        entry["is_action"] = not entry["is_action"]
+        self._mark_dirty()
+        self._show_frame(self.current_frame_idx)
+
+    def _toggle_gt_no_contact(self):
+        entry = self._ensure_gt_frame()
+        if entry is None:
+            return
+        if entry["contact"] is None:
+            # Restore contact — put it at midpoint of axis
+            if entry.get("tip") and entry.get("base"):
+                mx = (entry["tip"][0] + entry["base"][0]) // 2
+                my = (entry["tip"][1] + entry["base"][1]) // 2
+                entry["contact"] = (mx, my)
+        else:
+            entry["contact"] = None
+        self._mark_dirty()
+        self._show_frame(self.current_frame_idx)
+
+    def _place_gt_contact(self):
+        """Enter contact placement mode — next click sets the contact point."""
+        self.placing = "contact"
+        self._set_status("Click to place CONTACT point (or press C again to cancel)")
+
+    def _on_gt_point_dragged(self, which, fx, fy):
+        """Handle dragging of a GT point (tip, base, or contact)."""
+        idx = self._current_scene_idx()
+        entry = self._ensure_gt_frame()
+        if entry is None:
+            return
+        entry[which] = (fx, fy)
+        self._mark_dirty()
+        # Update display without re-reading the frame
+        gt = self._get_gt_for_frame(idx, self.current_frame_idx)
+        self.canvas.set_gt(gt)
 
     def _build_ui(self):
         central = QWidget()
@@ -952,6 +1106,12 @@ class App(QMainWindow):
         else:
             self.canvas.set_overlay(None)
 
+        # Ground truth annotation layer
+        if idx in self.ground_truth:
+            self.canvas.set_gt(self._get_gt_for_frame(idx, frame_idx))
+        else:
+            self.canvas.set_gt(None)
+
         self._update_info()
         self._update_timeline()
 
@@ -1113,6 +1273,16 @@ class App(QMainWindow):
             return
         idx = self._current_scene_idx()
 
+        if self.placing == "contact":
+            entry = self._ensure_gt_frame()
+            if entry is not None:
+                entry["contact"] = (fx, fy)
+                self._mark_dirty()
+                self._show_frame(self.current_frame_idx)
+            self.placing = None
+            self._set_status("Contact point placed.")
+            return
+
         # Changing representative frame?
         if idx in self.scene_axes and self.scene_axes[idx].frame != self.current_frame_idx:
             reply = QMessageBox.question(
@@ -1148,6 +1318,10 @@ class App(QMainWindow):
 
     def _on_point_dragged(self, which, fx, fy):
         idx = self._current_scene_idx()
+        # GT point drag (contact, or tip/base while GT is active)
+        if which in ("contact", "tip", "base") and idx in self.ground_truth:
+            self._on_gt_point_dragged(which, fx, fy)
+            return
         if idx in self.scene_axes:
             old = self.scene_axes[idx]
             if which == "tip":
@@ -1283,9 +1457,22 @@ class App(QMainWindow):
             if result.base_coords is not None:
                 entry["base_coords"] = result.base_coords.tolist()
             tracking[str(i)] = entry
+        # Serialize ground truth annotations
+        gt = {}
+        for scene_idx, frames in self.ground_truth.items():
+            gt_frames = {}
+            for frame_idx, entry in frames.items():
+                gt_frames[str(frame_idx)] = {
+                    "tip": list(entry["tip"]) if entry.get("tip") else None,
+                    "base": list(entry["base"]) if entry.get("base") else None,
+                    "contact": list(entry["contact"]) if entry.get("contact") else None,
+                    "is_action": entry.get("is_action", False),
+                }
+            gt[str(scene_idx)] = gt_frames
         return {
             "video_path": self.video_path, "splits": self.splits,
             "axes": axes, "actions": acts, "tracking": tracking,
+            "ground_truth": gt,
             "current_frame": self.current_frame_idx,
         }
 
@@ -1356,6 +1543,19 @@ class App(QMainWindow):
                 tip_coords=tip_c,
                 base_coords=base_c,
             )
+
+        # Load ground truth annotations
+        self.ground_truth.clear()
+        for scene_k, frames in state.get("ground_truth", {}).items():
+            scene_gt = {}
+            for frame_k, entry in frames.items():
+                scene_gt[int(frame_k)] = {
+                    "tip": tuple(entry["tip"]) if entry.get("tip") else None,
+                    "base": tuple(entry["base"]) if entry.get("base") else None,
+                    "contact": tuple(entry["contact"]) if entry.get("contact") else None,
+                    "is_action": entry.get("is_action", False),
+                }
+            self.ground_truth[int(scene_k)] = scene_gt
 
         self._project_path = path
         self._mark_clean()

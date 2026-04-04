@@ -182,6 +182,23 @@ def sanitize_positions(positions: np.ndarray, fps: float = 30.0) -> np.ndarray:
     return np.clip(cleaned, 0.0, 1.0)
 
 
+def compute_pos_from_points(
+    base: tuple[int, int],
+    tip: tuple[int, int],
+    contact: tuple[int, int],
+) -> int:
+    """Project contact point onto the base→tip axis. Returns 0-100."""
+    base_a = np.array(base, dtype=np.float64)
+    tip_a = np.array(tip, dtype=np.float64)
+    contact_a = np.array(contact, dtype=np.float64)
+    axis_vec = tip_a - base_a
+    dot_aa = np.dot(axis_vec, axis_vec)
+    if dot_aa < 1e-8:
+        return 50
+    t = np.dot(contact_a - base_a, axis_vec) / dot_aa
+    return int(round(max(0.0, min(1.0, t)) * 100))
+
+
 def scale_coords(
     coords: np.ndarray,
     from_size: tuple[int, int],

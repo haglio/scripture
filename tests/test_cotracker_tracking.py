@@ -3,6 +3,7 @@ import numpy as np
 from scripture.cotracker_tracking import (
     fit_axis_from_points, scale_coords, visibility_to_position,
     motion_divergence_position, sanitize_positions,
+    compute_pos_from_points,
 )
 
 
@@ -186,6 +187,30 @@ class TestSanitizePositions:
         result = sanitize_positions(positions, fps=30)
         assert result.min() >= 0.0
         assert result.max() <= 1.0
+
+
+class TestComputePosFromPoints:
+
+    def test_contact_at_base(self):
+        assert compute_pos_from_points((100, 800), (100, 100), (100, 800)) == 0
+
+    def test_contact_at_tip(self):
+        assert compute_pos_from_points((100, 800), (100, 100), (100, 100)) == 100
+
+    def test_contact_at_midpoint(self):
+        assert compute_pos_from_points((100, 800), (100, 100), (100, 450)) == 50
+
+    def test_diagonal_axis(self):
+        pos = compute_pos_from_points((0, 0), (100, 100), (50, 50))
+        assert 45 <= pos <= 55
+
+    def test_clamps_below_0(self):
+        pos = compute_pos_from_points((100, 100), (100, 500), (100, 50))
+        assert pos == 0
+
+    def test_clamps_above_100(self):
+        pos = compute_pos_from_points((100, 100), (100, 500), (100, 550))
+        assert pos == 100
 
 
 class TestScaleCoords:
