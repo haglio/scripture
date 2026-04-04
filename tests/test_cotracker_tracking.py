@@ -1,6 +1,8 @@
 import numpy as np
 
-from scripture.cotracker_tracking import fit_axis_from_points, scale_coords
+from scripture.cotracker_tracking import (
+    fit_axis_from_points, scale_coords, visibility_to_position,
+)
 
 
 class TestFitAxisFromPoints:
@@ -47,6 +49,47 @@ class TestFitAxisFromPoints:
         visible = np.array([False, False, False, False, False, False, False, True])
         result = fit_axis_from_points(points, t_params, visible)
         assert result is None
+
+
+class TestVisibilityToPosition:
+
+    def test_all_visible_returns_100(self):
+        """All redacted points visible = nothing covering it = pos 100 (tip)."""
+        t_params = np.linspace(0, 1, 30)
+        vis = np.ones(30)
+        assert visibility_to_position(t_params, vis) == 100
+
+    def test_all_occluded_returns_0(self):
+        """All redacted points occluded = fully covered = pos 0 (base)."""
+        t_params = np.linspace(0, 1, 30)
+        vis = np.zeros(30)
+        assert visibility_to_position(t_params, vis) == 0
+
+    def test_hand_at_midpoint(self):
+        """Base half visible, tip half occluded → contact near 50."""
+        t_params = np.linspace(0, 1, 30)
+        vis = np.zeros(30)
+        vis[:15] = 1.0  # base side visible
+        pos = visibility_to_position(t_params, vis)
+        assert 40 <= pos <= 60
+
+    def test_hand_covers_base_end(self):
+        """Hand covers base end, tip exposed → contact at hand's leading edge."""
+        t_params = np.linspace(0, 1, 30)
+        vis = np.zeros(30)
+        vis[25:] = 1.0  # only tip-end visible, hand covers base through ~t=0.83
+        pos = visibility_to_position(t_params, vis)
+        # Hand's leading edge is near t=0.83 → pos ≈ 83
+        assert 75 <= pos <= 90
+
+    def test_hand_covers_tip_end(self):
+        """Hand covers tip end, base exposed → contact at hand's leading edge."""
+        t_params = np.linspace(0, 1, 30)
+        vis = np.zeros(30)
+        vis[:5] = 1.0  # only base-end visible, hand covers from ~t=0.17 up
+        pos = visibility_to_position(t_params, vis)
+        # Hand's leading edge is near t=0.14 → pos ≈ 14
+        assert 10 <= pos <= 25
 
 
 class TestScaleCoords:

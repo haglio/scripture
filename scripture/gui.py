@@ -100,7 +100,6 @@ _AXIS_COLOR = QColor(255, 220, 80)
 
 
 class ProcessWorker(QThread):
-    frame_progress = pyqtSignal(int)
     scene_done = pyqtSignal(int, list, object)  # idx, actions, TrackingResult
     finished = pyqtSignal()
     error = pyqtSignal(int, str)
@@ -112,17 +111,10 @@ class ProcessWorker(QThread):
         self.fps = fps
 
     def run(self):
-        offsets = {}
-        cumulative = 0
-        for idx, scene, _ in self.jobs:
-            offsets[idx] = cumulative
-            cumulative += scene.end_frame - scene.start_frame
         for idx, scene, axis in self.jobs:
-            offset = offsets[idx]
             try:
                 result = track_motion(
                     self.video_path, axis, scene.start_frame, scene.end_frame,
-                    on_frame=lambda f, _o=offset: self.frame_progress.emit(_o + f),
                 )
                 actions = extract_strokes(result.positions, result.timestamps_ms, fps=self.fps)
                 self.scene_done.emit(idx, actions, result)
@@ -1095,36 +1087,20 @@ class App(QMainWindow):
         return f"{h}h {m:02d}m {s:02d}s"
 
     def _start_processing(self, jobs):
-        tf = sum(sc.end_frame - sc.start_frame for _, sc, _ in jobs)
         self._spacer_action.setVisible(False)
         self._progress_sep.setVisible(True)
         self._progress_action.setVisible(True)
         self._abort_action.setVisible(True)
-        self.progress_bar.setMaximum(0)  # indeterminate (pulsing) during Phase 1
+        self.progress_bar.setMaximum(0)  # indeterminate (pulsing)
         self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("Tracking axis with CoTracker3\u2026")
+        self.progress_bar.setFormat("Processing with CoTracker3\u2026")
         self.btn_process_all.setEnabled(False)
-        self._process_total_frames = tf
         self._process_start_time = time.monotonic()
         self._worker = ProcessWorker(self.video_path, jobs, self.fps)
-        self._worker.frame_progress.connect(self._on_frame_progress)
         self._worker.scene_done.connect(self._on_scene_done)
         self._worker.error.connect(self._on_process_error)
         self._worker.finished.connect(self._on_process_finished)
         self._worker.start()
-
-    def _on_frame_progress(self, done):
-        # Switch from indeterminate to determinate on first progress update
-        if self.progress_bar.maximum() == 0:
-            self.progress_bar.setMaximum(self._process_total_frames)
-        self.progress_bar.setValue(done)
-        el = time.monotonic() - self._process_start_time
-        if done > 0:
-            eta = el / done * (self._process_total_frames - done)
-            self.progress_bar.setFormat(
-                f"{done}/{self._process_total_frames} (%p%) \u2014 "
-                f"{self._fmt_duration(el)} elapsed, ~{self._fmt_duration(eta)} left"
-            )
 
     def _on_scene_done(self, idx, actions, tracking_result):
         self.scene_actions[idx] = actions
@@ -1198,9 +1174,22 @@ class App(QMainWindow):
         axes = {str(i): {"tip": list(a.tip), "base": list(a.base), "frame": a.frame}
                 for i, a in self.scene_axes.items()}
         acts = {str(i): a for i, a in self.scene_actions.items()}
+        # Serialize per-frame tracking coordinates
+        tracking = {}
+        for i, result in self.scene_positions.items():
+            entry = {
+                "timestamps_ms": result.timestamps_ms.tolist(),
+                "positions": result.positions.tolist(),
+            }
+            if result.tip_coords is not None:
+                entry["tip_coords"] = result.tip_coords.tolist()
+            if result.base_coords is not None:
+                entry["base_coords"] = result.base_coords.tolist()
+            tracking[str(i)] = entry
         return {
             "video_path": self.video_path, "splits": self.splits,
-            "axes": axes, "actions": acts, "current_frame": self.current_frame_idx,
+            "axes": axes, "actions": acts, "tracking": tracking,
+            "current_frame": self.current_frame_idx,
         }
 
     def _do_save(self, path):
@@ -1261,6 +1250,15 @@ class App(QMainWindow):
         self.scene_positions.clear()
         for k, v in state.get("actions", {}).items():
             self.scene_actions[int(k)] = v
+        for k, v in state.get("tracking", {}).items():
+            tip_c = np.array(v["tip_coords"]) if "tip_coords" in v else None
+            base_c = np.array(v["base_coords"]) if "base_coords" in v else None
+            self.scene_positions[int(k)] = TrackingResult(
+                timestamps_ms=np.array(v["timestamps_ms"]),
+                positions=np.array(v["positions"]),
+                tip_coords=tip_c,
+                base_coords=base_c,
+            )
 
         self._project_path = path
         self._mark_clean()
