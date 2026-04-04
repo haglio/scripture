@@ -147,13 +147,14 @@ class TimelineWidget(QWidget):
         self._scroll = 0.0     # left edge in frame-fraction (0.0 to 1.0 - 1/zoom)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
-    def set_state(self, scenes, scene_axes, scene_actions, splits, total_frames, current_frame):
+    def set_state(self, scenes, scene_axes, scene_actions, splits, total_frames, current_frame, ground_truth=None):
         self.scenes = scenes
         self.scene_axes = scene_axes
         self.scene_actions = scene_actions
         self.splits = splits
         self.total_frames = total_frames
         self.current_frame = current_frame
+        self.ground_truth = ground_truth or {}
         self.update()
 
     def _frame_to_x(self, frame):
@@ -199,12 +200,22 @@ class TimelineWidget(QWidget):
         fps = self._get_fps()
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(_ACTION_DOT_COLOR))
-        for actions in self.scene_actions.values():
-            for a in actions:
-                frame = int(round(a["at"] / 1000 * fps))
-                ax = self._frame_to_x(frame)
-                if 0 <= ax <= w:
-                    p.drawEllipse(ax - 2, mid_y - 2, 4, 4)
+        # Prefer GT action frames; fall back to computed actions
+        has_gt = False
+        for scene_idx, frames in self.ground_truth.items():
+            for frame_idx, entry in frames.items():
+                if entry.get("is_action"):
+                    has_gt = True
+                    ax = self._frame_to_x(frame_idx)
+                    if 0 <= ax <= w:
+                        p.drawEllipse(ax - 2, mid_y - 2, 4, 4)
+        if not has_gt:
+            for actions in self.scene_actions.values():
+                for a in actions:
+                    frame = int(round(a["at"] / 1000 * fps))
+                    ax = self._frame_to_x(frame)
+                    if 0 <= ax <= w:
+                        p.drawEllipse(ax - 2, mid_y - 2, 4, 4)
 
         for split in self.splits:
             sx = self._frame_to_x(split)
@@ -936,6 +947,7 @@ class App(QMainWindow):
         self.timeline.set_state(
             self.scenes, self.scene_axes, self.scene_actions,
             self.splits, self.total_frames, self.current_frame_idx,
+            self.ground_truth,
         )
 
     def _update_info(self):
