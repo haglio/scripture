@@ -437,41 +437,48 @@ def cotrack_axis(
             if c_start == 0:
                 break
 
-    # Use outermost visible tracked points as tip/base for the overlay.
-    tip_coords = np.zeros((n_frames, 2), dtype=np.float64)
-    base_coords = np.zeros((n_frames, 2), dtype=np.float64)
-    raw_positions = np.full(n_frames, 0.5)
-    last_tip = axis_points_scaled[n_points - 1]
+    # CoTracker3 interpretation:
+    # - The lowest-t visible point tracks the BASE well
+    # - The highest-t visible point tracks the CONTACT (not the tip!)
+    # - The actual TIP is further along the same direction
+    #
+    # Strategy:
+    # 1. base_coords = lowest visible tracked point (good tracking)
+    # 2. contact_coords = highest visible tracked point (good tracking)
+    # 3. tip_coords = base + shaft_direction * reference_axis_length
+    #    where shaft_direction = unit(contact - base)
+    # 4. pos = intensity gradient along the base->tip axis
+    ref_axis_len_scaled = np.linalg.norm(axis_points_scaled[-1] - axis_points_scaled[0])
+
+    base_coords_s = np.zeros((n_frames, 2), dtype=np.float64)
+    contact_coords_s = np.zeros((n_frames, 2), dtype=np.float64)
+    tip_coords_s = np.zeros((n_frames, 2), dtype=np.float64)
     last_base = axis_points_scaled[0]
+    last_contact = axis_points_scaled[-1]
 
     for i in range(n_frames):
         visible = all_vis[i] > 0.5
         if visible.any():
             vis_indices = np.where(visible)[0]
             last_base = all_tracks[i, vis_indices[0]]
-            last_tip = all_tracks[i, vis_indices[-1]]
-        tip_coords[i] = last_tip
-        base_coords[i] = last_base
-
-        # Compute pos from motion divergence (frame-to-frame point displacement)
-        if i > 0:
-            raw_positions[i] = motion_divergence_position(
-                t_params, all_tracks[i - 1], all_tracks[i],
-            ) / 100.0
+            last_contact = all_tracks[i, vis_indices[-1]]
+        base_coords_s[i] = last_base
+        contact_coords_s[i] = last_contact
+        # Derive tip from base + redacted direction * reference length
+        bc_vec = last_contact - last_base
+        bc_len = np.linalg.norm(bc_vec)
+        if bc_len > 1:
+            shaft_dir = bc_vec / bc_len
+            tip_coords_s[i] = last_base + shaft_dir * ref_axis_len_scaled
         else:
-            raw_positions[i] = visibility_to_position(t_params, all_vis[i]) / 100.0
+            tip_coords_s[i] = last_contact
 
-    # Get fps for sanitization
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    cap.release()
+    # Scale to original resolution
+    base_coords = scale_coords(base_coords_s, scaled_size, orig_size)
+    tip_coords = scale_coords(tip_coords_s, scaled_size, orig_size)
 
-    # Apply temporal sanity layer
-    positions = sanitize_positions(raw_positions, fps=fps)
-
-    # Scale back to original resolution
-    tip_coords = scale_coords(tip_coords, scaled_size, orig_size)
-    base_coords = scale_coords(base_coords, scaled_size, orig_size)
+    # Pos is computed by track_motion via intensity gradient (not here)
+    positions = np.full(n_frames, 0.5)
 
     return CoTrackResult(
         tip_coords=tip_coords,
