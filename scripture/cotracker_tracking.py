@@ -182,6 +182,57 @@ def sanitize_positions(positions: np.ndarray, fps: float = 30.0) -> np.ndarray:
     return np.clip(cleaned, 0.0, 1.0)
 
 
+def sample_axis_intensity(
+    gray: np.ndarray,
+    base: np.ndarray,
+    axis_vec: np.ndarray,
+    perp: np.ndarray,
+    n: int = 200,
+    strip_w: int = 20,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Sample averaged intensity along the axis in a strip.
+
+    Returns (t_values, intensities) where t_values is [0, 1] parametric
+    and intensities is the mean pixel value across the strip at each t.
+    """
+    from scipy.ndimage import uniform_filter1d
+
+    t_values = np.linspace(0, 1, n)
+    intensities = np.zeros(n)
+    h, w = gray.shape[:2]
+    for j, t in enumerate(t_values):
+        pt = base + t * axis_vec
+        total = 0.0
+        count = 0
+        for off in range(-strip_w, strip_w + 1):
+            px = pt + off * perp
+            x, y = int(round(px[0])), int(round(px[1]))
+            if 0 <= x < w and 0 <= y < h:
+                total += float(gray[y, x])
+                count += 1
+        intensities[j] = total / max(1, count)
+    return t_values, uniform_filter1d(intensities, size=5)
+
+
+def find_contact_gradient(
+    t_values: np.ndarray,
+    intensities: np.ndarray,
+    search_min: float = 0.4,
+    search_max: float = 1.0,
+) -> float:
+    """Find the contact point as the largest intensity gradient along the axis.
+
+    Returns t in [0, 1] where 0=base, 1=tip.
+    """
+    gradient = np.abs(np.diff(intensities))
+    search = (t_values[:-1] >= search_min) & (t_values[:-1] <= search_max)
+    g = gradient.copy()
+    g[~search] = 0
+    if g.max() < 1e-6:
+        return (search_min + search_max) / 2
+    return float(t_values[g.argmax()])
+
+
 def compute_pos_from_points(
     base: tuple[int, int],
     tip: tuple[int, int],

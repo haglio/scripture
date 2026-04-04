@@ -100,6 +100,7 @@ _AXIS_COLOR = QColor(255, 220, 80)
 
 
 class ProcessWorker(QThread):
+    frame_progress = pyqtSignal(int)
     scene_done = pyqtSignal(int, list, object)  # idx, actions, TrackingResult
     finished = pyqtSignal()
     error = pyqtSignal(int, str)
@@ -111,10 +112,17 @@ class ProcessWorker(QThread):
         self.fps = fps
 
     def run(self):
+        offsets = {}
+        cumulative = 0
+        for idx, scene, _ in self.jobs:
+            offsets[idx] = cumulative
+            cumulative += scene.end_frame - scene.start_frame
         for idx, scene, axis in self.jobs:
+            offset = offsets[idx]
             try:
                 result = track_motion(
                     self.video_path, axis, scene.start_frame, scene.end_frame,
+                    on_frame=lambda f, _o=offset: self.frame_progress.emit(_o + f),
                 )
                 actions = extract_strokes(result.positions, result.timestamps_ms, fps=self.fps)
                 self.scene_done.emit(idx, actions, result)
@@ -1371,20 +1379,29 @@ class App(QMainWindow):
         return f"{h}h {m:02d}m {s:02d}s"
 
     def _start_processing(self, jobs):
+        tf = sum(sc.end_frame - sc.start_frame for _, sc, _ in jobs)
         self._spacer_action.setVisible(False)
         self._progress_sep.setVisible(True)
         self._progress_action.setVisible(True)
         self._abort_action.setVisible(True)
-        self.progress_bar.setMaximum(0)  # indeterminate (pulsing)
+        self.progress_bar.setMaximum(0)  # indeterminate (pulsing) during CoTracker3
         self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("Processing with CoTracker3\u2026")
+        self.progress_bar.setFormat("Tracking axis with CoTracker3\u2026")
         self.btn_process_all.setEnabled(False)
+        self._process_total_frames = tf
         self._process_start_time = time.monotonic()
         self._worker = ProcessWorker(self.video_path, jobs, self.fps)
+        self._worker.frame_progress.connect(self._on_frame_progress)
         self._worker.scene_done.connect(self._on_scene_done)
         self._worker.error.connect(self._on_process_error)
         self._worker.finished.connect(self._on_process_finished)
         self._worker.start()
+
+    def _on_frame_progress(self, done):
+        if self.progress_bar.maximum() == 0:
+            self.progress_bar.setMaximum(self._process_total_frames)
+            self.progress_bar.setFormat("Detecting contact points\u2026 %p%")
+        self.progress_bar.setValue(done)
 
     def _on_scene_done(self, idx, actions, tracking_result):
         self.scene_actions[idx] = actions

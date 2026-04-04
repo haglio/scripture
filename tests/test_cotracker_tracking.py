@@ -3,7 +3,8 @@ import numpy as np
 from scripture.cotracker_tracking import (
     fit_axis_from_points, scale_coords, visibility_to_position,
     motion_divergence_position, sanitize_positions,
-    compute_pos_from_points,
+    compute_pos_from_points, sample_axis_intensity,
+    find_contact_gradient,
 )
 
 
@@ -187,6 +188,33 @@ class TestSanitizePositions:
         result = sanitize_positions(positions, fps=30)
         assert result.min() >= 0.0
         assert result.max() <= 1.0
+
+
+class TestIntensityGradientContact:
+
+    def test_sharp_edge_detected(self):
+        """A bright-to-dark transition at t=0.6 should be found."""
+        # Simulate: bright redacted (200) with dark mouth region (50) starting at 60%
+        gray = np.full((100, 200), 200, dtype=np.uint8)
+        gray[:, 120:] = 50  # dark from x=120 onward
+        base = np.array([0, 50], dtype=np.float64)
+        tip = np.array([199, 50], dtype=np.float64)
+        axis_vec = tip - base
+        perp = np.array([0, 1], dtype=np.float64)
+        t_vals, intensities = sample_axis_intensity(gray, base, axis_vec, perp, n=100, strip_w=5)
+        pred_t = find_contact_gradient(t_vals, intensities, search_min=0.0)
+        assert abs(pred_t - 0.60) < 0.05
+
+    def test_no_edge_returns_within_range(self):
+        """Uniform image should still return something in [0, 1]."""
+        gray = np.full((100, 200), 128, dtype=np.uint8)
+        base = np.array([0, 50], dtype=np.float64)
+        tip = np.array([199, 50], dtype=np.float64)
+        axis_vec = tip - base
+        perp = np.array([0, 1], dtype=np.float64)
+        t_vals, intensities = sample_axis_intensity(gray, base, axis_vec, perp, n=100, strip_w=5)
+        pred_t = find_contact_gradient(t_vals, intensities, search_min=0.0)
+        assert 0 <= pred_t <= 1
 
 
 class TestComputePosFromPoints:
