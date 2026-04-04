@@ -283,13 +283,11 @@ def cotrack_axis(
             if c_start == 0:
                 break
 
-    # Reconstruct per-frame tip/base via line fitting with fixed axis length.
-    # The redacted doesn't change length, so we use the reference axis length
-    # as a constraint.  The line fit gives us direction + base position;
-    # the tip is derived as base + direction * length.
-    ref_axis_vec = axis_points_scaled[-1] - axis_points_scaled[0]
-    ref_axis_len = np.linalg.norm(ref_axis_vec)
-
+    # Use outermost visible tracked points as tip/base for the overlay.
+    # This shows the visible portion of the redacted truthfully — no
+    # extrapolation to guess where occluded endpoints are.
+    # The pos value comes from visibility_to_position, which is
+    # independent of these coordinates.
     tip_coords = np.zeros((n_frames, 2), dtype=np.float64)
     base_coords = np.zeros((n_frames, 2), dtype=np.float64)
     positions = np.full(n_frames, 0.5)
@@ -298,16 +296,10 @@ def cotrack_axis(
 
     for i in range(n_frames):
         visible = all_vis[i] > 0.5
-        result = fit_axis_from_points(all_tracks[i], t_params, visible)
-        if result is not None:
-            fit_tip, fit_base = result
-            # Use base from the fit, but enforce fixed axis length
-            direction = fit_tip - fit_base
-            dir_len = np.linalg.norm(direction)
-            if dir_len > 1e-6:
-                direction = direction / dir_len * ref_axis_len
-            last_base = fit_base
-            last_tip = fit_base + direction
+        if visible.any():
+            vis_indices = np.where(visible)[0]
+            last_base = all_tracks[i, vis_indices[0]]   # lowest t visible
+            last_tip = all_tracks[i, vis_indices[-1]]    # highest t visible
         tip_coords[i] = last_tip
         base_coords[i] = last_base
         positions[i] = visibility_to_position(t_params, all_vis[i]) / 100.0
