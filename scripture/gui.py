@@ -429,17 +429,18 @@ class FrameCanvas(QWidget):
         p.drawRect(ox - 1, oy - 1, dw + 1, dh + 1)
         p.drawPixmap(ox, oy, self._pixmap.scaled(dw, dh, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
-        if self._overlay:
-            self._draw_overlay(p)
-        if self._axis:
-            self._draw_axis(p, self._axis)
-        else:
-            if self._pending_tip:
-                self._draw_point(p, self._pending_tip, _TIP_COLOR, "TIP")
-            if self._pending_base:
-                self._draw_point(p, self._pending_base, _BASE_COLOR, "BASE")
         if self._gt:
             self._draw_gt(p)
+        else:
+            if self._overlay:
+                self._draw_overlay(p)
+            if self._axis:
+                self._draw_axis(p, self._axis)
+            else:
+                if self._pending_tip:
+                    self._draw_point(p, self._pending_tip, _TIP_COLOR, "TIP")
+                if self._pending_base:
+                    self._draw_point(p, self._pending_base, _BASE_COLOR, "BASE")
         p.end()
 
     def _draw_point(self, p, pt, color, label):
