@@ -125,6 +125,9 @@ class ProcessWorker(QThread):
         self.finished.emit()
 
 
+_ACTION_DOT_COLOR = QColor(80, 255, 80, 180)
+
+
 class TimelineWidget(QWidget):
     frame_changed = pyqtSignal(int)
     context_menu_requested = pyqtSignal(int, int, int)  # frame, global_x, global_y
@@ -140,6 +143,8 @@ class TimelineWidget(QWidget):
         self.total_frames = 0
         self.current_frame = 0
         self._dragging = False
+        self._zoom = 1.0       # 1.0 = fully zoomed out (all frames visible)
+        self._scroll = 0.0     # left edge in frame-fraction (0.0 to 1.0 - 1/zoom)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
     def set_state(self, scenes, scene_axes, scene_actions, splits, total_frames, current_frame):
@@ -154,17 +159,24 @@ class TimelineWidget(QWidget):
     def _frame_to_x(self, frame):
         if self.total_frames == 0:
             return 0
-        return int(frame / self.total_frames * self.width())
+        frac = frame / self.total_frames
+        return int((frac - self._scroll) * self._zoom * self.width())
 
     def _x_to_frame(self, x):
-        if self.width() == 0:
+        if self.width() == 0 or self.total_frames == 0:
             return 0
-        return max(0, min(int(x / self.width() * self.total_frames), self.total_frames - 1))
+        frac = x / (self._zoom * self.width()) + self._scroll
+        return max(0, min(int(frac * self.total_frames), self.total_frames - 1))
+
+    def _clamp_scroll(self):
+        max_scroll = max(0.0, 1.0 - 1.0 / self._zoom)
+        self._scroll = max(0.0, min(self._scroll, max_scroll))
 
     def paintEvent(self, event):
         if self.total_frames == 0:
             return
         p = QPainter(self)
+        p.setClipRect(0, 0, self.width(), self.height())
         w, h_total = self.width(), self.height()
         bar_y = _HANDLE_HEIGHT
         bar_h = h_total - _HANDLE_HEIGHT
@@ -172,6 +184,8 @@ class TimelineWidget(QWidget):
         for i, scene in enumerate(self.scenes):
             x1 = self._frame_to_x(scene.start_frame)
             x2 = self._frame_to_x(scene.end_frame)
+            if x2 < 0 or x1 > w:
+                continue
             if i in self.scene_actions:
                 color = _SCENE_PROCESSED
             elif i in self.scene_axes:
@@ -180,17 +194,31 @@ class TimelineWidget(QWidget):
                 color = _SCENE_EMPTY
             p.fillRect(x1, bar_y, x2 - x1, bar_h, color)
 
+        # Action frame dots along the center line
+        mid_y = bar_y + bar_h // 2
+        fps = self._get_fps()
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(_ACTION_DOT_COLOR))
+        for actions in self.scene_actions.values():
+            for a in actions:
+                frame = int(round(a["at"] / 1000 * fps))
+                ax = self._frame_to_x(frame)
+                if 0 <= ax <= w:
+                    p.drawEllipse(ax - 2, mid_y - 2, 4, 4)
+
         for split in self.splits:
             sx = self._frame_to_x(split)
-            p.setPen(QPen(_SCENE_BORDER, 3))
-            p.drawLine(sx, bar_y, sx, bar_y + bar_h)
-            self._draw_handle(p, sx, _SCENE_BORDER)
+            if -5 <= sx <= w + 5:
+                p.setPen(QPen(_SCENE_BORDER, 3))
+                p.drawLine(sx, bar_y, sx, bar_y + bar_h)
+                self._draw_handle(p, sx, _SCENE_BORDER)
 
         for i, axis in self.scene_axes.items():
             rx = self._frame_to_x(axis.frame)
-            p.setPen(QPen(_REP_FRAME_COLOR, 2))
-            p.drawLine(rx, bar_y, rx, bar_y + bar_h)
-            self._draw_handle(p, rx, _REP_FRAME_COLOR)
+            if -5 <= rx <= w + 5:
+                p.setPen(QPen(_REP_FRAME_COLOR, 2))
+                p.drawLine(rx, bar_y, rx, bar_y + bar_h)
+                self._draw_handle(p, rx, _REP_FRAME_COLOR)
 
         cx = self._frame_to_x(self.current_frame)
         p.setPen(QPen(Qt.GlobalColor.white, 2))
@@ -200,6 +228,15 @@ class TimelineWidget(QWidget):
         p.setPen(QPen(BORDER_SUBTLE))
         p.drawRect(0, bar_y, w - 1, bar_h - 1)
         p.end()
+
+    def _get_fps(self):
+        """Get fps from parent App if available."""
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, 'fps'):
+                return parent.fps
+            parent = parent.parent()
+        return 30.0
 
     def _draw_handle(self, p, x, color):
         p.setPen(Qt.PenStyle.NoPen)
@@ -240,6 +277,29 @@ class TimelineWidget(QWidget):
 
     def mouseReleaseEvent(self, event):
         self._dragging = False
+
+    def wheelEvent(self, event):
+        if self.total_frames == 0:
+            return
+        x = int(event.position().x())
+        # Frame under cursor before zoom
+        frame_at_cursor = self._x_to_frame(x)
+        frac_at_cursor = frame_at_cursor / self.total_frames
+
+        # Adjust zoom
+        delta = event.angleDelta().y()
+        if delta > 0:
+            self._zoom = min(self._zoom * 1.3, max(1.0, self.total_frames / 10))
+        elif delta < 0:
+            self._zoom = max(self._zoom / 1.3, 1.0)
+
+        # Adjust scroll so the frame under cursor stays under cursor
+        if self._zoom > 1.0:
+            self._scroll = frac_at_cursor - x / (self._zoom * self.width())
+        else:
+            self._scroll = 0.0
+        self._clamp_scroll()
+        self.update()
 
 
 class FrameCanvas(QWidget):
@@ -383,7 +443,7 @@ class FrameCanvas(QWidget):
         self._draw_point(p, axis.base, _BASE_COLOR, "BASE")
 
     def _draw_overlay(self, p):
-        """Draw semi-transparent debug overlay: axis, tip/base, contact, pos."""
+        """Draw debug overlay: axis, tip/base, contact with direction arrow."""
         ov = self._overlay
         axis = ov["axis"]
         tx, ty = self._frame_to_canvas(*axis.tip)
@@ -404,19 +464,48 @@ class FrameCanvas(QWidget):
             p.setBrush(QBrush(faint))
             p.drawEllipse(cx - 3, cy - 3, 6, 6)
 
-        # Contact point (green, solid)
         ct = ov["contact_pt"]
         ccx, ccy = self._frame_to_canvas(*ct)
         contact_color = QColor(80, 255, 80)
-        p.setPen(QPen(Qt.GlobalColor.white, 1))
-        p.setBrush(QBrush(contact_color))
-        p.drawEllipse(ccx - 4, ccy - 4, 8, 8)
 
-        # Pos value on action frames
         if ov["is_action"]:
-            p.setPen(QPen(contact_color))
-            p.setFont(make_font(size=SIZE_BODY, bold=True))
-            p.drawText(ccx + 10, ccy + 5, str(ov["pos"]))
+            # Action frame: bold circle, no fill
+            p.setPen(QPen(contact_color, 3))
+            p.setBrush(QBrush(Qt.GlobalColor.transparent))
+            p.drawEllipse(ccx - 7, ccy - 7, 14, 14)
+        else:
+            # Non-action: small dot with direction arrow along the axis
+            p.setPen(QPen(Qt.GlobalColor.white, 1))
+            p.setBrush(QBrush(contact_color))
+            p.drawEllipse(ccx - 3, ccy - 3, 6, 6)
+
+            direction = ov.get("direction", 0)
+            if direction != 0 and (tx != bx or ty != by):
+                # Arrow along axis: toward tip (+1) or toward base (-1)
+                ax_dx, ax_dy = tx - bx, ty - by
+                ax_len = (ax_dx ** 2 + ax_dy ** 2) ** 0.5
+                if ax_len > 0:
+                    ux, uy = ax_dx / ax_len, ax_dy / ax_len
+                    if direction < 0:
+                        ux, uy = -ux, -uy
+                    arrow_len = 15
+                    ex, ey = ccx + ux * arrow_len, ccy + uy * arrow_len
+                    p.setPen(QPen(contact_color, 2))
+                    p.drawLine(ccx, ccy, int(ex), int(ey))
+                    # Arrowhead
+                    head = 5
+                    px, py = -uy, ux  # perpendicular
+                    p.drawLine(int(ex), int(ey),
+                               int(ex - ux * head + px * head * 0.5),
+                               int(ey - uy * head + py * head * 0.5))
+                    p.drawLine(int(ex), int(ey),
+                               int(ex - ux * head - px * head * 0.5),
+                               int(ey - uy * head - py * head * 0.5))
+
+        # Pos value on every frame
+        p.setPen(QPen(contact_color))
+        p.setFont(make_font(size=SIZE_SMALL, bold=ov["is_action"]))
+        p.drawText(ccx + 12, ccy + 4, str(ov["pos"]))
 
     def mousePressEvent(self, event):
         if not self._frame_w:
@@ -798,11 +887,19 @@ class App(QMainWindow):
             base=(int(round(base[0])), int(round(base[1]))),
             frame=axis.frame,
         )
+        # Compute direction of motion: +1 = moving toward tip, -1 = toward base, 0 = still
+        direction = 0
+        if result is not None and 0 < local_idx < len(result.positions):
+            delta = result.positions[local_idx] - result.positions[local_idx - 1]
+            if abs(delta) > 0.001:
+                direction = 1 if delta > 0 else -1
+
         return {
             "axis": frame_axis,
             "contact_pt": contact_pt,
             "pos": pos_100,
             "is_action": is_action,
+            "direction": direction,
         }
 
     @staticmethod
