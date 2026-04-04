@@ -200,22 +200,22 @@ class TimelineWidget(QWidget):
         fps = self._get_fps()
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(_ACTION_DOT_COLOR))
-        # Prefer GT action frames; fall back to computed actions
-        has_gt = False
+        # Show GT action frames if any annotations exist; otherwise computed
+        scenes_with_gt = set(self.ground_truth.keys())
         for scene_idx, frames in self.ground_truth.items():
             for frame_idx, entry in frames.items():
                 if entry.get("is_action"):
-                    has_gt = True
                     ax = self._frame_to_x(frame_idx)
                     if 0 <= ax <= w:
                         p.drawEllipse(ax - 2, mid_y - 2, 4, 4)
-        if not has_gt:
-            for actions in self.scene_actions.values():
-                for a in actions:
-                    frame = int(round(a["at"] / 1000 * fps))
-                    ax = self._frame_to_x(frame)
-                    if 0 <= ax <= w:
-                        p.drawEllipse(ax - 2, mid_y - 2, 4, 4)
+        for scene_idx, actions in self.scene_actions.items():
+            if scene_idx in scenes_with_gt:
+                continue  # skip computed dots for annotated scenes
+            for a in actions:
+                frame = int(round(a["at"] / 1000 * fps))
+                ax = self._frame_to_x(frame)
+                if 0 <= ax <= w:
+                    p.drawEllipse(ax - 2, mid_y - 2, 4, 4)
 
         for split in self.splits:
             sx = self._frame_to_x(split)
