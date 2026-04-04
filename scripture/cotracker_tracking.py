@@ -96,6 +96,92 @@ def visibility_to_position(t_params: np.ndarray, vis: np.ndarray) -> int:
     return 50
 
 
+def motion_divergence_position(
+    t_params: np.ndarray,
+    tracks_prev: np.ndarray,
+    tracks_curr: np.ndarray,
+) -> int:
+    """Compute contact position from per-point motion between two frames.
+
+    Points on the exposed redacted are relatively stationary.  Points covered
+    by the hand/mouth move WITH the hand.  The contact boundary is where
+    the motion pattern changes.
+
+    t_params:    (N,) parametric positions along axis (0=base, 1=tip).
+    tracks_prev: (N, 2) point positions on previous frame.
+    tracks_curr: (N, 2) point positions on current frame.
+
+    Returns pos 0-100 where 0=base, 100=tip.
+    """
+    displacements = np.linalg.norm(tracks_curr - tracks_prev, axis=1)
+    median_disp = np.median(displacements)
+
+    # If nothing is moving, nothing is covering the redacted
+    if median_disp < 0.5:
+        return 100
+
+    # Classify each point as "moving" (with hand) or "stationary" (exposed)
+    # Use the median as a threshold — points moving more than the median
+    # are likely under the hand
+    threshold = max(1.0, median_disp * 0.5)
+    moving = displacements > threshold
+
+    if not moving.any():
+        return 100
+    if moving.all():
+        return 0
+
+    # The contact point is the boundary between stationary and moving.
+    # Find the lowest t-param of a moving point that's above a stationary point.
+    stationary_t = t_params[~moving]
+    moving_t = t_params[moving]
+
+    # The contact is at the edge of the moving region closest to stationary
+    if stationary_t.min() < moving_t.min():
+        # Stationary at base, moving at tip → contact = min of moving t
+        contact_t = float(moving_t.min())
+    else:
+        # Stationary at tip, moving at base → contact = max of moving t
+        contact_t = float(moving_t.max())
+
+    return int(round(contact_t * 100))
+
+
+def sanitize_positions(positions: np.ndarray, fps: float = 30.0) -> np.ndarray:
+    """Apply temporal smoothing and physical constraints to raw pos signal.
+
+    - Smooths the signal to remove single-frame noise
+    - Enforces a maximum speed (full stroke in no less than ~0.25s)
+    - Clamps output to [0, 1]
+    """
+    from scipy.signal import savgol_filter
+
+    n = len(positions)
+    if n < 5:
+        return positions.copy()
+
+    # 1. Median filter to kill single-frame spikes (non-linear, preserves edges)
+    from scipy.ndimage import median_filter
+    cleaned = median_filter(positions, size=5, mode="nearest")
+
+    # 2. Light Savitzky-Golay smoothing
+    window = max(5, min(int(fps * 0.2), n))
+    if window % 2 == 0:
+        window += 1
+    window = min(window, n)
+    if window >= 5:
+        cleaned = savgol_filter(cleaned, window, 3)
+
+    # 3. Enforce max speed: full stroke (0→1) takes at least 0.25s
+    max_delta_per_frame = 1.0 / (fps * 0.25)
+    for i in range(1, n):
+        delta = cleaned[i] - cleaned[i - 1]
+        if abs(delta) > max_delta_per_frame:
+            cleaned[i] = cleaned[i - 1] + np.sign(delta) * max_delta_per_frame
+
+    return np.clip(cleaned, 0.0, 1.0)
+
+
 def scale_coords(
     coords: np.ndarray,
     from_size: tuple[int, int],
@@ -284,13 +370,9 @@ def cotrack_axis(
                 break
 
     # Use outermost visible tracked points as tip/base for the overlay.
-    # This shows the visible portion of the redacted truthfully — no
-    # extrapolation to guess where occluded endpoints are.
-    # The pos value comes from visibility_to_position, which is
-    # independent of these coordinates.
     tip_coords = np.zeros((n_frames, 2), dtype=np.float64)
     base_coords = np.zeros((n_frames, 2), dtype=np.float64)
-    positions = np.full(n_frames, 0.5)
+    raw_positions = np.full(n_frames, 0.5)
     last_tip = axis_points_scaled[n_points - 1]
     last_base = axis_points_scaled[0]
 
@@ -298,11 +380,26 @@ def cotrack_axis(
         visible = all_vis[i] > 0.5
         if visible.any():
             vis_indices = np.where(visible)[0]
-            last_base = all_tracks[i, vis_indices[0]]   # lowest t visible
-            last_tip = all_tracks[i, vis_indices[-1]]    # highest t visible
+            last_base = all_tracks[i, vis_indices[0]]
+            last_tip = all_tracks[i, vis_indices[-1]]
         tip_coords[i] = last_tip
         base_coords[i] = last_base
-        positions[i] = visibility_to_position(t_params, all_vis[i]) / 100.0
+
+        # Compute pos from motion divergence (frame-to-frame point displacement)
+        if i > 0:
+            raw_positions[i] = motion_divergence_position(
+                t_params, all_tracks[i - 1], all_tracks[i],
+            ) / 100.0
+        else:
+            raw_positions[i] = visibility_to_position(t_params, all_vis[i]) / 100.0
+
+    # Get fps for sanitization
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    cap.release()
+
+    # Apply temporal sanity layer
+    positions = sanitize_positions(raw_positions, fps=fps)
 
     # Scale back to original resolution
     tip_coords = scale_coords(tip_coords, scaled_size, orig_size)

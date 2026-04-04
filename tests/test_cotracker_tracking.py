@@ -2,6 +2,7 @@ import numpy as np
 
 from scripture.cotracker_tracking import (
     fit_axis_from_points, scale_coords, visibility_to_position,
+    motion_divergence_position, sanitize_positions,
 )
 
 
@@ -90,6 +91,101 @@ class TestVisibilityToPosition:
         pos = visibility_to_position(t_params, vis)
         # Hand's leading edge is near t=0.14 → pos ≈ 14
         assert 10 <= pos <= 25
+
+
+class TestMotionDivergencePosition:
+
+    def _make_tracks(self, n_frames, n_points, contact_t_per_frame):
+        """Build synthetic tracks where points below contact_t are stationary
+        and points above contact_t move with the hand (offset by 5px/frame).
+        """
+        t_params = np.linspace(0, 1, n_points)
+        # All points start at their t-position * 100 along y, x=50
+        tracks = np.zeros((n_frames, n_points, 2), dtype=np.float64)
+        for f in range(n_frames):
+            ct = contact_t_per_frame[f]
+            for j, t in enumerate(t_params):
+                tracks[f, j, 0] = 50  # x stays constant
+                tracks[f, j, 1] = t * 100  # base y position
+                if t > ct:
+                    # Points above contact move with hand
+                    tracks[f, j, 1] += f * 5
+        return tracks, t_params
+
+    def test_stationary_scene_returns_100(self):
+        """No motion anywhere → nothing covering redacted → pos=100."""
+        n_points = 30
+        t_params = np.linspace(0, 1, n_points)
+        tracks_prev = np.array([[50, t * 100] for t in t_params], dtype=np.float64)
+        tracks_curr = tracks_prev.copy()  # identical
+        pos = motion_divergence_position(t_params, tracks_prev, tracks_curr)
+        assert pos >= 90
+
+    def test_hand_at_midpoint(self):
+        """Points 0-14 stationary, 15-29 moving → contact near 50."""
+        n_points = 30
+        t_params = np.linspace(0, 1, n_points)
+        tracks_prev = np.array([[50, t * 100] for t in t_params], dtype=np.float64)
+        tracks_curr = tracks_prev.copy()
+        # Move tip-side points
+        tracks_curr[15:, 1] += 10
+        pos = motion_divergence_position(t_params, tracks_prev, tracks_curr)
+        assert 35 <= pos <= 65
+
+    def test_hand_near_tip(self):
+        """Only last few points moving → contact near tip → high pos."""
+        n_points = 30
+        t_params = np.linspace(0, 1, n_points)
+        tracks_prev = np.array([[50, t * 100] for t in t_params], dtype=np.float64)
+        tracks_curr = tracks_prev.copy()
+        tracks_curr[25:, 1] += 10  # only tip-end moving
+        pos = motion_divergence_position(t_params, tracks_prev, tracks_curr)
+        assert pos >= 70
+
+    def test_hand_near_base(self):
+        """Most points moving, only base few stationary → contact near base."""
+        n_points = 30
+        t_params = np.linspace(0, 1, n_points)
+        tracks_prev = np.array([[50, t * 100] for t in t_params], dtype=np.float64)
+        tracks_curr = tracks_prev.copy()
+        tracks_curr[3:, 1] += 10  # almost everything moving
+        pos = motion_divergence_position(t_params, tracks_prev, tracks_curr)
+        assert pos <= 25
+
+
+class TestSanitizePositions:
+
+    def test_smooth_signal_unchanged(self):
+        """A clean sine wave should survive sanitization mostly intact."""
+        t = np.linspace(0, 4 * np.pi, 200)
+        positions = (np.sin(t) + 1) / 2
+        result = sanitize_positions(positions, fps=30)
+        # Should correlate strongly with original
+        assert np.corrcoef(positions, result)[0, 1] > 0.9
+
+    def test_removes_single_frame_spikes(self):
+        """A spike from 50 to 0 back to 50 in one frame should be smoothed."""
+        positions = np.full(100, 0.5)
+        positions[50] = 0.0  # single-frame spike
+        result = sanitize_positions(positions, fps=30)
+        # The spike should be gone or greatly reduced
+        assert result[50] > 0.3
+
+    def test_enforces_max_speed(self):
+        """A jump from 0 to 100 in one frame should be limited."""
+        positions = np.zeros(100)
+        positions[50:] = 1.0  # instant jump
+        result = sanitize_positions(positions, fps=30)
+        # The transition should be spread over multiple frames
+        assert result[51] < 0.8  # can't reach 1.0 in one frame
+
+    def test_output_range(self):
+        """Output should stay in [0, 1]."""
+        rng = np.random.RandomState(42)
+        positions = rng.rand(200)
+        result = sanitize_positions(positions, fps=30)
+        assert result.min() >= 0.0
+        assert result.max() <= 1.0
 
 
 class TestScaleCoords:
