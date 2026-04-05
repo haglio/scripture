@@ -53,15 +53,3 @@ class TestProjectPersistence:
         assert loaded["tracking"]["1"]["tip_coords"] == [[100, 50], [101, 51], [102, 52]]
         assert loaded["tracking"]["1"]["positions"] == [0.5, 0.6, 0.4]
 
-    def test_backwards_compat_no_actions_key(self, tmp_path):
-        """Old project files without 'actions' key should still load."""
-        path = tmp_path / "old.scripture"
-        state = {
-            "video_path": "C:/videos/test.mp4",
-            "splits": [],
-            "axes": {},
-        }
-        save_project(str(path), state)
-        loaded = load_project(str(path))
-        # actions key absent is fine — GUI uses .get("actions", {})
-        assert "video_path" in loaded

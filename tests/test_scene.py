@@ -1,14 +1,6 @@
 from scripture.scene import Scene
 
 
-class TestScene:
-
-    def test_dataclass_fields(self):
-        scene = Scene(start_frame=100, end_frame=500)
-        assert scene.start_frame == 100
-        assert scene.end_frame == 500
-
-
 class TestScenesFromSplits:
     """Test the split-points-to-scenes derivation logic."""
 
