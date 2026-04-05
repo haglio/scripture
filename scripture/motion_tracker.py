@@ -24,7 +24,6 @@ class TrackingResult:
 
 def track_motion(video_path: str, axis: AxisDefinition,
                  start_frame: int, end_frame: int,
-                 margin: int = 80,
                  on_frame: Callable[[int], None] | None = None) -> TrackingResult:
     """Track axis and detect contact position.
 

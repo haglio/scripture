@@ -11,7 +11,7 @@ import qtawesome as qta
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPointF
 from PyQt6.QtGui import (
     QAction, QIcon, QImage, QPixmap, QPainter, QPen, QBrush, QColor,
-    QShortcut, QKeySequence, QPolygonF, QWheelEvent, QCursor,
+    QShortcut, QKeySequence, QPolygonF, QCursor,
 )
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QToolBar,
@@ -20,11 +20,11 @@ from PyQt6.QtWidgets import (
 
 from shared_ui.colors import (
     BG_PRIMARY, BG_SECONDARY, BG_TERTIARY, BG_BUTTON,
-    TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-    BLUE, GREEN, RED, BORDER_SUBTLE,
+    TEXT_PRIMARY, TEXT_MUTED,
+    BLUE, BORDER_SUBTLE,
 )
 from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
-from shared_ui.spacing import MARGIN_STANDARD, GAP_SMALL, GAP_MEDIUM
+from shared_ui.spacing import MARGIN_STANDARD, GAP_MEDIUM
 
 from scripture.scene import Scene, scenes_from_splits
 from scripture.motion_tracker import AxisDefinition, TrackingResult, track_motion

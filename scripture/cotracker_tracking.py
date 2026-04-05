@@ -1,7 +1,6 @@
 """CoTracker3-based axis tracking for per-frame tip/base coordinates."""
 
 from dataclasses import dataclass
-from typing import Callable
 
 import cv2
 import numpy as np
@@ -22,129 +21,6 @@ def _get_model():
         )
         _cotracker_model = _cotracker_model.to("cuda")
     return _cotracker_model
-
-
-def fit_axis_from_points(
-    points: np.ndarray,
-    t_params: np.ndarray,
-    visible: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray] | None:
-    """Fit a line through visible tracked points and extrapolate tip/base.
-
-    points:   (N, 2) array of [x, y] positions for each tracked point.
-    t_params: (N,) parametric positions along the axis (0=base, 1=tip).
-    visible:  (N,) boolean mask of which points are visible.
-
-    Returns (tip_xy, base_xy) as 1-D arrays, or None if <2 points visible.
-    """
-    mask = visible.astype(bool)
-    if mask.sum() < 2:
-        return None
-    t_vis = t_params[mask]
-    pts_vis = points[mask]
-    # Fit x = a_x * t + b_x, y = a_y * t + b_y via least squares
-    A = np.column_stack([t_vis, np.ones(len(t_vis))])
-    coeffs_x, _, _, _ = np.linalg.lstsq(A, pts_vis[:, 0], rcond=None)
-    coeffs_y, _, _, _ = np.linalg.lstsq(A, pts_vis[:, 1], rcond=None)
-    base = np.array([coeffs_x[1], coeffs_y[1]])            # t=0
-    tip = np.array([coeffs_x[0] + coeffs_x[1],             # t=1
-                    coeffs_y[0] + coeffs_y[1]])
-    return tip, base
-
-
-def visibility_to_position(t_params: np.ndarray, vis: np.ndarray) -> int:
-    """Convert per-point visibility into a contact position (0-100).
-
-    The contact point is where the hand/mouth meets the redacted.  Points
-    on the base-side of the contact are exposed (visible), points on the
-    tip-side are covered (occluded).  The position is the t-parameter at
-    the visibility transition boundary.
-
-    t_params: (N,) parametric positions along axis (0=base, 1=tip).
-    vis:      (N,) visibility scores (>0.5 = visible).
-
-    Returns pos 0-100 where 0=base, 100=tip.
-    """
-    visible = vis > 0.5
-    if visible.all():
-        return 100  # nothing covering the redacted
-    if not visible.any():
-        return 0    # fully covered
-
-    # The contact point is the leading edge of the occluded region — where
-    # the hand first meets the exposed redacted.  Walk from base (t=0) to
-    # tip (t=1): the last visible point before a run of occluded points
-    # is the contact boundary.
-    #
-    # If the base end is occluded (hand from below), walk from tip
-    # downward instead.
-    n = len(t_params)
-    # Check which end is visible to determine scan direction
-    base_visible = visible[:n // 4].sum() > visible[3 * n // 4:].sum()
-
-    if base_visible:
-        # Hand from tip side: find last visible point scanning base→tip
-        for i in range(n - 1, -1, -1):
-            if visible[i]:
-                return int(round(t_params[i] * 100))
-    else:
-        # Hand from base side: find last visible point scanning tip→base
-        for i in range(n):
-            if visible[i]:
-                return int(round(t_params[i] * 100))
-
-    return 50
-
-
-def motion_divergence_position(
-    t_params: np.ndarray,
-    tracks_prev: np.ndarray,
-    tracks_curr: np.ndarray,
-) -> int:
-    """Compute contact position from per-point motion between two frames.
-
-    Points on the exposed redacted are relatively stationary.  Points covered
-    by the hand/mouth move WITH the hand.  The contact boundary is where
-    the motion pattern changes.
-
-    t_params:    (N,) parametric positions along axis (0=base, 1=tip).
-    tracks_prev: (N, 2) point positions on previous frame.
-    tracks_curr: (N, 2) point positions on current frame.
-
-    Returns pos 0-100 where 0=base, 100=tip.
-    """
-    displacements = np.linalg.norm(tracks_curr - tracks_prev, axis=1)
-    median_disp = np.median(displacements)
-
-    # If nothing is moving, nothing is covering the redacted
-    if median_disp < 0.5:
-        return 100
-
-    # Classify each point as "moving" (with hand) or "stationary" (exposed)
-    # Use the median as a threshold — points moving more than the median
-    # are likely under the hand
-    threshold = max(1.0, median_disp * 0.5)
-    moving = displacements > threshold
-
-    if not moving.any():
-        return 100
-    if moving.all():
-        return 0
-
-    # The contact point is the boundary between stationary and moving.
-    # Find the lowest t-param of a moving point that's above a stationary point.
-    stationary_t = t_params[~moving]
-    moving_t = t_params[moving]
-
-    # The contact is at the edge of the moving region closest to stationary
-    if stationary_t.min() < moving_t.min():
-        # Stationary at base, moving at tip → contact = min of moving t
-        contact_t = float(moving_t.min())
-    else:
-        # Stationary at tip, moving at base → contact = max of moving t
-        contact_t = float(moving_t.max())
-
-    return int(round(contact_t * 100))
 
 
 def sanitize_positions(positions: np.ndarray, fps: float = 30.0) -> np.ndarray:
@@ -340,7 +216,6 @@ def cotrack_axis(
     start_frame: int,
     end_frame: int,
     n_points: int = 30,
-    on_progress: Callable[[int], None] | None = None,
 ) -> CoTrackResult:
     """Track tip/base and detect contact position using CoTracker3.
 
