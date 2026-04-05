@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 *.pyo
+.claude/
 .venv/
 *.egg-info/
 dist/
