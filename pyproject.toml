@@ -16,5 +16,8 @@ dependencies = [
 [project.scripts]
 scripture = "scripture.main:main"
 
+[project.optional-dependencies]
+dev = ["pytest", "vulture"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
