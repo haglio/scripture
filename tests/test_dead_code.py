@@ -29,6 +29,8 @@ WHITELIST = {
     "scripture/gui.py:_on_canvas_context_menu.gy",
     "scripture/gui.py:_on_timeline_context_menu.gx",
     "scripture/gui.py:_on_timeline_context_menu.gy",
+    # -- pytest fixtures (invoked by the framework, not by user code) --
+    "scripture/tests/conftest.py:qapp",
 }
 
 
@@ -83,7 +85,8 @@ def _find_whitelist_match(key: str) -> bool:
 
 def test_no_dead_code():
     result = subprocess.run(
-        [sys.executable, "-m", "vulture", "scripture/", "--min-confidence", "60"],
+        [sys.executable, "-m", "vulture", "scripture/", "--min-confidence", "60",
+         "--exclude", ".claude,.venv"],
         capture_output=True, text=True,
     )
     lines = [l.strip() for l in result.stdout.splitlines() + result.stderr.splitlines() if l.strip()]
