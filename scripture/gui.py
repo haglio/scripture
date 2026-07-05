@@ -171,7 +171,18 @@ _DET_COLORS = {
     "redacted": QColor(255, 90, 255),
 }
 _DET_DEFAULT_COLOR = QColor(200, 200, 200)
-_ROI_COLOR = QColor(0, 230, 230)
+
+# ROI border color by lock state: how the tracker justified this ROI
+_LOCK_COLORS = {
+    "anchor": QColor(80, 255, 80),     # anchor/anchor_tip detected
+    "contact": QColor(255, 215, 60),   # contact object over last anchor spot
+    "coast": QColor(255, 140, 40),     # nothing relevant; persistence window
+}
+_LOCK_LABELS = {
+    "anchor": "lock: anchor",
+    "contact": "lock: contact",
+    "coast": "coasting",
+}
 
 
 class TimelineWidget(QWidget):
@@ -611,14 +622,19 @@ class FrameCanvas(QWidget):
             p.setFont(make_font(size=SIZE_SMALL))
             p.drawText(cx1 + 2, cy1 + 12, f"{det.class_name} {det.confidence:.2f}")
 
+        lock = ov.get("lock", "none")
         roi = ov.get("roi")
         if roi is not None:
             x, y, w, h = roi
             cx1, cy1 = self._frame_to_canvas(x, y)
             cx2, cy2 = self._frame_to_canvas(x + w, y + h)
+            roi_color = _LOCK_COLORS.get(lock, _DET_DEFAULT_COLOR)
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.setPen(QPen(_ROI_COLOR, 2))
+            p.setPen(QPen(roi_color, 2))
             p.drawRect(cx1, cy1, cx2 - cx1, cy2 - cy1)
+            p.setPen(QPen(roi_color))
+            p.setFont(make_font(size=SIZE_SMALL, bold=True))
+            p.drawText(cx1 + 3, cy2 - 5, _LOCK_LABELS.get(lock, ""))
 
         # Position gauge along the right edge of the canvas
         gauge_x = self.width() - 26
@@ -1624,11 +1640,13 @@ class App(QMainWindow):
         actions = self.scene_actions.get(idx, [])
         is_action = any(abs(a["at"] - frame_ms) < half_frame_ms for a in actions)
 
+        lock = r.signal.lock[local]
         return {
             "roi": r.signal.rois[local],
             "detections": detections,
             "pos": int(round(r.positions[local])),
-            "active": bool(r.signal.roi_active[local]),
+            "active": lock != "none",
+            "lock": lock,
             "is_action": is_action,
         }
 

@@ -36,6 +36,11 @@ class Detection:
 # fraction of the two boxes' combined half-diagonals.
 _INTERACTION_DISTANCE_FACTOR = 0.85
 
+# Classes that can be the thing touching the anchor.  When the anchor itself
+# is occluded (gripped, in mouth), one of these overlapping its last known
+# position is evidence the interaction is still happening there.
+_CONTACT_CLASSES = ("face", "hand", "region_a", "redacted", "redacted", "foot")
+
 
 def _center(box: tuple[int, int, int, int]) -> tuple[float, float]:
     x, y, w, h = box
@@ -47,19 +52,35 @@ def _half_diagonal(box: tuple[int, int, int, int]) -> float:
     return math.hypot(w, h) / 2
 
 
+def _within_interaction_distance(
+    box_a: tuple[int, int, int, int],
+    box_b: tuple[int, int, int, int],
+) -> bool:
+    acx, acy = _center(box_a)
+    bcx, bcy = _center(box_b)
+    dist = math.hypot(bcx - acx, bcy - acy)
+    max_dist = (_half_diagonal(box_a) + _half_diagonal(box_b)) * _INTERACTION_DISTANCE_FACTOR
+    return dist < max_dist
+
+
 def find_interacting(anchor: Detection, detections: list[Detection]) -> list[Detection]:
     """Return the non-anchor detections close enough to interact with it."""
-    pcx, pcy = _center(anchor.box)
-    interacting = []
-    for d in detections:
-        if d.class_name == "anchor":
-            continue
-        ocx, ocy = _center(d.box)
-        dist = math.hypot(ocx - pcx, ocy - pcy)
-        max_dist = (_half_diagonal(anchor.box) + _half_diagonal(d.box)) * _INTERACTION_DISTANCE_FACTOR
-        if dist < max_dist:
-            interacting.append(d)
-    return interacting
+    return [
+        d for d in detections
+        if d.class_name != "anchor" and _within_interaction_distance(anchor.box, d.box)
+    ]
+
+
+def contact_near_box(
+    box: tuple[int, int, int, int],
+    detections: list[Detection],
+) -> list[Detection]:
+    """Contact-class detections close enough to `box` to be touching it."""
+    return [
+        d for d in detections
+        if d.class_name in _CONTACT_CLASSES
+        and _within_interaction_distance(box, d.box)
+    ]
 
 
 def combine_roi(
@@ -208,15 +229,22 @@ class TrackConfig:
 class TrackSignal:
     """Per-frame motion signal plus diagnostics from the tracking pass.
 
-    rois has one entry per frame (None where no ROI was active); detections
-    holds the YOLO boxes for exactly the frames where detection ran.  Both
-    exist so a GUI can replay what the tracker saw.
+    lock records how the ROI was justified on each frame: "anchor" (anchor or
+    anchor_tip detected), "contact" (anchor occluded but a contact-class object
+    covers its last known position), "coast" (nothing relevant detected,
+    persistence window still open), or "none" (no ROI).  rois has one entry
+    per frame; detections holds the YOLO boxes for exactly the frames where
+    detection ran.  All of it exists so a GUI can replay what the tracker saw.
     """
     dy: np.ndarray
-    roi_active: np.ndarray
+    lock: list[str]
     cuts: list[int] = field(default_factory=list)
     rois: list[tuple[int, int, int, int] | None] = field(default_factory=list)
     detections: dict[int, list[Detection]] = field(default_factory=dict)
+
+    @property
+    def roi_active(self) -> np.ndarray:
+        return np.array([state != "none" for state in self.lock], dtype=bool)
 
 
 def compute_positions(signal: TrackSignal, config: TrackConfig) -> np.ndarray:
@@ -274,15 +302,17 @@ def track_flow_signal(
     import cv2
 
     dy_list: list[float] = []
-    active_list: list[bool] = []
+    lock_log: list[str] = []
     cuts: list[int] = []
     roi_log: list[tuple[int, int, int, int] | None] = []
     detection_log: dict[int, list[Detection]] = {}
 
     roi: tuple[int, int, int, int] | None = None
+    last_anchor_box: tuple[int, int, int, int] | None = None
+    lock_mode = "none"
     prev_patch: np.ndarray | None = None
     prev_small: np.ndarray | None = None
-    frames_since_anchor = 0
+    frames_since_lock = 0
 
     for idx, frame in enumerate(frames):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -290,27 +320,48 @@ def track_flow_signal(
         if prev_small is not None and is_scene_cut(prev_small, small, config.cut_threshold):
             cuts.append(idx)
             roi = None
+            last_anchor_box = None
+            lock_mode = "none"
             prev_patch = None
-            frames_since_anchor = 0
+            frames_since_lock = 0
         prev_small = small
 
-        anchor = None
+        lock_refreshed = False
         if idx % config.detect_every == 0 or roi is None:
             detections = detect_fn(frame)
             detection_log[idx] = detections
             anchor = _best_anchor(detections)
             if anchor is not None:
-                frames_since_anchor = 0
+                last_anchor_box = anchor.box
+                lock_mode = "anchor"
+                lock_refreshed = True
                 boxes = [anchor.box] + [
                     d.box for d in find_interacting(anchor, detections)]
                 target = combine_roi(
                     boxes, gray.shape, config.roi_padding, config.roi_min_size)
                 roi = smooth_roi(roi, target, config.roi_smoothing)
+            elif roi is not None and last_anchor_box is not None:
+                # Anchor occluded: something touching its last known spot
+                # is evidence the interaction continues right there.
+                contacts = contact_near_box(last_anchor_box, detections)
+                if contacts:
+                    lock_mode = "contact"
+                    lock_refreshed = True
+                    target = combine_roi(
+                        [last_anchor_box] + [d.box for d in contacts],
+                        gray.shape, config.roi_padding, config.roi_min_size)
+                    roi = smooth_roi(roi, target, config.roi_smoothing)
+                else:
+                    lock_mode = "coast"
 
-        if roi is not None and anchor is None:
-            frames_since_anchor += 1
-            if frames_since_anchor > config.roi_persistence_frames:
+        if lock_refreshed:
+            frames_since_lock = 0
+        elif roi is not None:
+            frames_since_lock += 1
+            if frames_since_lock > config.roi_persistence_frames:
                 roi = None
+                last_anchor_box = None
+                lock_mode = "none"
                 prev_patch = None
 
         dy = 0.0
@@ -326,14 +377,14 @@ def track_flow_signal(
             prev_patch = None
 
         dy_list.append(dy)
-        active_list.append(roi is not None)
+        lock_log.append(lock_mode if roi is not None else "none")
         roi_log.append(roi)
         if on_frame is not None:
             on_frame(idx)
 
     return TrackSignal(
         dy=np.array(dy_list),
-        roi_active=np.array(active_list, dtype=bool),
+        lock=lock_log,
         cuts=cuts,
         rois=roi_log,
         detections=detection_log,
@@ -450,7 +501,7 @@ def pipeline_result_to_state(result: PipelineResult) -> dict:
     sig = result.signal
     return {
         "dy": [round(v, 4) for v in sig.dy.tolist()],
-        "roi_active": sig.roi_active.tolist(),
+        "lock": list(sig.lock),
         "cuts": list(sig.cuts),
         "rois": [list(r) if r is not None else None for r in sig.rois],
         "detections": {
@@ -471,9 +522,13 @@ def pipeline_result_to_state(result: PipelineResult) -> dict:
 
 def pipeline_result_from_state(state: dict) -> PipelineResult:
     """Inverse of pipeline_result_to_state."""
+    lock = state.get("lock")
+    if lock is None:
+        # Sessions saved before lock states existed only recorded activity
+        lock = ["anchor" if a else "none" for a in state["roi_active"]]
     signal = TrackSignal(
         dy=np.array(state["dy"]),
-        roi_active=np.array(state["roi_active"], dtype=bool),
+        lock=lock,
         cuts=list(state["cuts"]),
         rois=[tuple(r) if r is not None else None for r in state["rois"]],
         detections={

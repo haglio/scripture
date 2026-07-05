@@ -10,6 +10,7 @@ from scripture.auto_funscript import (
     anti_plateau_normalize,
     combine_roi,
     compute_positions,
+    contact_near_box,
     find_interacting,
     flow_to_position,
     is_scene_cut,
@@ -39,6 +40,24 @@ class TestFindInteracting:
         anchor = det("anchor", 100, 100, 50, 100)
         far_face = det("face", 500, 400, 60, 60)
         assert find_interacting(anchor, [anchor, far_face]) == []
+
+
+class TestContactNearBox:
+    def test_face_overlapping_box_is_contact(self):
+        anchor_box = (100, 100, 50, 100)
+        face = det("face", 90, 80, 120, 130)
+        assert contact_near_box(anchor_box, [face]) == [face]
+
+    def test_distant_contact_ignored(self):
+        anchor_box = (100, 100, 50, 100)
+        far_hand = det("hand", 600, 400, 50, 50)
+        assert contact_near_box(anchor_box, [far_hand]) == []
+
+    def test_non_contact_classes_ignored(self):
+        anchor_box = (100, 100, 50, 100)
+        anchor_tip = det("anchor_tip", 100, 100, 30, 30)
+        navel = det("navel", 110, 110, 20, 20)
+        assert contact_near_box(anchor_box, [anchor_tip, navel]) == []
 
 
 class TestCombineRoi:
@@ -204,6 +223,45 @@ class TestTrackFlowSignal:
         assert result.dy[3] == 0.0
         assert 3 in result.cuts
 
+    def test_contact_over_lost_anchor_keeps_roi_alive(self):
+        # Anchor visible at frame 0 only; face then covers its position.
+        # Contact hold must outlast the plain persistence window.
+        frames = [textured_frame(0) for _ in range(12)]
+        anchor = Detection("anchor", 0.9, (100, 60, 60, 90))
+        face_over_anchor = Detection("face", 0.9, (80, 40, 110, 130))
+        calls = {"n": 0}
+
+        def detect_fn(frame):
+            calls["n"] += 1
+            return [anchor, face_over_anchor] if calls["n"] == 1 else [face_over_anchor]
+
+        result = track_flow_signal(
+            iter(frames), detect_fn, self._constant_flow_fn(2.0),
+            TrackConfig(detect_every=1, roi_persistence_frames=3),
+        )
+        assert result.roi_active.all()
+        assert result.lock[0] == "anchor"
+        assert set(result.lock[1:]) == {"contact"}
+
+    def test_contact_far_from_lost_anchor_lets_roi_expire(self):
+        frames = [textured_frame(0) for _ in range(12)]
+        anchor = Detection("anchor", 0.9, (100, 60, 60, 90))
+        far_face = Detection("face", 0.9, (600, 350, 80, 80))
+        calls = {"n": 0}
+
+        def detect_fn(frame):
+            calls["n"] += 1
+            return [anchor, far_face] if calls["n"] == 1 else [far_face]
+
+        result = track_flow_signal(
+            iter(frames), detect_fn, self._constant_flow_fn(2.0),
+            TrackConfig(detect_every=1, roi_persistence_frames=3),
+        )
+        # Far face is not holding the lock: coast, then expire
+        assert result.lock[1] == "coast"
+        assert not result.roi_active[-3:].any()
+        assert result.lock[-1] == "none"
+
     def test_records_rois_and_detections_for_visualization(self):
         frames = [textured_frame(0) for _ in range(4)]
         dets = [
@@ -227,7 +285,7 @@ class TestComputePositions:
         n = 300
         t = np.arange(n)
         dy = 3.0 * np.sin(2 * np.pi * t / 30)
-        signal = TrackSignal(dy=dy, roi_active=np.ones(n, dtype=bool))
+        signal = TrackSignal(dy=dy, lock=["anchor"] * n)
         pos = compute_positions(signal, TrackConfig())
         assert len(pos) == n
         # Gain + normalization drive the wave to (nearly) full range
@@ -241,8 +299,7 @@ class TestSignalToActions:
         t = np.arange(n)
         # ~1 stroke/sec oscillation in flow velocity, active throughout
         dy = 3.0 * np.sin(2 * np.pi * t / 30)
-        signal = TrackSignal(
-            dy=dy, roi_active=np.ones(n, dtype=bool))
+        signal = TrackSignal(dy=dy, lock=["anchor"] * n)
         actions = signal_to_actions(signal, fps=fps, config=TrackConfig())
         # ~10 strokes -> ~20 turnarounds; allow slack for edge handling
         assert 12 <= len(actions) <= 28
@@ -256,8 +313,7 @@ class TestSignalToActions:
 
     def test_inactive_signal_yields_no_actions(self):
         n = 200
-        signal = TrackSignal(
-            dy=np.zeros(n), roi_active=np.zeros(n, dtype=bool))
+        signal = TrackSignal(dy=np.zeros(n), lock=["none"] * n)
         actions = signal_to_actions(signal, fps=30.0, config=TrackConfig())
         assert actions == []
 
@@ -265,8 +321,7 @@ class TestSignalToActions:
         n = 90
         t = np.arange(n)
         dy = 3.0 * np.sin(2 * np.pi * t / 30)
-        signal = TrackSignal(
-            dy=dy, roi_active=np.ones(n, dtype=bool))
+        signal = TrackSignal(dy=dy, lock=["anchor"] * n)
         base = signal_to_actions(signal, fps=30.0, config=TrackConfig())
         shifted = signal_to_actions(
             signal, fps=30.0, config=TrackConfig(), start_frame=300)
@@ -317,7 +372,7 @@ class TestPipelineResultSerialization:
 
         signal = TrackSignal(
             dy=np.array([0.0, 1.5, -2.0]),
-            roi_active=np.array([True, True, False]),
+            lock=["anchor", "contact", "none"],
             cuts=[2],
             rois=[(10, 20, 130, 140), (12, 22, 130, 140), None],
             detections={0: [Detection("anchor", 0.9, (10, 20, 30, 40))]},
@@ -334,7 +389,9 @@ class TestPipelineResultSerialization:
         restored = pipeline_result_from_state(state)
 
         np.testing.assert_allclose(restored.signal.dy, signal.dy)
-        np.testing.assert_array_equal(restored.signal.roi_active, signal.roi_active)
+        assert restored.signal.lock == ["anchor", "contact", "none"]
+        np.testing.assert_array_equal(
+            restored.signal.roi_active, [True, True, False])
         assert restored.signal.cuts == [2]
         assert restored.signal.rois == [(10, 20, 130, 140), (12, 22, 130, 140), None]
         det = restored.signal.detections[0][0]
