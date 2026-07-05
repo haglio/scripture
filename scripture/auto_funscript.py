@@ -206,10 +206,25 @@ class TrackConfig:
 
 @dataclass
 class TrackSignal:
-    """Per-frame motion signal plus diagnostics from the tracking pass."""
+    """Per-frame motion signal plus diagnostics from the tracking pass.
+
+    rois has one entry per frame (None where no ROI was active); detections
+    holds the YOLO boxes for exactly the frames where detection ran.  Both
+    exist so a GUI can replay what the tracker saw.
+    """
     dy: np.ndarray
     roi_active: np.ndarray
     cuts: list[int] = field(default_factory=list)
+    rois: list[tuple[int, int, int, int] | None] = field(default_factory=list)
+    detections: dict[int, list[Detection]] = field(default_factory=dict)
+
+
+def compute_positions(signal: TrackSignal, config: TrackConfig) -> np.ndarray:
+    """The final per-frame 0-100 position series behind the actions."""
+    positions = flow_to_position(
+        signal.dy, gain=config.gain, median_window=config.median_window)
+    return anti_plateau_normalize(
+        positions, window=config.norm_window, threshold=config.norm_threshold)
 
 
 def signal_to_actions(
@@ -224,11 +239,7 @@ def signal_to_actions(
     if not signal.roi_active.any():
         return []
 
-    positions = flow_to_position(
-        signal.dy, gain=config.gain, median_window=config.median_window)
-    positions = anti_plateau_normalize(
-        positions, window=config.norm_window, threshold=config.norm_threshold)
-
+    positions = compute_positions(signal, config)
     frame_ms = 1000.0 / fps
     timestamps_ms = (start_frame + np.arange(len(positions))) * frame_ms
     return extract_strokes(positions / 100.0, timestamps_ms, fps=fps)
@@ -265,6 +276,8 @@ def track_flow_signal(
     dy_list: list[float] = []
     active_list: list[bool] = []
     cuts: list[int] = []
+    roi_log: list[tuple[int, int, int, int] | None] = []
+    detection_log: dict[int, list[Detection]] = {}
 
     roi: tuple[int, int, int, int] | None = None
     prev_patch: np.ndarray | None = None
@@ -284,6 +297,7 @@ def track_flow_signal(
         anchor = None
         if idx % config.detect_every == 0 or roi is None:
             detections = detect_fn(frame)
+            detection_log[idx] = detections
             anchor = _best_anchor(detections)
             if anchor is not None:
                 frames_since_anchor = 0
@@ -313,6 +327,7 @@ def track_flow_signal(
 
         dy_list.append(dy)
         active_list.append(roi is not None)
+        roi_log.append(roi)
         if on_frame is not None:
             on_frame(idx)
 
@@ -320,6 +335,8 @@ def track_flow_signal(
         dy=np.array(dy_list),
         roi_active=np.array(active_list, dtype=bool),
         cuts=cuts,
+        rois=roi_log,
+        detections=detection_log,
     )
 
 
@@ -376,19 +393,29 @@ def _make_dis_flow():
     return flow
 
 
-def generate_funscript(
+@dataclass
+class PipelineResult:
+    """Everything the tracking pass produced for a stretch of video."""
+    signal: TrackSignal
+    positions: np.ndarray
+    actions: list[dict]
+    fps: float
+    start_frame: int
+    total_frames: int
+
+
+def run_pipeline(
     video_path: str,
-    output_path: str,
     model_path: str = DEFAULT_MODEL_PATH,
     start_frame: int = 0,
     end_frame: int | None = None,
     config: TrackConfig | None = None,
     on_frame: Callable[[int], None] | None = None,
-) -> list[dict]:
-    """Video in, funscript out.  Returns the action list it wrote."""
+    detect_fn: Callable[[np.ndarray], list[Detection]] | None = None,
+    flow_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None,
+) -> PipelineResult:
+    """Run the full pipeline in memory; detect_fn/flow_fn are injectable."""
     import cv2
-
-    from scripture.funscript import build_funscript, save_funscript
 
     config = config or TrackConfig()
 
@@ -401,17 +428,93 @@ def generate_funscript(
 
     signal = track_flow_signal(
         _read_frames(video_path, start_frame, end_frame),
-        _make_yolo_detector(model_path, config.conf_threshold),
-        _make_dis_flow(),
+        detect_fn or _make_yolo_detector(model_path, config.conf_threshold),
+        flow_fn or _make_dis_flow(),
         config,
         on_frame=on_frame,
     )
 
-    actions = signal_to_actions(signal, fps=fps, config=config,
-                                start_frame=start_frame)
-    funscript = build_funscript(actions, duration_seconds=int(total_frames / fps))
+    return PipelineResult(
+        signal=signal,
+        positions=compute_positions(signal, config),
+        actions=signal_to_actions(signal, fps=fps, config=config,
+                                  start_frame=start_frame),
+        fps=fps,
+        start_frame=start_frame,
+        total_frames=total_frames,
+    )
+
+
+def pipeline_result_to_state(result: PipelineResult) -> dict:
+    """JSON-serializable form of a PipelineResult for project persistence."""
+    sig = result.signal
+    return {
+        "dy": [round(v, 4) for v in sig.dy.tolist()],
+        "roi_active": sig.roi_active.tolist(),
+        "cuts": list(sig.cuts),
+        "rois": [list(r) if r is not None else None for r in sig.rois],
+        "detections": {
+            str(idx): [
+                {"class_name": d.class_name, "confidence": d.confidence,
+                 "box": list(d.box)}
+                for d in dets
+            ]
+            for idx, dets in sig.detections.items()
+        },
+        "positions": [round(v, 2) for v in result.positions.tolist()],
+        "actions": result.actions,
+        "fps": result.fps,
+        "start_frame": result.start_frame,
+        "total_frames": result.total_frames,
+    }
+
+
+def pipeline_result_from_state(state: dict) -> PipelineResult:
+    """Inverse of pipeline_result_to_state."""
+    signal = TrackSignal(
+        dy=np.array(state["dy"]),
+        roi_active=np.array(state["roi_active"], dtype=bool),
+        cuts=list(state["cuts"]),
+        rois=[tuple(r) if r is not None else None for r in state["rois"]],
+        detections={
+            int(idx): [
+                Detection(class_name=d["class_name"],
+                          confidence=d["confidence"],
+                          box=tuple(d["box"]))
+                for d in dets
+            ]
+            for idx, dets in state["detections"].items()
+        },
+    )
+    return PipelineResult(
+        signal=signal,
+        positions=np.array(state["positions"]),
+        actions=state["actions"],
+        fps=state["fps"],
+        start_frame=state["start_frame"],
+        total_frames=state["total_frames"],
+    )
+
+
+def generate_funscript(
+    video_path: str,
+    output_path: str,
+    model_path: str = DEFAULT_MODEL_PATH,
+    start_frame: int = 0,
+    end_frame: int | None = None,
+    config: TrackConfig | None = None,
+    on_frame: Callable[[int], None] | None = None,
+) -> list[dict]:
+    """Video in, funscript out.  Returns the action list it wrote."""
+    from scripture.funscript import build_funscript, save_funscript
+
+    result = run_pipeline(
+        video_path, model_path=model_path, start_frame=start_frame,
+        end_frame=end_frame, config=config, on_frame=on_frame)
+    funscript = build_funscript(
+        result.actions, duration_seconds=int(result.total_frames / result.fps))
     save_funscript(funscript, output_path)
-    return actions
+    return result.actions
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:

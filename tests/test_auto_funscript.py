@@ -9,10 +9,14 @@ from scripture.auto_funscript import (
     TrackSignal,
     anti_plateau_normalize,
     combine_roi,
+    compute_positions,
     find_interacting,
     flow_to_position,
     is_scene_cut,
     parse_args,
+    pipeline_result_from_state,
+    pipeline_result_to_state,
+    run_pipeline,
     signal_to_actions,
     smooth_roi,
     track_flow_signal,
@@ -200,6 +204,35 @@ class TestTrackFlowSignal:
         assert result.dy[3] == 0.0
         assert 3 in result.cuts
 
+    def test_records_rois_and_detections_for_visualization(self):
+        frames = [textured_frame(0) for _ in range(4)]
+        dets = [
+            Detection("anchor", 0.9, (100, 60, 60, 90)),
+            Detection("hand", 0.8, (110, 70, 50, 50)),
+        ]
+        result = track_flow_signal(
+            iter(frames), lambda f: dets, self._constant_flow_fn(1.0),
+            TrackConfig(detect_every=2),
+        )
+        # One ROI tuple per frame (persisted between detections)
+        assert len(result.rois) == 4
+        assert all(r is not None and len(r) == 4 for r in result.rois)
+        # Detections recorded only on the frames where YOLO ran
+        assert sorted(result.detections.keys()) == [0, 2]
+        assert [d.class_name for d in result.detections[0]] == ["anchor", "hand"]
+
+
+class TestComputePositions:
+    def test_full_pipeline_position_series(self):
+        n = 300
+        t = np.arange(n)
+        dy = 3.0 * np.sin(2 * np.pi * t / 30)
+        signal = TrackSignal(dy=dy, roi_active=np.ones(n, dtype=bool))
+        pos = compute_positions(signal, TrackConfig())
+        assert len(pos) == n
+        # Gain + normalization drive the wave to (nearly) full range
+        assert pos.max() > 95 and pos.min() < 5
+
 
 class TestSignalToActions:
     def test_oscillating_flow_yields_alternating_strokes(self):
@@ -241,6 +274,75 @@ class TestSignalToActions:
         # 300 frames at 30fps = 10s offset
         for a, b in zip(base, shifted):
             assert b["at"] - a["at"] == 10000
+
+
+class TestRunPipeline:
+    def test_processes_video_file_with_injected_stages(self, tmp_path):
+        import cv2
+
+        video_path = str(tmp_path / "clip.mp4")
+        writer = cv2.VideoWriter(
+            video_path, cv2.VideoWriter_fourcc(*"mp4v"), 30.0, (160, 120))
+        rng = np.random.default_rng(3)
+        base = rng.integers(0, 255, (120, 160, 3)).astype(np.uint8)
+        for _ in range(30):
+            writer.write(base)
+        writer.release()
+
+        dets = [Detection("anchor", 0.9, (40, 30, 40, 60))]
+
+        def fake_flow(prev_gray, gray):
+            flow = np.zeros((*gray.shape, 2), dtype=np.float32)
+            flow[..., 1] = 2.0
+            return flow
+
+        progress = []
+        result = run_pipeline(
+            video_path, config=TrackConfig(detect_every=5),
+            on_frame=progress.append,
+            detect_fn=lambda f: dets, flow_fn=fake_flow,
+        )
+        assert len(result.positions) == 30
+        assert len(result.signal.rois) == 30
+        assert result.fps == pytest.approx(30.0, abs=0.1)
+        assert isinstance(result.actions, list)
+        assert progress == list(range(30))
+
+
+class TestPipelineResultSerialization:
+    def test_json_round_trip(self):
+        import json
+
+        from scripture.auto_funscript import PipelineResult
+
+        signal = TrackSignal(
+            dy=np.array([0.0, 1.5, -2.0]),
+            roi_active=np.array([True, True, False]),
+            cuts=[2],
+            rois=[(10, 20, 130, 140), (12, 22, 130, 140), None],
+            detections={0: [Detection("anchor", 0.9, (10, 20, 30, 40))]},
+        )
+        original = PipelineResult(
+            signal=signal,
+            positions=np.array([50.0, 65.0, 30.0]),
+            actions=[{"at": 0, "pos": 50}],
+            fps=29.97,
+            start_frame=100,
+            total_frames=500,
+        )
+        state = json.loads(json.dumps(pipeline_result_to_state(original)))
+        restored = pipeline_result_from_state(state)
+
+        np.testing.assert_allclose(restored.signal.dy, signal.dy)
+        np.testing.assert_array_equal(restored.signal.roi_active, signal.roi_active)
+        assert restored.signal.cuts == [2]
+        assert restored.signal.rois == [(10, 20, 130, 140), (12, 22, 130, 140), None]
+        det = restored.signal.detections[0][0]
+        assert det.class_name == "anchor" and det.box == (10, 20, 30, 40)
+        np.testing.assert_allclose(restored.positions, original.positions)
+        assert restored.actions == original.actions
+        assert restored.fps == pytest.approx(29.97)
+        assert restored.start_frame == 100 and restored.total_frames == 500
 
 
 class TestParseArgs:

@@ -1,5 +1,6 @@
 """PyQt6 GUI for scripture: manual scene splitting, axis annotation, and export."""
 
+import bisect
 import json
 import sys
 import time
@@ -26,7 +27,10 @@ from shared_ui.colors import (
 from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
 from shared_ui.spacing import MARGIN_STANDARD, GAP_MEDIUM
 
-from scripture.scene import Scene, scenes_from_splits
+from scripture.auto_funscript import (
+    pipeline_result_from_state, pipeline_result_to_state, run_pipeline,
+)
+from scripture.scene import Scene, actions_by_scene, scenes_from_splits
 from scripture.motion_tracker import AxisDefinition, TrackingResult, track_motion
 from scripture.stroke_extract import extract_strokes
 from scripture.funscript import build_funscript, save_funscript
@@ -133,7 +137,41 @@ class ProcessWorker(QThread):
         self.finished.emit()
 
 
+class AutoProcessWorker(QThread):
+    """Runs the fully automatic YOLO+flow pipeline over the whole video."""
+    frame_progress = pyqtSignal(int)
+    done = pyqtSignal(object)  # PipelineResult
+    error = pyqtSignal(str)
+
+    def __init__(self, video_path):
+        super().__init__()
+        self.video_path = video_path
+
+    def run(self):
+        try:
+            result = run_pipeline(
+                self.video_path, on_frame=self.frame_progress.emit)
+            self.done.emit(result)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.error.emit(str(e))
+
+
 _ACTION_DOT_COLOR = QColor(80, 255, 80, 180)
+
+# Detection box colors by class (drawn in the auto-tracking overlay)
+_DET_COLORS = {
+    "anchor": QColor(80, 255, 80),
+    "anchor_tip": QColor(0, 220, 140),
+    "face": QColor(90, 150, 255),
+    "hand": QColor(255, 215, 60),
+    "region_a": QColor(190, 90, 230),
+    "redacted": QColor(255, 150, 40),
+    "redacted": QColor(255, 90, 255),
+}
+_DET_DEFAULT_COLOR = QColor(200, 200, 200)
+_ROI_COLOR = QColor(0, 230, 230)
 
 
 class TimelineWidget(QWidget):
@@ -339,6 +377,7 @@ class FrameCanvas(QWidget):
         self._dragging_point = None  # "tip", "base", "contact", or None
         self._overlay = None  # dict with axis, contact_pt, pos, is_action
         self._gt = None  # ground truth dict: tip, base, contact, is_action, pos
+        self._auto_overlay = None  # dict with roi, detections, pos, active, is_action
 
     @property
     def zoom(self):
@@ -382,8 +421,18 @@ class FrameCanvas(QWidget):
         self._gt = gt
         self.update()
 
+    def set_auto_overlay(self, overlay):
+        """Set auto-tracking overlay data (or None to clear).
+
+        overlay dict keys: roi (x,y,w,h or None), detections (list of
+        Detection or None), pos (0-100), active (bool), is_action (bool).
+        """
+        self._auto_overlay = overlay
+        self.update()
+
     def clear(self):
         self._pixmap = self._axis = self._pending_tip = self._pending_base = self._overlay = self._gt = None
+        self._auto_overlay = None
         self.update()
 
     def _display_scale(self):
@@ -448,9 +497,11 @@ class FrameCanvas(QWidget):
         p.drawRect(ox - 1, oy - 1, dw + 1, dh + 1)
         p.drawPixmap(ox, oy, self._pixmap.scaled(dw, dh, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
+        if self._auto_overlay:
+            self._draw_auto_overlay(p)
         if self._gt:
             self._draw_gt(p)
-        else:
+        elif not self._auto_overlay:
             if self._overlay:
                 self._draw_overlay(p)
             if self._axis:
@@ -543,6 +594,56 @@ class FrameCanvas(QWidget):
         p.setPen(QPen(contact_color))
         p.setFont(make_font(size=SIZE_SMALL, bold=ov["is_action"]))
         p.drawText(ccx + 12, ccy + 4, str(ov["pos"]))
+
+    def _draw_auto_overlay(self, p):
+        """Draw the auto-tracker's view: detections, ROI, and a pos gauge."""
+        ov = self._auto_overlay
+
+        for det in ov.get("detections") or []:
+            x, y, w, h = det.box
+            color = _DET_COLORS.get(det.class_name, _DET_DEFAULT_COLOR)
+            cx1, cy1 = self._frame_to_canvas(x, y)
+            cx2, cy2 = self._frame_to_canvas(x + w, y + h)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(color, 1, Qt.PenStyle.DotLine))
+            p.drawRect(cx1, cy1, cx2 - cx1, cy2 - cy1)
+            p.setPen(QPen(color))
+            p.setFont(make_font(size=SIZE_SMALL))
+            p.drawText(cx1 + 2, cy1 + 12, f"{det.class_name} {det.confidence:.2f}")
+
+        roi = ov.get("roi")
+        if roi is not None:
+            x, y, w, h = roi
+            cx1, cy1 = self._frame_to_canvas(x, y)
+            cx2, cy2 = self._frame_to_canvas(x + w, y + h)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(_ROI_COLOR, 2))
+            p.drawRect(cx1, cy1, cx2 - cx1, cy2 - cy1)
+
+        # Position gauge along the right edge of the canvas
+        gauge_x = self.width() - 26
+        gauge_top, gauge_h = 20, max(60, self.height() - 60)
+        p.setPen(QPen(BORDER_SUBTLE))
+        p.setBrush(QBrush(BG_SECONDARY))
+        p.drawRect(gauge_x, gauge_top, 12, gauge_h)
+        if ov.get("active"):
+            pos = ov.get("pos", 50)
+            marker_y = gauge_top + int((100 - pos) / 100 * gauge_h)
+            color = QColor(80, 255, 80)
+            if ov.get("is_action"):
+                p.setPen(QPen(color, 3))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawEllipse(gauge_x - 4, marker_y - 8, 20, 16)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(color))
+            p.drawRect(gauge_x + 1, marker_y - 2, 11, 5)
+            p.setPen(QPen(color))
+            p.setFont(make_font(size=SIZE_SMALL, bold=ov.get("is_action", False)))
+            p.drawText(gauge_x - 24, marker_y + 4, f"{ov.get('pos', 50):3d}")
+        else:
+            p.setPen(QPen(QColor(255, 150, 50)))
+            p.setFont(make_font(size=SIZE_SMALL, bold=True))
+            p.drawText(gauge_x - 60, gauge_top + 14, "no target")
 
     def _draw_gt(self, p):
         """Draw ground truth annotation points."""
@@ -652,6 +753,8 @@ class App(QMainWindow):
         self.scene_actions = {}
         self.scene_positions = {}  # idx -> TrackingResult (for debug overlay)
         self.ground_truth = {}    # idx -> {frame_idx: {tip, base, contact, is_action}}
+        self.auto_result = None   # PipelineResult from the YOLO+flow pipeline
+        self._auto_det_frames = []  # sorted detection frame indices (cache)
         self.current_frame_idx = 0
         self.placing = None
         self.pending_tip = self.pending_base = None
@@ -903,6 +1006,11 @@ class App(QMainWindow):
         bottom = QHBoxLayout()
         bottom.setSpacing(GAP_MEDIUM)
 
+        self.btn_auto_process = QPushButton("Auto Process (YOLO)")
+        self.btn_auto_process.setStyleSheet(_BTN_STYLE)
+        self.btn_auto_process.clicked.connect(self._auto_process)
+        bottom.addWidget(self.btn_auto_process)
+
         self.btn_process_all = QPushButton("Process All")
         self.btn_process_all.setStyleSheet(_BTN_STYLE)
         self.btn_process_all.clicked.connect(self._process_all)
@@ -950,6 +1058,10 @@ class App(QMainWindow):
                         if _oi in old_positions:
                             self.scene_positions[ni] = old_positions[_oi]
                         break
+        # Auto actions are global; re-bucket them into the new scene layout
+        if self.auto_result is not None:
+            self.scene_actions = actions_by_scene(
+                self.auto_result.actions, self.scenes, self.fps)
 
     def _update_timeline(self):
         self.timeline.set_state(
@@ -992,6 +1104,7 @@ class App(QMainWindow):
         self.scene_axes.clear()
         self.scene_actions.clear()
         self.scene_positions.clear()
+        self._set_auto_result(None)
         self.current_frame_idx = 0
         self._project_path = None
         self._mark_dirty()
@@ -1120,6 +1233,12 @@ class App(QMainWindow):
             self.canvas.set_axis(None)
             self.canvas.set_pending_tip(self.pending_tip)
             self.canvas.set_pending_base(self.pending_base)
+
+        # Auto-tracking overlay takes precedence when the auto pipeline ran
+        if self.auto_result is not None:
+            self.canvas.set_auto_overlay(self._build_auto_overlay(frame_idx))
+        else:
+            self.canvas.set_auto_overlay(None)
 
         # Debug overlay for processed scenes (works with full positions or just actions)
         if idx in self.scene_axes and (idx in self.scene_positions or idx in self.scene_actions):
@@ -1378,18 +1497,31 @@ class App(QMainWindow):
         h, m = divmod(m, 60)
         return f"{h}h {m:02d}m {s:02d}s"
 
-    def _start_processing(self, jobs):
-        tf = sum(sc.end_frame - sc.start_frame for _, sc, _ in jobs)
+    def _show_progress_ui(self, maximum, fmt):
         self._spacer_action.setVisible(False)
         self._progress_sep.setVisible(True)
         self._progress_action.setVisible(True)
         self._abort_action.setVisible(True)
-        self.progress_bar.setMaximum(0)  # indeterminate (pulsing) during CoTracker3
+        self.progress_bar.setMaximum(maximum)
         self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("Tracking axis with CoTracker3\u2026")
+        self.progress_bar.setFormat(fmt)
         self.btn_process_all.setEnabled(False)
-        self._process_total_frames = tf
+        self.btn_auto_process.setEnabled(False)
         self._process_start_time = time.monotonic()
+
+    def _hide_progress_ui(self):
+        self._spacer_action.setVisible(True)
+        self._progress_sep.setVisible(False)
+        self._progress_action.setVisible(False)
+        self._abort_action.setVisible(False)
+        self.btn_process_all.setEnabled(True)
+        self.btn_auto_process.setEnabled(True)
+
+    def _start_processing(self, jobs):
+        tf = sum(sc.end_frame - sc.start_frame for _, sc, _ in jobs)
+        # Indeterminate (pulsing) during CoTracker3
+        self._show_progress_ui(0, "Tracking axis with CoTracker3\u2026")
+        self._process_total_frames = tf
         self._worker = ProcessWorker(self.video_path, jobs, self.fps)
         self._worker.frame_progress.connect(self._on_frame_progress)
         self._worker.scene_done.connect(self._on_scene_done)
@@ -1415,11 +1547,7 @@ class App(QMainWindow):
 
     def _on_process_finished(self):
         el = time.monotonic() - self._process_start_time
-        self._spacer_action.setVisible(True)
-        self._progress_sep.setVisible(False)
-        self._progress_action.setVisible(False)
-        self._abort_action.setVisible(False)
-        self.btn_process_all.setEnabled(True)
+        self._hide_progress_ui()
         self._worker = None
         total = sum(len(a) for a in self.scene_actions.values())
         self._set_status(f"Done \u2014 {total} actions in {self._fmt_duration(el)}.")
@@ -1429,12 +1557,80 @@ class App(QMainWindow):
             self._worker.terminate()
             self._worker.wait()
             self._worker = None
-        self._spacer_action.setVisible(True)
-        self._progress_sep.setVisible(False)
-        self._progress_action.setVisible(False)
-        self._abort_action.setVisible(False)
-        self.btn_process_all.setEnabled(True)
+        self._hide_progress_ui()
         self._set_status("Processing aborted.")
+
+    # \u2500\u2500 Automatic YOLO+flow processing \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+    def _auto_process(self):
+        if self._is_processing():
+            self._set_status("Already processing \u2014 wait for it to finish.")
+            return
+        if not self.video_path:
+            QMessageBox.warning(self, "No video", "Open a video first.")
+            return
+        self._show_progress_ui(self.total_frames, "Auto tracking\u2026 %p%")
+        self._worker = AutoProcessWorker(self.video_path)
+        self._worker.frame_progress.connect(self.progress_bar.setValue)
+        self._worker.done.connect(self._on_auto_done)
+        self._worker.error.connect(self._on_auto_error)
+        self._worker.finished.connect(self._on_auto_finished)
+        self._worker.start()
+
+    def _set_auto_result(self, result):
+        """Install a pipeline result: bucket actions and refresh caches."""
+        self.auto_result = result
+        self._auto_det_frames = sorted(result.signal.detections.keys()) if result else []
+        if result is not None:
+            self.scene_actions = actions_by_scene(result.actions, self.scenes, self.fps)
+            self.scene_positions.clear()
+
+    def _on_auto_done(self, result):
+        self._set_auto_result(result)
+        self._mark_dirty()
+        self._update_timeline()
+        self._show_frame(self.current_frame_idx)
+
+    def _on_auto_error(self, msg):
+        self._set_status(f"Auto processing error: {msg}")
+        QMessageBox.warning(self, "Auto Processing Error", msg)
+
+    def _on_auto_finished(self):
+        el = time.monotonic() - self._process_start_time
+        self._hide_progress_ui()
+        self._worker = None
+        if self.auto_result is not None:
+            self._set_status(
+                f"Auto done \u2014 {len(self.auto_result.actions)} actions "
+                f"in {self._fmt_duration(el)}.")
+
+    def _build_auto_overlay(self, frame_idx):
+        """Overlay dict showing what the auto tracker saw at this frame."""
+        r = self.auto_result
+        local = frame_idx - r.start_frame
+        if local < 0 or local >= len(r.positions):
+            return None
+
+        # Most recent detection result within a couple of detection cycles
+        detections = None
+        if self._auto_det_frames:
+            i = bisect.bisect_right(self._auto_det_frames, local) - 1
+            if i >= 0 and local - self._auto_det_frames[i] <= 6:
+                detections = r.signal.detections[self._auto_det_frames[i]]
+
+        frame_ms = frame_idx / self.fps * 1000
+        half_frame_ms = 500 / self.fps
+        idx = self._current_scene_idx()
+        actions = self.scene_actions.get(idx, [])
+        is_action = any(abs(a["at"] - frame_ms) < half_frame_ms for a in actions)
+
+        return {
+            "roi": r.signal.rois[local],
+            "detections": detections,
+            "pos": int(round(r.positions[local])),
+            "active": bool(r.signal.roi_active[local]),
+            "is_action": is_action,
+        }
 
     def _is_processing(self):
         return self._worker is not None and self._worker.isRunning()
@@ -1503,6 +1699,8 @@ class App(QMainWindow):
             "video_path": self.video_path, "splits": self.splits,
             "axes": axes, "actions": acts, "tracking": tracking,
             "ground_truth": gt,
+            "auto": (pipeline_result_to_state(self.auto_result)
+                     if self.auto_result is not None else None),
             "current_frame": self.current_frame_idx,
         }
 
@@ -1586,6 +1784,11 @@ class App(QMainWindow):
                     "is_action": entry.get("is_action", False),
                 }
             self.ground_truth[int(scene_k)] = scene_gt
+
+        # Load auto-pipeline diagnostics
+        auto_state = state.get("auto")
+        self._set_auto_result(
+            pipeline_result_from_state(auto_state) if auto_state else None)
 
         self._project_path = path
         self._mark_clean()
