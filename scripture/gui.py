@@ -633,7 +633,9 @@ class FrameCanvas(QWidget):
             p.drawRect(cx1, cy1, cx2 - cx1, cy2 - cy1)
             p.setPen(QPen(memory_color))
             p.setFont(make_font(size=SIZE_SMALL))
-            p.drawText(cx1 + 2, cy1 - 4, "anchor (memory)")
+            age = ov.get("belief_age_s")
+            label = "anchor (memory)" if age is None else f"anchor (memory {age:.0f}s)"
+            p.drawText(cx1 + 2, cy1 - 4, label)
 
         lock = ov.get("lock", "none")
         roi = ov.get("roi")
@@ -1610,9 +1612,18 @@ class App(QMainWindow):
         """Install a pipeline result: bucket actions and refresh caches."""
         self.auto_result = result
         self._auto_det_frames = sorted(result.signal.detections.keys()) if result else []
+        self._auto_last_anchor = None
         if result is not None:
             self.scene_actions = actions_by_scene(result.actions, self.scenes, self.fps)
             self.scene_positions.clear()
+            # For each frame, the most recent frame with a direct sighting
+            last_anchor = np.full(len(result.signal.lock), -1, dtype=np.int64)
+            last = -1
+            for i, state in enumerate(result.signal.lock):
+                if state == "anchor":
+                    last = i
+                last_anchor[i] = last
+            self._auto_last_anchor = last_anchor
 
     def _on_auto_done(self, result):
         self._set_auto_result(result)
@@ -1655,6 +1666,13 @@ class App(QMainWindow):
 
         lock = r.signal.lock[local]
         beliefs = r.signal.beliefs
+        belief = (beliefs[local] if local < len(beliefs)
+                  and lock in ("contact", "coast") else None)
+        belief_age_s = None
+        if belief is not None and self._auto_last_anchor is not None:
+            last = self._auto_last_anchor[local]
+            if last >= 0:
+                belief_age_s = (local - last) / self.fps
         return {
             "roi": r.signal.rois[local],
             "detections": detections,
@@ -1662,8 +1680,8 @@ class App(QMainWindow):
             "active": lock != "none",
             "lock": lock,
             # Show the remembered anchor whenever it isn't directly seen
-            "belief": (beliefs[local] if local < len(beliefs)
-                       and lock in ("contact", "coast") else None),
+            "belief": belief,
+            "belief_age_s": belief_age_s,
             "is_action": is_action,
         }
 

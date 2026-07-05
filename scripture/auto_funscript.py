@@ -207,16 +207,6 @@ def weighted_flow(flow: np.ndarray) -> tuple[float, float]:
     return dy, dx
 
 
-def background_flow(flow: np.ndarray) -> tuple[float, float]:
-    """Median (dy, dx) of a dense flow field: the camera/scene motion.
-
-    The complement of weighted_flow — the median ignores small fast movers
-    (the stroking) and reports what the bulk of the frame did, which is how
-    an occluded anchor's remembered position gets carried along.
-    """
-    return float(np.median(flow[..., 1])), float(np.median(flow[..., 0]))
-
-
 @dataclass
 class TrackConfig:
     """Tuning knobs; defaults mirror the FunGen run that produced a usable
@@ -233,8 +223,6 @@ class TrackConfig:
     norm_window: int = 120
     norm_threshold: float = 15.0
     cut_threshold: float = 0.5
-    belief_recenter: float = 0.1
-    global_motion_downscale: int = 4
 
 
 @dataclass
@@ -322,15 +310,15 @@ def track_flow_signal(
     detection_log: dict[int, list[Detection]] = {}
 
     roi: tuple[int, int, int, int] | None = None
-    belief: list[float] | None = None  # [x, y, w, h], where the anchor is believed to be
+    # Where the anchor is believed to be while occluded. Every attempt to
+    # move this box between sightings (global-motion translation, contact
+    # pinning) predicted the reappearing anchor WORSE on real footage than
+    # freezing it, so it stays exactly where the anchor was last seen.
+    belief: tuple[int, int, int, int] | None = None
     lock_mode = "none"
     prev_patch: np.ndarray | None = None
     prev_small: np.ndarray | None = None
-    prev_gm: np.ndarray | None = None
     frames_since_lock = 0
-
-    def belief_box() -> tuple[int, int, int, int]:
-        return tuple(int(round(v)) for v in belief)
 
     for idx, frame in enumerate(frames):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -344,24 +332,13 @@ def track_flow_signal(
             frames_since_lock = 0
         prev_small = small
 
-        # Carry the remembered anchor position along with the camera/scene
-        # motion so long occlusions don't leave it stranded where the shot
-        # used to be.
-        scale = config.global_motion_downscale
-        gm = cv2.resize(gray, (gray.shape[1] // scale, gray.shape[0] // scale))
-        if belief is not None and prev_gm is not None and prev_gm.shape == gm.shape:
-            g_dy, g_dx = background_flow(flow_fn(prev_gm, gm))
-            belief[0] += g_dx * scale
-            belief[1] += g_dy * scale
-        prev_gm = gm
-
         lock_refreshed = False
         if idx % config.detect_every == 0 or roi is None:
             detections = detect_fn(frame)
             detection_log[idx] = detections
             anchor = _best_anchor(detections)
             if anchor is not None:
-                belief = [float(v) for v in anchor.box]
+                belief = anchor.box
                 lock_mode = "anchor"
                 lock_refreshed = True
                 boxes = [anchor.box] + [
@@ -372,19 +349,12 @@ def track_flow_signal(
             elif roi is not None and belief is not None:
                 # Anchor occluded: something touching its believed spot is
                 # evidence the interaction continues right there.
-                contacts = contact_near_box(belief_box(), detections)
+                contacts = contact_near_box(belief, detections)
                 if contacts:
                     lock_mode = "contact"
                     lock_refreshed = True
-                    # Let the belief creep toward the contact so a subject
-                    # repositioning can't strand it.
-                    ccx = sum(_center(d.box)[0] for d in contacts) / len(contacts)
-                    ccy = sum(_center(d.box)[1] for d in contacts) / len(contacts)
-                    bcx, bcy = _center(belief_box())
-                    belief[0] += (ccx - bcx) * config.belief_recenter
-                    belief[1] += (ccy - bcy) * config.belief_recenter
                     target = combine_roi(
-                        [belief_box()] + [d.box for d in contacts],
+                        [belief] + [d.box for d in contacts],
                         gray.shape, config.roi_padding, config.roi_min_size)
                     roi = smooth_roi(roi, target, config.roi_smoothing)
                 else:
@@ -415,7 +385,7 @@ def track_flow_signal(
         dy_list.append(dy)
         lock_log.append(lock_mode if roi is not None else "none")
         roi_log.append(roi)
-        belief_log.append(belief_box() if belief is not None else None)
+        belief_log.append(belief)
         if on_frame is not None:
             on_frame(idx)
 
