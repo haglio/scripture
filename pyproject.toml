@@ -9,6 +9,7 @@ dependencies = [
     "scipy>=1.11",
     "torch>=2.0",
     "torchvision>=0.15",
+    "ultralytics>=8.4",
     "PyQt6",
     "qtawesome",
 ]
