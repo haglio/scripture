@@ -622,6 +622,19 @@ class FrameCanvas(QWidget):
             p.setFont(make_font(size=SIZE_SMALL))
             p.drawText(cx1 + 2, cy1 + 12, f"{det.class_name} {det.confidence:.2f}")
 
+        belief = ov.get("belief")
+        if belief is not None:
+            x, y, w, h = belief
+            cx1, cy1 = self._frame_to_canvas(x, y)
+            cx2, cy2 = self._frame_to_canvas(x + w, y + h)
+            memory_color = QColor(60, 200, 120)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(memory_color, 2, Qt.PenStyle.DashLine))
+            p.drawRect(cx1, cy1, cx2 - cx1, cy2 - cy1)
+            p.setPen(QPen(memory_color))
+            p.setFont(make_font(size=SIZE_SMALL))
+            p.drawText(cx1 + 2, cy1 - 4, "anchor (memory)")
+
         lock = ov.get("lock", "none")
         roi = ov.get("roi")
         if roi is not None:
@@ -1641,12 +1654,16 @@ class App(QMainWindow):
         is_action = any(abs(a["at"] - frame_ms) < half_frame_ms for a in actions)
 
         lock = r.signal.lock[local]
+        beliefs = r.signal.beliefs
         return {
             "roi": r.signal.rois[local],
             "detections": detections,
             "pos": int(round(r.positions[local])),
             "active": lock != "none",
             "lock": lock,
+            # Show the remembered anchor whenever it isn't directly seen
+            "belief": (beliefs[local] if local < len(beliefs)
+                       and lock in ("contact", "coast") else None),
             "is_action": is_action,
         }
 

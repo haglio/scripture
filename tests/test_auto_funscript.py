@@ -8,6 +8,7 @@ from scripture.auto_funscript import (
     TrackConfig,
     TrackSignal,
     anti_plateau_normalize,
+    background_flow,
     combine_roi,
     compute_positions,
     contact_near_box,
@@ -103,6 +104,22 @@ class TestWeightedFlow:
     def test_no_motion_returns_zero(self):
         flow = np.zeros((50, 50, 2), dtype=np.float32)
         dy, dx = weighted_flow(flow)
+        assert dy == 0.0 and dx == 0.0
+
+
+class TestBackgroundFlow:
+    def test_uniform_shift_is_recovered(self):
+        flow = np.zeros((40, 60, 2), dtype=np.float32)
+        flow[..., 0] = -3.0
+        flow[..., 1] = 2.0
+        dy, dx = background_flow(flow)
+        assert (dy, dx) == (2.0, -3.0)
+
+    def test_minority_mover_is_ignored(self):
+        # Camera still, small object moving fast: background flow is zero
+        flow = np.zeros((40, 60, 2), dtype=np.float32)
+        flow[10:18, 20:30, 1] = 25.0
+        dy, dx = background_flow(flow)
         assert dy == 0.0 and dx == 0.0
 
 
@@ -262,6 +279,49 @@ class TestTrackFlowSignal:
         assert not result.roi_active[-3:].any()
         assert result.lock[-1] == "none"
 
+    def test_belief_rides_global_motion_during_occlusion(self):
+        # Anchor seen once, then nothing at all; the whole frame drifts
+        # down 2px/frame, and the remembered box must drift with it.
+        frames = [textured_frame(0) for _ in range(8)]
+        anchor = Detection("anchor", 0.9, (100, 60, 60, 90))
+        calls = {"n": 0}
+
+        def detect_fn(frame):
+            calls["n"] += 1
+            return [anchor] if calls["n"] == 1 else []
+
+        config = TrackConfig(detect_every=1, roi_persistence_frames=30)
+        result = track_flow_signal(
+            iter(frames), detect_fn, self._constant_flow_fn(2.0), config)
+        assert result.beliefs[0] == (100, 60, 60, 90)
+        # Global flow is measured on the downscaled frame, so dy=2 there
+        # is 2 * downscale full-resolution pixels per frame, for 7 frames.
+        expected_dy = 2 * config.global_motion_downscale * 7
+        assert result.beliefs[-1][1] == pytest.approx(60 + expected_dy, abs=4)
+        assert result.beliefs[-1][0] == pytest.approx(100, abs=4)
+
+    def test_belief_leans_toward_held_contact(self):
+        # Static camera; face holds the lock offset to the right of the
+        # remembered spot: the belief should creep toward it, not stay put.
+        frames = [textured_frame(0) for _ in range(12)]
+        anchor = Detection("anchor", 0.9, (100, 100, 40, 60))
+        face = Detection("face", 0.9, (140, 80, 100, 120))  # center (190, 140)
+        calls = {"n": 0}
+
+        def detect_fn(frame):
+            calls["n"] += 1
+            return [anchor, face] if calls["n"] == 1 else [face]
+
+        result = track_flow_signal(
+            iter(frames), detect_fn, self._constant_flow_fn(0.0),
+            TrackConfig(detect_every=1, roi_persistence_frames=30),
+        )
+        assert set(result.lock[1:]) == {"contact"}
+        start_cx = 100 + 40 / 2
+        end_cx = result.beliefs[-1][0] + result.beliefs[-1][2] / 2
+        assert end_cx > start_cx + 20   # moved toward the contact
+        assert end_cx < 190             # but not snapped onto it
+
     def test_records_rois_and_detections_for_visualization(self):
         frames = [textured_frame(0) for _ in range(4)]
         dets = [
@@ -376,6 +436,7 @@ class TestPipelineResultSerialization:
             cuts=[2],
             rois=[(10, 20, 130, 140), (12, 22, 130, 140), None],
             detections={0: [Detection("anchor", 0.9, (10, 20, 30, 40))]},
+            beliefs=[(10, 20, 30, 40), (11, 21, 30, 40), None],
         )
         original = PipelineResult(
             signal=signal,
@@ -394,6 +455,7 @@ class TestPipelineResultSerialization:
             restored.signal.roi_active, [True, True, False])
         assert restored.signal.cuts == [2]
         assert restored.signal.rois == [(10, 20, 130, 140), (12, 22, 130, 140), None]
+        assert restored.signal.beliefs == [(10, 20, 30, 40), (11, 21, 30, 40), None]
         det = restored.signal.detections[0][0]
         assert det.class_name == "anchor" and det.box == (10, 20, 30, 40)
         np.testing.assert_allclose(restored.positions, original.positions)
