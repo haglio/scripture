@@ -788,6 +788,7 @@ class App(QMainWindow):
         self._auto_det_frames = []  # sorted detection frame indices (cache)
         self.current_frame_idx = 0
         self.placing = None
+        self.label_session = False
         self.pending_tip = self.pending_base = None
 
         self._worker = None
@@ -815,8 +816,9 @@ class App(QMainWindow):
         QShortcut(QKeySequence("]"), self, self._next_action_frame)
         QShortcut(QKeySequence("["), self, self._prev_action_frame)
         QShortcut(QKeySequence("A"), self, self._toggle_gt_action)
-        QShortcut(QKeySequence("N"), self, self._toggle_gt_no_contact)
+        QShortcut(QKeySequence("N"), self, self._gt_no_contact)
         QShortcut(QKeySequence("C"), self, self._place_gt_contact)
+        QShortcut(QKeySequence("G"), self, self._session_advance)
 
     def _frame_back(self):
         if self.current_frame_idx > 0:
@@ -900,7 +902,9 @@ class App(QMainWindow):
             axis = self.scene_axes[idx]
             entry = {"tip": axis.tip, "base": axis.base, "contact": None, "is_action": False}
         else:
-            return None
+            # Contact-only label (auto sessions have no manual axis; the
+            # trainer derives the axis from the automated redacted track)
+            entry = {"tip": None, "base": None, "contact": None, "is_action": False}
         gt_scene[frame] = entry
         return entry
 
@@ -931,9 +935,16 @@ class App(QMainWindow):
         self._mark_dirty()
         self._show_frame(self.current_frame_idx)
 
-    def _toggle_gt_no_contact(self):
+    def _gt_no_contact(self):
+        """N: in a label session, record an explicit no-contact and advance;
+        otherwise toggle no-contact on the current frame."""
         entry = self._ensure_gt_frame()
         if entry is None:
+            return
+        if self.label_session:
+            entry["contact"] = None
+            self._mark_dirty()
+            self._session_advance()
             return
         if entry["contact"] is None:
             # Restore contact — put it at midpoint of axis
@@ -950,6 +961,49 @@ class App(QMainWindow):
         """Enter contact placement mode — next click sets the contact point."""
         self.placing = "contact"
         self._set_status("Click to place CONTACT point (or press C again to cancel)")
+
+    # ── Label session (sparse GT clicking) ─────────────────────────
+
+    def _session_schedule(self):
+        from scripture.annotate import schedule_frames
+
+        idx = self._current_scene_idx()
+        if not self.scenes:
+            return []
+        scene = self.scenes[idx]
+        stride = max(1, int(2 * self.fps)) if self.fps else 60
+        return schedule_frames(scene.start_frame, scene.end_frame - 1, stride)
+
+    def _session_annotated(self):
+        idx = self._current_scene_idx()
+        return set(self.ground_truth.get(idx, {}).keys())
+
+    def _toggle_label_session(self):
+        self.label_session = self.btn_label_session.isChecked()
+        if self.label_session:
+            self._session_advance()
+        else:
+            self._set_status("Label session paused — progress saves with the project.")
+
+    def _session_advance(self):
+        """Jump to the next scheduled unlabeled frame (G also skips one)."""
+        from scripture.annotate import next_scheduled
+
+        if not self.label_session or not self.scenes:
+            return
+        schedule = self._session_schedule()
+        annotated = self._session_annotated()
+        nxt = next_scheduled(schedule, annotated, self.current_frame_idx)
+        done, total = len(annotated & set(schedule)), len(schedule)
+        if nxt is None:
+            self.btn_label_session.setChecked(False)
+            self.label_session = False
+            self._set_status(f"Label session complete: {done}/{total} frames. "
+                             "Save the project to keep them.")
+            return
+        self._show_frame(nxt)
+        self._set_status(f"Label {done}/{total} · click = contact point · "
+                         "N = no contact · G = skip · drag tip/base if camera moved")
 
     def _on_gt_point_dragged(self, which, fx, fy):
         """Handle dragging of a GT point (tip, base, or contact)."""
@@ -1046,6 +1100,12 @@ class App(QMainWindow):
         self.btn_process_all.setStyleSheet(_BTN_STYLE)
         self.btn_process_all.clicked.connect(self._process_all)
         bottom.addWidget(self.btn_process_all)
+
+        self.btn_label_session = QPushButton("Label Session")
+        self.btn_label_session.setStyleSheet(_BTN_STYLE)
+        self.btn_label_session.setCheckable(True)
+        self.btn_label_session.clicked.connect(self._toggle_label_session)
+        bottom.addWidget(self.btn_label_session)
 
         self.info_label = QLabel("")
         self.info_label.setFont(make_font(size=SIZE_SMALL))
@@ -1440,7 +1500,16 @@ class App(QMainWindow):
         self._show_frame(self.current_frame_idx)
 
     def _on_canvas_click(self, fx, fy):
-        if not self.scenes or not self.placing:
+        if not self.scenes:
+            return
+        if self.label_session and not self.placing:
+            entry = self._ensure_gt_frame()
+            if entry is not None:
+                entry["contact"] = (fx, fy)
+                self._mark_dirty()
+                self._session_advance()
+            return
+        if not self.placing:
             return
         idx = self._current_scene_idx()
 
