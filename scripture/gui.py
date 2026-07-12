@@ -789,6 +789,8 @@ class App(QMainWindow):
         self.current_frame_idx = 0
         self.placing = None
         self.label_session = False
+        self._session_target = None   # frame currently being decided
+        self._session_undo = []       # [(scene_idx, frame_idx), ...] this session
         self.pending_tip = self.pending_base = None
 
         self._worker = None
@@ -818,7 +820,9 @@ class App(QMainWindow):
         QShortcut(QKeySequence("A"), self, self._toggle_gt_action)
         QShortcut(QKeySequence("N"), self, self._gt_no_contact)
         QShortcut(QKeySequence("C"), self, self._place_gt_contact)
-        QShortcut(QKeySequence("G"), self, self._session_advance)
+        QShortcut(QKeySequence("G"), self, self._session_skip)
+        QShortcut(QKeySequence(Qt.Key.Key_Home), self, self._session_home)
+        QShortcut(QKeySequence("U"), self, self._session_undo_last)
 
     def _frame_back(self):
         if self.current_frame_idx > 0:
@@ -944,7 +948,7 @@ class App(QMainWindow):
         if self.label_session:
             entry["contact"] = None
             self._mark_dirty()
-            self._session_advance()
+            self._session_after_label(self.current_frame_idx)
             return
         if entry["contact"] is None:
             # Restore contact — put it at midpoint of axis
@@ -981,29 +985,89 @@ class App(QMainWindow):
     def _toggle_label_session(self):
         self.label_session = self.btn_label_session.isChecked()
         if self.label_session:
-            self._session_advance()
+            self._session_goto_next(after=self.current_frame_idx)
         else:
+            self._session_target = None
             self._set_status("Label session paused — progress saves with the project.")
 
-    def _session_advance(self):
-        """Jump to the next scheduled unlabeled frame (G also skips one)."""
+    def _session_goto_next(self, after):
+        """Make the next unlabeled scheduled frame past `after` the target."""
         from scripture.annotate import next_scheduled
 
         if not self.label_session or not self.scenes:
             return
         schedule = self._session_schedule()
         annotated = self._session_annotated()
-        nxt = next_scheduled(schedule, annotated, self.current_frame_idx)
+        nxt = next_scheduled(schedule, annotated, after)
         done, total = len(annotated & set(schedule)), len(schedule)
         if nxt is None:
             self.btn_label_session.setChecked(False)
             self.label_session = False
+            self._session_target = None
             self._set_status(f"Label session complete: {done}/{total} frames. "
                              "Save the project to keep them.")
             return
+        self._session_target = nxt
         self._show_frame(nxt)
-        self._set_status(f"Label {done}/{total} · click = contact point · "
-                         "N = no contact · G = skip · drag tip/base if camera moved")
+        self._set_status(f"Label {done}/{total} · click = contact · N = none · "
+                         "G = skip · U = undo · arrows = scrub · Home = back")
+
+    def _session_after_label(self, labeled_frame):
+        """Record for undo, then target the next frame — never skipping a
+        still-unlabeled target the user labeled around."""
+        self._session_undo.append((self._current_scene_idx(), labeled_frame))
+        anchor = self._session_target if self._session_target is not None else labeled_frame
+        self._session_goto_next(after=anchor - 1)
+
+    def _session_skip(self):
+        """G: give up on the current target and move to the next one."""
+        if not self.label_session:
+            return
+        anchor = self._session_target if self._session_target is not None \
+            else self.current_frame_idx
+        self._session_goto_next(after=anchor)
+
+    def _session_home(self):
+        """Home: return to the frame being decided after scrubbing around."""
+        if self.label_session and self._session_target is not None:
+            self._show_frame(self._session_target)
+
+    def _session_undo_last(self):
+        """U: delete the most recent label and go back to that frame."""
+        if not self.label_session or not self._session_undo:
+            return
+        scene_idx, frame = self._session_undo.pop()
+        self.ground_truth.get(scene_idx, {}).pop(frame, None)
+        self._mark_dirty()
+        self._session_target = frame
+        self._show_frame(frame)
+        schedule = self._session_schedule()
+        done = len(self._session_annotated() & set(schedule))
+        self._set_status(f"Undid label at frame {frame} — decide it again "
+                         f"({done}/{len(schedule)} done)")
+
+    def _reset_scene_labels(self):
+        """Clear every label in the current scene (button, with confirm)."""
+        idx = self._current_scene_idx()
+        n = len(self.ground_truth.get(idx, {}))
+        if not n:
+            self._set_status("No labels in this scene to reset.")
+            return
+        reply = QMessageBox.question(
+            self, "Reset labels?",
+            f"Delete all {n} labeled frames in this scene?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self.ground_truth.pop(idx, None)
+        self._session_undo = [u for u in self._session_undo if u[0] != idx]
+        self._mark_dirty()
+        self._show_frame(self.current_frame_idx)
+        if self.label_session:
+            self._session_goto_next(after=self.current_frame_idx)
+        self._set_status(f"Cleared {n} labels in scene {idx}. "
+                         "Save the project to make it permanent.")
 
     def _on_gt_point_dragged(self, which, fx, fy):
         """Handle dragging of a GT point (tip, base, or contact)."""
@@ -1106,6 +1170,11 @@ class App(QMainWindow):
         self.btn_label_session.setCheckable(True)
         self.btn_label_session.clicked.connect(self._toggle_label_session)
         bottom.addWidget(self.btn_label_session)
+
+        self.btn_reset_labels = QPushButton("Reset Labels")
+        self.btn_reset_labels.setStyleSheet(_BTN_STYLE)
+        self.btn_reset_labels.clicked.connect(self._reset_scene_labels)
+        bottom.addWidget(self.btn_reset_labels)
 
         self.info_label = QLabel("")
         self.info_label.setFont(make_font(size=SIZE_SMALL))
@@ -1507,7 +1576,7 @@ class App(QMainWindow):
             if entry is not None:
                 entry["contact"] = (fx, fy)
                 self._mark_dirty()
-                self._session_advance()
+                self._session_after_label(self.current_frame_idx)
             return
         if not self.placing:
             return
