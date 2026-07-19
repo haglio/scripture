@@ -21,7 +21,7 @@ End Sub
 Function FindPythonCommand()
   Dim condaPython, venvPython, candidates, i
   ' Prefer conda env (has torch+CUDA for CoTracker3)
-  condaPython = "C:\Users\Example\miniconda3\python.exe"
+  condaPython = wshShell.ExpandEnvironmentStrings("%USERPROFILE%") & "\miniconda3\python.exe"
   If fso.FileExists(condaPython) Then
     FindPythonCommand = Quote(condaPython)
     Exit Function

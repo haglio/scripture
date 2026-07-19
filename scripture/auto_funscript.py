@@ -1,8 +1,8 @@
 """Fully automatic funscript generation: YOLO detection + ROI optical flow.
 
 Offline port of the only pipeline that has produced a usable funscript on
-2D POV footage (FunGen's LIVE_YOLO_ROI tracker): YOLO finds the anchor and
-whatever is interacting with it, their union defines a region of interest,
+2D POV footage (FunGen's LIVE_YOLO_ROI tracker): YOLO finds the anchor object
+and whatever is interacting with it, their union defines a region of interest,
 and dense optical flow inside that ROI drives the position signal.
 
 CLI:  python -m scripture.auto_funscript VIDEO [--start-frame N] [--end-frame N]
@@ -20,8 +20,17 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-DEFAULT_MODEL_PATH = (
-    r"C:\path\to\suite-root\projects\FunGenApp\FunGen\models\FunGen-12s-pov-1.1.0.pt")
+from content import load_content
+
+_CONTENT = load_content()
+
+# The detector's weights and class vocabulary are private; they reach the code
+# through the content overlay (content.example.json documents the shape).
+DEFAULT_MODEL_PATH = _CONTENT["model_path"]
+
+# The classes the ROI can anchor on, most-preferred first: the model often
+# still sees the second when the first is occluded.
+ANCHOR_CLASSES: tuple[str, ...] = tuple(_CONTENT["anchor_classes"])
 
 
 @dataclass
@@ -37,9 +46,9 @@ class Detection:
 _INTERACTION_DISTANCE_FACTOR = 0.85
 
 # Classes that can be the thing touching the anchor.  When the anchor itself
-# is occluded (gripped, in mouth), one of these overlapping its last known
-# position is evidence the interaction is still happening there.
-_CONTACT_CLASSES = ("face", "hand", "region_a", "redacted", "redacted", "foot")
+# is occluded, one of these overlapping its last known position is evidence
+# the interaction is still happening there.
+_CONTACT_CLASSES: tuple[str, ...] = tuple(_CONTENT["contact_classes"])
 
 
 def _center(box: tuple[int, int, int, int]) -> tuple[float, float]:
@@ -64,10 +73,12 @@ def _within_interaction_distance(
 
 
 def find_interacting(anchor: Detection, detections: list[Detection]) -> list[Detection]:
-    """Return the non-anchor detections close enough to interact with it."""
+    """Return the detections, other than the anchor's own class, close enough
+    to it to be interacting."""
     return [
         d for d in detections
-        if d.class_name != "anchor" and _within_interaction_distance(anchor.box, d.box)
+        if d.class_name != ANCHOR_CLASSES[0]
+        and _within_interaction_distance(anchor.box, d.box)
     ]
 
 
@@ -229,7 +240,7 @@ class TrackConfig:
 class TrackSignal:
     """Per-frame motion signal plus diagnostics from the tracking pass.
 
-    lock records how the ROI was justified on each frame: "anchor" (anchor or
+    lock records how the ROI was justified on each frame: "anchor" (an anchor
     anchor_tip detected), "contact" (anchor occluded but a contact-class object
     covers its last known position), "coast" (nothing relevant detected,
     persistence window still open), or "none" (no ROI).  rois has one entry
@@ -275,9 +286,9 @@ def signal_to_actions(
 
 
 def _best_anchor(detections: list[Detection]) -> Detection | None:
-    """Pick the box that anchors the ROI: the anchor, falling back to the
-    anchor_tip (which the model often still sees when the redacted is gripped)."""
-    for cls in ("anchor", "anchor_tip"):
+    """Pick the box that anchors the ROI: the first anchor class, falling back
+    to the next (which the model often still sees when the first is occluded)."""
+    for cls in ANCHOR_CLASSES:
         candidates = [d for d in detections if d.class_name == cls]
         if candidates:
             return max(candidates, key=lambda d: d.confidence)

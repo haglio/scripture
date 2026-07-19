@@ -160,21 +160,16 @@ class AutoProcessWorker(QThread):
 
 _ACTION_DOT_COLOR = QColor(80, 255, 80, 180)
 
-# Detection box colors by class (drawn in the auto-tracking overlay)
+# Detection box colors by class (drawn in the auto-tracking overlay).  The class
+# names are private, so the map comes from the content overlay.
 _DET_COLORS = {
-    "anchor": QColor(80, 255, 80),
-    "anchor_tip": QColor(0, 220, 140),
-    "face": QColor(90, 150, 255),
-    "hand": QColor(255, 215, 60),
-    "region_a": QColor(190, 90, 230),
-    "redacted": QColor(255, 150, 40),
-    "redacted": QColor(255, 90, 255),
+    name: QColor(*rgb) for name, rgb in load_content()["class_colors"].items()
 }
 _DET_DEFAULT_COLOR = QColor(200, 200, 200)
 
 # ROI border color by lock state: how the tracker justified this ROI
 _LOCK_COLORS = {
-    "anchor": QColor(80, 255, 80),     # anchor/anchor_tip detected
+    "anchor": QColor(80, 255, 80),     # an anchor class detected
     "contact": QColor(255, 215, 60),   # contact object over last anchor spot
     "coast": QColor(255, 140, 40),     # nothing relevant; persistence window
 }

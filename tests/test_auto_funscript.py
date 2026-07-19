@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from scripture.auto_funscript import (
+    ANCHOR_CLASSES,
     Detection,
     TrackConfig,
     TrackSignal,
@@ -24,6 +25,9 @@ from scripture.auto_funscript import (
     weighted_flow,
 )
 
+# The class vocabulary is private; take it from whichever overlay is loaded.
+ANCHOR, ANCHOR_TIP = ANCHOR_CLASSES[0], ANCHOR_CLASSES[1]
+
 
 def det(cls, x, y, w, h, conf=0.9):
     return Detection(class_name=cls, confidence=conf, box=(x, y, w, h))
@@ -32,12 +36,12 @@ def det(cls, x, y, w, h, conf=0.9):
 class TestFindInteracting:
     def test_nearby_hand_interacts(self):
         # Anchor at (100,100) 50x100, hand overlapping its center region
-        anchor = det("anchor", 100, 100, 50, 100)
+        anchor = det(ANCHOR, 100, 100, 50, 100)
         hand = det("hand", 110, 120, 40, 40)
         assert find_interacting(anchor, [anchor, hand]) == [hand]
 
     def test_distant_object_does_not_interact(self):
-        anchor = det("anchor", 100, 100, 50, 100)
+        anchor = det(ANCHOR, 100, 100, 50, 100)
         far_face = det("face", 500, 400, 60, 60)
         assert find_interacting(anchor, [anchor, far_face]) == []
 
@@ -55,7 +59,7 @@ class TestContactNearBox:
 
     def test_non_contact_classes_ignored(self):
         anchor_box = (100, 100, 50, 100)
-        anchor_tip = det("anchor_tip", 100, 100, 30, 30)
+        anchor_tip = det(ANCHOR_TIP, 100, 100, 30, 30)
         navel = det("navel", 110, 110, 20, 20)
         assert contact_near_box(anchor_box, [anchor_tip, navel]) == []
 
@@ -172,7 +176,7 @@ class TestTrackFlowSignal:
     def test_tracks_dy_when_anchor_and_contact_detected(self):
         frames = [textured_frame(0) for _ in range(6)]
         detections = [
-            Detection("anchor", 0.9, (100, 60, 60, 90)),
+            Detection(ANCHOR, 0.9, (100, 60, 60, 90)),
             Detection("hand", 0.9, (110, 70, 50, 50)),
         ]
         result = track_flow_signal(
@@ -196,7 +200,7 @@ class TestTrackFlowSignal:
 
     def test_roi_persists_after_detection_loss_then_expires(self):
         frames = [textured_frame(0) for _ in range(10)]
-        dets = [Detection("anchor", 0.9, (100, 60, 60, 90))]
+        dets = [Detection(ANCHOR, 0.9, (100, 60, 60, 90))]
         calls = {"n": 0}
 
         def detect_fn(frame):
@@ -214,7 +218,7 @@ class TestTrackFlowSignal:
     def test_scene_cut_resets_flow_state(self):
         bright = np.full((200, 300, 3), 230, dtype=np.uint8)
         frames = [textured_frame(1)] * 3 + [bright] * 3
-        detections = [Detection("anchor", 0.9, (100, 60, 60, 90))]
+        detections = [Detection(ANCHOR, 0.9, (100, 60, 60, 90))]
         result = track_flow_signal(
             iter(frames), lambda f: detections, self._constant_flow_fn(4.0),
             TrackConfig(detect_every=1),
@@ -227,7 +231,7 @@ class TestTrackFlowSignal:
         # Anchor visible at frame 0 only; face then covers its position.
         # Contact hold must outlast the plain persistence window.
         frames = [textured_frame(0) for _ in range(12)]
-        anchor = Detection("anchor", 0.9, (100, 60, 60, 90))
+        anchor = Detection(ANCHOR, 0.9, (100, 60, 60, 90))
         face_over_anchor = Detection("face", 0.9, (80, 40, 110, 130))
         calls = {"n": 0}
 
@@ -245,7 +249,7 @@ class TestTrackFlowSignal:
 
     def test_contact_far_from_lost_anchor_lets_roi_expire(self):
         frames = [textured_frame(0) for _ in range(12)]
-        anchor = Detection("anchor", 0.9, (100, 60, 60, 90))
+        anchor = Detection(ANCHOR, 0.9, (100, 60, 60, 90))
         far_face = Detection("face", 0.9, (600, 350, 80, 80))
         calls = {"n": 0}
 
@@ -267,7 +271,7 @@ class TestTrackFlowSignal:
         # box (global-motion translation, contact pinning) predicted the
         # re-appearing anchor WORSE than simply freezing it. Freeze it.
         frames = [textured_frame(0) for _ in range(10)]
-        anchor = Detection("anchor", 0.9, (100, 60, 60, 90))
+        anchor = Detection(ANCHOR, 0.9, (100, 60, 60, 90))
         face_over_anchor = Detection("face", 0.9, (80, 40, 110, 130))
         calls = {"n": 0}
 
@@ -285,7 +289,7 @@ class TestTrackFlowSignal:
     def test_records_rois_and_detections_for_visualization(self):
         frames = [textured_frame(0) for _ in range(4)]
         dets = [
-            Detection("anchor", 0.9, (100, 60, 60, 90)),
+            Detection(ANCHOR, 0.9, (100, 60, 60, 90)),
             Detection("hand", 0.8, (110, 70, 50, 50)),
         ]
         result = track_flow_signal(
@@ -297,7 +301,7 @@ class TestTrackFlowSignal:
         assert all(r is not None and len(r) == 4 for r in result.rois)
         # Detections recorded only on the frames where YOLO ran
         assert sorted(result.detections.keys()) == [0, 2]
-        assert [d.class_name for d in result.detections[0]] == ["anchor", "hand"]
+        assert [d.class_name for d in result.detections[0]] == [ANCHOR, "hand"]
 
 
 class TestComputePositions:
@@ -364,7 +368,7 @@ class TestRunPipeline:
             writer.write(base)
         writer.release()
 
-        dets = [Detection("anchor", 0.9, (40, 30, 40, 60))]
+        dets = [Detection(ANCHOR, 0.9, (40, 30, 40, 60))]
 
         def fake_flow(prev_gray, gray):
             flow = np.zeros((*gray.shape, 2), dtype=np.float32)
@@ -395,7 +399,7 @@ class TestPipelineResultSerialization:
             lock=["anchor", "contact", "none"],
             cuts=[2],
             rois=[(10, 20, 130, 140), (12, 22, 130, 140), None],
-            detections={0: [Detection("anchor", 0.9, (10, 20, 30, 40))]},
+            detections={0: [Detection(ANCHOR, 0.9, (10, 20, 30, 40))]},
             beliefs=[(10, 20, 30, 40), (11, 21, 30, 40), None],
         )
         original = PipelineResult(
@@ -417,7 +421,7 @@ class TestPipelineResultSerialization:
         assert restored.signal.rois == [(10, 20, 130, 140), (12, 22, 130, 140), None]
         assert restored.signal.beliefs == [(10, 20, 30, 40), (11, 21, 30, 40), None]
         det = restored.signal.detections[0][0]
-        assert det.class_name == "anchor" and det.box == (10, 20, 30, 40)
+        assert det.class_name == ANCHOR and det.box == (10, 20, 30, 40)
         np.testing.assert_allclose(restored.positions, original.positions)
         assert restored.actions == original.actions
         assert restored.fps == pytest.approx(29.97)
