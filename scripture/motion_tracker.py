@@ -27,12 +27,12 @@ def track_motion(video_path: str, axis: AxisDefinition,
                  on_frame: Callable[[int], None] | None = None) -> TrackingResult:
     """Track axis and detect contact position.
 
-    Phase 1: CoTracker3 tracks points along the redacted to get per-frame
+    Phase 1: CoTracker3 tracks points along the anchor to get per-frame
     tip/base coordinates (axis tracking).
 
     Phase 2: Intensity gradient along the tracked axis detects the
     contact point — the mouth/hand creates a sharp brightness transition
-    on the redacted surface.
+    on the anchor surface.
 
     Returns timestamps (ms), positions (0-1), and per-frame tip/base
     coordinates.

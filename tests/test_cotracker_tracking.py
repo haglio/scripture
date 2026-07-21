@@ -46,7 +46,7 @@ class TestIntensityGradientContact:
 
     def test_sharp_edge_detected(self):
         """A bright-to-dark transition at t=0.6 should be found."""
-        # Simulate: bright redacted (200) with dark mouth region (50) starting at 60%
+        # Simulate: bright anchor (200) with dark mouth region (50) starting at 60%
         gray = np.full((100, 200), 200, dtype=np.uint8)
         gray[:, 120:] = 50  # dark from x=120 onward
         base = np.array([0, 50], dtype=np.float64)

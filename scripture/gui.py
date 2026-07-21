@@ -902,7 +902,7 @@ class App(QMainWindow):
             entry = {"tip": axis.tip, "base": axis.base, "contact": None, "is_action": False}
         else:
             # Contact-only label (auto sessions have no manual axis; the
-            # trainer derives the axis from the automated redacted track)
+            # trainer derives the axis from the automated anchor track)
             entry = {"tip": None, "base": None, "contact": None, "is_action": False}
         gt_scene[frame] = entry
         return entry

@@ -320,8 +320,8 @@ def cotrack_axis(
     # Strategy:
     # 1. base_coords = lowest visible tracked point (good tracking)
     # 2. contact_coords = highest visible tracked point (good tracking)
-    # 3. tip_coords = base + shaft_direction * reference_axis_length
-    #    where shaft_direction = unit(contact - base)
+    # 3. tip_coords = base + anchor_direction * reference_axis_length
+    #    where anchor_direction = unit(contact - base)
     # 4. pos = intensity gradient along the base->tip axis
     ref_axis_len_scaled = np.linalg.norm(axis_points_scaled[-1] - axis_points_scaled[0])
 
@@ -339,12 +339,12 @@ def cotrack_axis(
             last_contact = all_tracks[i, vis_indices[-1]]
         base_coords_s[i] = last_base
         contact_coords_s[i] = last_contact
-        # Derive tip from base + redacted direction * reference length
+        # Derive tip from base + anchor direction * reference length
         bc_vec = last_contact - last_base
         bc_len = np.linalg.norm(bc_vec)
         if bc_len > 1:
-            shaft_dir = bc_vec / bc_len
-            tip_coords_s[i] = last_base + shaft_dir * ref_axis_len_scaled
+            anchor_dir = bc_vec / bc_len
+            tip_coords_s[i] = last_base + anchor_dir * ref_axis_len_scaled
         else:
             tip_coords_s[i] = last_contact
 
