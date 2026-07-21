@@ -1,4 +1,12 @@
-"""Ensure no dead code accumulates in the scripture package."""
+"""Ensure no dead code accumulates in the scripture package.
+
+Vulture is pointed at the ``scripture`` package and given no ``.claude``
+exclude.  Its ``--exclude`` patterns match *absolute* paths, and agents run
+from a ``.claude/worktrees/<name>`` checkout whose own root contains
+``.claude`` — so that pattern matched the worktree root and silently excluded
+every file, turning the scan into a no-op that always passed.  Nothing under
+``scripture/`` is ever a virtualenv or a worktree, so no exclude is needed.
+"""
 
 import subprocess
 import sys
@@ -85,8 +93,7 @@ def _find_whitelist_match(key: str) -> bool:
 
 def test_no_dead_code():
     result = subprocess.run(
-        [sys.executable, "-m", "vulture", "scripture/", "--min-confidence", "60",
-         "--exclude", ".claude,.venv"],
+        [sys.executable, "-m", "vulture", "scripture/", "--min-confidence", "60"],
         capture_output=True, text=True,
     )
     lines = [l.strip() for l in result.stdout.splitlines() + result.stderr.splitlines() if l.strip()]
