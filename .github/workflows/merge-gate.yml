@@ -13,6 +13,12 @@ name: merge gate (full suite)
 # scripture*). The heavy ML deps (torch, ultralytics) install but their model-
 # loading paths are never exercised: every test drives the numpy/OpenCV logic
 # with synthetic data, so CI needs no GPU and downloads no weights.
+#
+# shared_ui is a sibling package, never published to PyPI, that gui.py imports
+# directly (no sys.path bootstrap of its own -- a dev checkout gets it from a
+# .pth in the venv). It installs from its public repo so the GUI module can be
+# imported here at all; without it tests/test_gui_import.py cannot run, which
+# is how an import-time NameError in that module survived a green suite before.
 
 on:
   pull_request:
@@ -40,7 +46,9 @@ jobs:
           python-version: "3.12"
       - name: Install (editable, compat mode)
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
+          pip install "shared_ui @ git+https://github.com/haglio/shared_ui.git"
           pip install -e ".[dev]" --config-settings editable_mode=compat
       - name: Run the suite
         run: python -m pytest -q
