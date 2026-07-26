@@ -1,0 +1,46 @@
+name: merge gate (full suite)
+
+# The merge queue's required check. The queue builds the candidate merge of a PR
+# onto current main, runs the whole suite on that candidate, and fast-forwards
+# main only when this is green -- so a red tree can never land. Also runs on PRs
+# for early feedback and on push to main as a visible post-merge backstop.
+#
+# Runs on windows-latest: scripture is a Windows PyQt6 app whose tests build a
+# QApplication, kept headless here with QT_QPA_PLATFORM=offscreen. The editable
+# install MUST use compat mode -- the suite imports the top-level `content` and
+# `tools` modules that sit beside the `scripture` package at the repo root, and
+# only compat mode puts that root on sys.path (packages.find is scoped to
+# scripture*). The heavy ML deps (torch, ultralytics) install but their model-
+# loading paths are never exercised: every test drives the numpy/OpenCV logic
+# with synthetic data, so CI needs no GPU and downloads no weights.
+
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+  push:
+    branches: [main]
+
+concurrency:
+  group: merge-gate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  full-suite:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install (editable, compat mode)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" --config-settings editable_mode=compat
+      - name: Run the suite
+        run: python -m pytest -q
