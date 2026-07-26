@@ -22,3 +22,7 @@ dev = ["pytest", "vulture"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["scripture*"]
+namespaces = false
