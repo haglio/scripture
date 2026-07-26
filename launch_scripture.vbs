@@ -53,7 +53,15 @@ If pythonCmd = "" Then
   WScript.Quit 1
 End If
 
+' The interpreter picked above is usually conda's, which has no shared_ui
+' installed and no .pth pointing at one, so PYTHONPATH is the only thing that
+' makes it importable. The parent directory alone is not enough: it resolves
+' "shared_ui" to the checkout as a namespace package, whose real package sits
+' one level further down (shared_ui/shared_ui/), so "from shared_ui.colors
+' import ..." in gui.py still fails. Naming the checkout too fixes that, and
+' the parent stays for any sibling laid out flat.
 parentDir = fso.GetParentFolderName(projectRoot)
-cmd = "cmd /c cd /d " & Quote(projectRoot) & " && set PYTHONPATH=" & parentDir & "&&" & pythonCmd & " -m scripture 1>>" & Quote(launcherLog) & " 2>&1"
+sharedUiDir = fso.BuildPath(parentDir, "shared_ui")
+cmd = "cmd /c cd /d " & Quote(projectRoot) & " && set PYTHONPATH=" & parentDir & ";" & sharedUiDir & "&&" & pythonCmd & " -m scripture 1>>" & Quote(launcherLog) & " 2>&1"
 AppendLog "INFO: Launching with command: " & cmd
 shell.Run cmd, 0, False
