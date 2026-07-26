@@ -27,6 +27,8 @@ from shared_ui.colors import (
 from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
 from shared_ui.spacing import MARGIN_STANDARD, GAP_MEDIUM
 
+from content import load_content
+
 from scripture.auto_funscript import (
     pipeline_result_from_state, pipeline_result_to_state, run_pipeline,
 )
