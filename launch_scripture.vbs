@@ -3,12 +3,11 @@
 ' Without Option Explicit VBScript treats an undeclared name as an empty
 ' Variant, so the call raised "Object required" at run time -- before the first
 ' AppendLog -- and the icon did nothing at all: no window, no log line, no
-' error.  Declared up front, that same slip is a compile error the /check run
-' below catches instead.
+' error.  Declared up front, that same slip is a compile error instead.
 Option Explicit
 
 Dim fso, shell, projectRoot, sessionsDir, launcherLog
-Dim pythonCmd, parentDir, sharedUiDir, cmd, checkOnly
+Dim pythonCmd, parentDir, sharedUiDir, cmd, dryRun
 
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
@@ -18,10 +17,13 @@ sessionsDir = projectRoot & "\sessions"
 If Not fso.FolderExists(sessionsDir) Then fso.CreateFolder(sessionsDir)
 launcherLog = sessionsDir & "\scripture_launcher.log"
 
-' /check resolves everything the launch needs and exits without starting the
-' app, so a test can run this whole file -- the only way an error in it is ever
-' seen, since the real launch is a hidden window that swallows its own output.
-checkOnly = (WScript.Arguments.Count > 0) And (LCase(WScript.Arguments(0)) = "/check")
+' Dry run comes from the environment, not from an argument, so that a test runs
+' this file with the *same* argument list the shortcut passes -- which is none
+' at all.  Reading an argument to decide was itself a bug: VBScript's And does
+' not short-circuit, so `Arguments.Count > 0 And Arguments(0) = ...` evaluated
+' Arguments(0) even when there were none and died with "Subscript out of range"
+' on every real launch, while the test that passed an argument stayed green.
+dryRun = (shell.ExpandEnvironmentStrings("%SCRIPTURE_LAUNCHER_DRY_RUN%") = "1")
 
 Function Quote(s)
   Quote = Chr(34) & s & Chr(34)
@@ -66,7 +68,7 @@ End Function
 pythonCmd = FindPythonCommand()
 If pythonCmd = "" Then
   AppendLog "ERROR: Could not find python launcher"
-  If checkOnly Then
+  If dryRun Then
     WScript.Echo "ERROR: Could not find python launcher"
     WScript.Quit 1
   End If
@@ -85,10 +87,10 @@ parentDir = fso.GetParentFolderName(projectRoot)
 sharedUiDir = fso.BuildPath(parentDir, "shared_ui")
 cmd = "cmd /c cd /d " & Quote(projectRoot) & " && set PYTHONPATH=" & parentDir & ";" & sharedUiDir & "&&" & pythonCmd & " -m scripture 1>>" & Quote(launcherLog) & " 2>&1"
 
-If checkOnly Then
+AppendLog "INFO: Launching with command: " & cmd
+If dryRun Then
   WScript.Echo "OK: " & cmd
   WScript.Quit 0
 End If
 
-AppendLog "INFO: Launching with command: " & cmd
 shell.Run cmd, 0, False
