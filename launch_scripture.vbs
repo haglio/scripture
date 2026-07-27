@@ -1,3 +1,15 @@
+' Option Explicit is load-bearing, not tidiness.  A sanitize pass renamed the
+' WScript.Shell object and missed one call site, leaving `wshShell` undeclared.
+' Without Option Explicit VBScript treats an undeclared name as an empty
+' Variant, so the call raised "Object required" at run time -- before the first
+' AppendLog -- and the icon did nothing at all: no window, no log line, no
+' error.  Declared up front, that same slip is a compile error the /check run
+' below catches instead.
+Option Explicit
+
+Dim fso, shell, projectRoot, sessionsDir, launcherLog
+Dim pythonCmd, parentDir, sharedUiDir, cmd, checkOnly
+
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
@@ -5,6 +17,11 @@ projectRoot = fso.GetParentFolderName(WScript.ScriptFullName)
 sessionsDir = projectRoot & "\sessions"
 If Not fso.FolderExists(sessionsDir) Then fso.CreateFolder(sessionsDir)
 launcherLog = sessionsDir & "\scripture_launcher.log"
+
+' /check resolves everything the launch needs and exits without starting the
+' app, so a test can run this whole file -- the only way an error in it is ever
+' seen, since the real launch is a hidden window that swallows its own output.
+checkOnly = (WScript.Arguments.Count > 0) And (LCase(WScript.Arguments(0)) = "/check")
 
 Function Quote(s)
   Quote = Chr(34) & s & Chr(34)
@@ -21,7 +38,7 @@ End Sub
 Function FindPythonCommand()
   Dim condaPython, venvPython, candidates, i
   ' Prefer conda env (has torch+CUDA for CoTracker3)
-  condaPython = wshShell.ExpandEnvironmentStrings("%USERPROFILE%") & "\miniconda3\python.exe"
+  condaPython = shell.ExpandEnvironmentStrings("%USERPROFILE%") & "\miniconda3\python.exe"
   If fso.FileExists(condaPython) Then
     FindPythonCommand = Quote(condaPython)
     Exit Function
@@ -49,6 +66,10 @@ End Function
 pythonCmd = FindPythonCommand()
 If pythonCmd = "" Then
   AppendLog "ERROR: Could not find python launcher"
+  If checkOnly Then
+    WScript.Echo "ERROR: Could not find python launcher"
+    WScript.Quit 1
+  End If
   MsgBox "Could not find python or py launcher.", vbCritical, "Scripture"
   WScript.Quit 1
 End If
@@ -63,5 +84,11 @@ End If
 parentDir = fso.GetParentFolderName(projectRoot)
 sharedUiDir = fso.BuildPath(parentDir, "shared_ui")
 cmd = "cmd /c cd /d " & Quote(projectRoot) & " && set PYTHONPATH=" & parentDir & ";" & sharedUiDir & "&&" & pythonCmd & " -m scripture 1>>" & Quote(launcherLog) & " 2>&1"
+
+If checkOnly Then
+  WScript.Echo "OK: " & cmd
+  WScript.Quit 0
+End If
+
 AppendLog "INFO: Launching with command: " & cmd
 shell.Run cmd, 0, False
