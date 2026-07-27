@@ -15,6 +15,7 @@ first log line, so the icon did nothing and nothing recorded why. The last test
 here runs the script.
 """
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -66,16 +67,35 @@ def test_the_launcher_declares_its_variables():
 
 @pytest.mark.skipif(shutil.which("cscript") is None, reason="Windows Script Host only")
 def test_the_launcher_runs_end_to_end_and_resolves_a_launch_command():
-    """Run the real file. /check walks the whole resolution path -- interpreter
-    discovery, PYTHONPATH, the command string -- and exits without starting the
-    app, so this is the launch itself failing or not, not a reading of it."""
+    """Run the real file with no arguments -- the shortcut's exact invocation.
+
+    The dry-run switch is an environment variable rather than an argument for
+    that reason. Deciding it from ``WScript.Arguments(0)`` meant this test
+    passed an argument the shortcut never passes, and VBScript's non-short-
+    circuiting ``And`` then read element 0 of an empty list on every real
+    launch: "Subscript out of range", before the first log line, icon does
+    nothing. The test was green throughout.
+    """
     result = subprocess.run(
-        ["cscript", "//nologo", str(LAUNCHER), "/check"],
+        ["cscript", "//nologo", str(LAUNCHER)],
         capture_output=True,
         text=True,
         cwd=LAUNCHER.parent,
+        env={**os.environ, "SCRIPTURE_LAUNCHER_DRY_RUN": "1"},
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.startswith("OK: "), result.stdout + result.stderr
     assert "-m scripture" in result.stdout
+
+
+def test_the_dry_run_switch_is_not_an_argument():
+    """Whatever gates the dry run must not be read off the argument list.
+
+    A launcher that behaves differently under test than under the shortcut is
+    not a launch test; the shortcut passes no arguments at all.
+    """
+    text = _launcher_text()
+
+    assert "WScript.Arguments" not in text
+    assert "SCRIPTURE_LAUNCHER_DRY_RUN" in text
