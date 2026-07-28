@@ -1,20 +1,18 @@
 """The launch smoke test: everything the launcher's command imports, imported.
 
-``tests/test_launcher_contract.py`` proves the launcher resolves a command, and
-stops there -- it never runs the command. ``tests/test_gui_import.py`` imports
-``scripture.gui`` in a fresh interpreter, but under *this* interpreter, on
-*this* suite's path. Neither covers the gap between them, which is where an app
-that will not open lives: the launcher prefers the conda interpreter over this
-repo's ``.venv``, and puts ``shared_ui`` on ``PYTHONPATH`` by hand because that
-interpreter has no ``.pth`` pointing at it. A module that imports cleanly under
-the venv the suite runs on can therefore fail under the interpreter that
-actually launches, and the icon just does nothing.
+``tests/test_launcher_contract.py`` proves the launcher resolves a command and
+stops there -- it never runs the command. ``tests/test_gui_import.py`` runs one
+import, ``scripture.gui``. Neither covers the launch as a whole, which is where
+an app that will not open lives: ``main()`` reaches Qt and the GUI through
+imports *inside* the function, and every other test here runs under
+``tests/conftest.py``, which stands a QApplication up before the first test
+module is collected. So a run can be green on a launch sequence that never
+completes.
 
-So this asks the launcher itself what it would run -- interpreter, working
-directory, ``PYTHONPATH`` -- and drives the launch's import phase under exactly
-that. Nothing here restates the launcher's decisions, so the launcher changing
-its mind (a different interpreter, a path dropped) changes what is tested
-rather than leaving this quietly checking the old arrangement.
+So this asks the launcher itself what it would run -- interpreter and working
+directory -- and drives the whole import phase under exactly that. Nothing here
+restates the launcher's decisions, so the launcher changing its mind changes
+what is tested rather than leaving this quietly checking the old arrangement.
 
 The statements come off the AST of the files the launch executes rather than a
 list maintained here, so the next import added to ``main()`` is covered without
@@ -29,6 +27,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -55,9 +54,7 @@ _REACHED_ONLY_FROM_INSIDE_MAIN = ("scripture.gui", "PyQt6.QtWidgets")
 # this file exists to catch.
 _TOLERATED_BY = {"ImportError", "ModuleNotFoundError"}
 
-_COMMAND = re.compile(
-    r"set PYTHONPATH=(?P<pythonpath>.*?)&&(?P<python>.*?) -m " + PACKAGE
-)
+_INTERPRETER = re.compile(r"&& \"(?P<python>[^\"]+)\" -m " + PACKAGE)
 _WORKING_DIR = re.compile(r"cd /d \"(?P<cwd>[^\"]+)\"")
 
 
@@ -148,9 +145,9 @@ def _launch_imports() -> list[str]:
 def _launch_command() -> str:
     """The command launch_scripture.vbs resolves, from the launcher itself.
 
-    Deriving it beats restating it: whatever the launcher decides about the
-    interpreter and the path is then what gets tested, including in CI, where
-    there is no conda and no ``.venv`` and it falls through to PATH.
+    Deriving it beats restating it: whatever the launcher decides is then what
+    gets tested, rather than a copy of its decisions kept here that can drift
+    from it without anything noticing.
     """
     result = subprocess.run(
         ["cscript", "//nologo", str(LAUNCHER)],
@@ -164,24 +161,32 @@ def _launch_command() -> str:
     return result.stdout.strip()
 
 
-def _argv(python_command: str) -> list[str]:
-    """Split the launcher's interpreter into argv, unquoting each token.
+def _the_interpreter_that_will_run(named_by_the_launcher: str) -> str:
+    """The launcher's interpreter where there is one, else the suite's own.
 
-    It is ``"C:\\...\\python.exe"`` for conda or the venv and a bare ``python``
-    or ``py -3`` off PATH, so it cannot just be handed over whole.
+    The launcher names ``<checkout>/.venv/Scripts/python.exe`` unconditionally,
+    and two places legitimately have no such file: CI, which runs a plain
+    checkout with the dependencies installed into the runner's python, and an
+    agent's worktree, whose venv lives back in the primary. In both, the
+    interpreter running pytest is the one carrying this app's dependencies --
+    and on a developer's machine it *is* the venv the launcher named, so the
+    fallback changes nothing where the real launch happens.
     """
-    return [token.strip('"') for token in python_command.strip().split() if token]
+    if Path(named_by_the_launcher).is_file():
+        return named_by_the_launcher
+    return sys.executable
 
 
 def _run_the_launchs_way(statements: list[str]) -> subprocess.CompletedProcess:
     command = _launch_command()
-    parts = _COMMAND.search(command)
-    assert parts, f"could not read the launch command out of: {command}"
+    interpreter = _INTERPRETER.search(command)
+    assert interpreter, f"could not read the interpreter out of: {command}"
     working_dir = _WORKING_DIR.search(command)
     assert working_dir, f"the launcher names no working directory: {command}"
 
+    # No PYTHONPATH -- the launcher exports none, so neither does this. What the
+    # shell handed pytest is exactly what the icon does not get.
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
-    env["PYTHONPATH"] = parts["pythonpath"]
     env["QT_QPA_PLATFORM"] = "offscreen"
 
     driver = "\n".join(
@@ -195,7 +200,7 @@ def _run_the_launchs_way(statements: list[str]) -> subprocess.CompletedProcess:
         ]
     )
     return subprocess.run(
-        [*_argv(parts["python"]), "-c", driver],
+        [_the_interpreter_that_will_run(interpreter["python"]), "-c", driver],
         cwd=working_dir["cwd"],
         env=env,
         capture_output=True,
