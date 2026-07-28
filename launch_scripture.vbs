@@ -37,6 +37,29 @@ Sub AppendLog(msg)
   ts.Close
 End Sub
 
+Function FindSharedUi(startDir)
+  ' Walk up for the shared_ui checkout rather than assuming it sits exactly one
+  ' level above this one.  It does for the primary checkout, and did not for an
+  ' agent's worktree under .claude\worktrees\, which is two levels further down
+  ' -- so launching what an agent had just built died on "No module named
+  ' shared_ui", and the test that would have caught it could only skip.  The
+  ' primary checkout finds it on the first candidate, exactly as before.
+  Dim dir, candidate
+  dir = startDir
+  Do While Len(dir) > 0
+    candidate = fso.BuildPath(dir, "shared_ui")
+    If fso.FolderExists(candidate) Then
+      FindSharedUi = candidate
+      Exit Function
+    End If
+    If fso.GetParentFolderName(dir) = dir Then Exit Do
+    dir = fso.GetParentFolderName(dir)
+  Loop
+  ' Nothing found -- name the original candidate anyway, so the launcher log
+  ' records the path that was expected instead of an empty entry.
+  FindSharedUi = fso.BuildPath(startDir, "shared_ui")
+End Function
+
 Function FindPythonCommand()
   Dim condaPython, venvPython, candidates, i
   ' Prefer conda env (has torch+CUDA for CoTracker3)
@@ -84,7 +107,7 @@ End If
 ' import ..." in gui.py still fails. Naming the checkout too fixes that, and
 ' the parent stays for any sibling laid out flat.
 parentDir = fso.GetParentFolderName(projectRoot)
-sharedUiDir = fso.BuildPath(parentDir, "shared_ui")
+sharedUiDir = FindSharedUi(parentDir)
 cmd = "cmd /c cd /d " & Quote(projectRoot) & " && set PYTHONPATH=" & parentDir & ";" & sharedUiDir & "&&" & pythonCmd & " -m scripture 1>>" & Quote(launcherLog) & " 2>&1"
 
 AppendLog "INFO: Launching with command: " & cmd
