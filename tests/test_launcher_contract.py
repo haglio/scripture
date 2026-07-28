@@ -49,6 +49,18 @@ def test_pythonpath_also_carries_the_shared_ui_checkout_itself():
     )
 
 
+def test_the_shared_ui_checkout_is_searched_for_rather_than_assumed():
+    """One level up is where shared_ui sits for the primary checkout and nowhere
+    near it for an agent's worktree, which lives two levels further down under
+    ``.claude\\worktrees\\``. Assuming the first meant launching what an agent
+    had just built died on "No module named shared_ui", and the smoke test that
+    would have caught it could only skip."""
+    text = _launcher_text()
+
+    assert "FindSharedUi" in text
+    assert "FolderExists(candidate)" in text
+
+
 def test_the_launcher_runs_the_package_from_the_repo_root():
     text = _launcher_text()
 
