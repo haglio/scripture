@@ -1,18 +1,18 @@
-"""What launch_scripture.vbs must put on PYTHONPATH for the app to import, and
-that the file actually runs.
+"""Which interpreter launch_scripture.vbs runs the app on, and that it runs.
 
-The launcher prefers the conda interpreter (it has torch+CUDA for the tracker)
-over the repo's own venv, and that interpreter has no ``shared_ui`` installed
-and no ``.pth`` pointing at it. So whatever the launcher exports is the only
-thing making ``shared_ui`` importable there -- and the parent directory alone
-does not: it makes ``shared_ui`` a namespace package rooted at the *checkout*,
-whose ``colors`` submodule sits one level further down.
+Scripture is launched on the project venv and nothing else. It used to prefer
+``%USERPROFILE%\\miniconda3\\python.exe`` because the venv's torch was CPU-only
+and ``cotracker_tracking`` pins every tensor to ``cuda`` with no fallback -- so
+the app ran on an interpreter this suite never touches and ``pyproject.toml``
+never describes, and needed ``PYTHONPATH`` entries to hand it a ``shared_ui``
+it had no other way to see. The venv carries the CUDA build now, so all of that
+is gone: same interpreter for the tests and the app, and no path juggling.
 
-Everything above reads the file as text, which is how a launcher that could not
-run at all passed this suite for a week: a renamed object left one call site
-naming an undeclared variable, and VBScript failed at run time, before the
-first log line, so the icon did nothing and nothing recorded why. The last test
-here runs the script.
+Most of this reads the file as text, which is how a launcher that could not run
+at all passed this suite for a week: a renamed object left one call site naming
+an undeclared variable, and VBScript failed at run time, before the first log
+line, so the icon did nothing and nothing recorded why. One test here runs the
+script.
 """
 
 import os
@@ -29,36 +29,50 @@ def _launcher_text() -> str:
     return LAUNCHER.read_text(encoding="utf-8", errors="replace")
 
 
+def _launcher_code() -> str:
+    """The launcher with its comment lines dropped.
+
+    The tests below that assert something is *absent* have to read code only.
+    The file explains at length why conda and PYTHONPATH are gone, and that
+    explanation is worth keeping -- but a test that greps the whole file would
+    read it as the very thing it forbids, and the fix would be deleting the
+    comment rather than fixing the launcher.
+    """
+    lines = _launcher_text().splitlines()
+    return "\n".join(line for line in lines if not line.lstrip().startswith("'"))
+
+
 def test_the_launcher_exists_where_the_shortcut_points():
     assert LAUNCHER.is_file()
 
 
-def test_pythonpath_carries_the_repo_parent_so_sibling_checkouts_resolve():
-    assert "set PYTHONPATH=" in _launcher_text()
-    assert "parentDir" in _launcher_text()
-
-
-def test_pythonpath_also_carries_the_shared_ui_checkout_itself():
-    """The parent alone yields a namespace package with no importable submodules."""
+def test_the_launcher_runs_the_app_on_the_project_venv():
+    """The venv is the only interpreter with this app's dependencies: the CUDA
+    torch the tracker needs, and the editable ``shared_ui`` ``gui.py`` imports.
+    It is also the one the suite runs on, which is what makes a green run say
+    anything about the launch."""
     text = _launcher_text()
 
-    assert "shared_ui" in text, (
-        "launch_scripture.vbs must put the shared_ui checkout on PYTHONPATH; "
-        "without it `from shared_ui.colors import ...` fails under the conda "
-        "interpreter the launcher prefers"
-    )
+    assert ".venv\\Scripts\\python.exe" in text
 
 
-def test_the_shared_ui_checkout_is_searched_for_rather_than_assumed():
-    """One level up is where shared_ui sits for the primary checkout and nowhere
-    near it for an agent's worktree, which lives two levels further down under
-    ``.claude\\worktrees\\``. Assuming the first meant launching what an agent
-    had just built died on "No module named shared_ui", and the smoke test that
-    would have caught it could only skip."""
-    text = _launcher_text()
+def test_there_is_no_other_interpreter_to_fall_back_to():
+    """A PATH python has neither torch nor shared_ui, so falling back to one is
+    not a lesser launch but a broken one -- it dies while importing, before any
+    window and before any log line. Conda is gone for the same reason it was
+    ever here: it was the only interpreter with CUDA torch, and now it is not."""
+    code = _launcher_code()
 
-    assert "FindSharedUi" in text
-    assert "FolderExists(candidate)" in text
+    assert "miniconda" not in code.lower()
+    assert "where " not in code
+    assert "py -3" not in code
+
+
+def test_the_launcher_hands_over_no_pythonpath():
+    """The venv resolves ``shared_ui`` through the editable install's .pth and
+    the working directory resolves the rest, so an exported ``PYTHONPATH`` would
+    only be a second, divergent answer to a question already settled."""
+    assert "set PYTHONPATH=" not in _launcher_code()
 
 
 def test_the_launcher_runs_the_package_from_the_repo_root():
@@ -66,6 +80,16 @@ def test_the_launcher_runs_the_package_from_the_repo_root():
 
     assert "-m scripture" in text
     assert "projectRoot" in text
+
+
+def test_a_missing_venv_says_so_instead_of_doing_nothing():
+    """The launcher starts the app hidden, so a launch that cannot start has no
+    console to complain on. Naming the missing interpreter in a dialog is the
+    difference between "Scripture is broken" and "Scripture's venv is gone"."""
+    text = _launcher_text()
+
+    assert "virtual environment is missing" in text
+    assert "vbCritical" in text
 
 
 def test_the_launcher_declares_its_variables():
@@ -109,5 +133,5 @@ def test_the_dry_run_switch_is_not_an_argument():
     """
     text = _launcher_text()
 
-    assert "WScript.Arguments" not in text
+    assert "WScript.Arguments" not in _launcher_code()
     assert "SCRIPTURE_LAUNCHER_DRY_RUN" in text

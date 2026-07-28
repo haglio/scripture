@@ -7,7 +7,7 @@
 Option Explicit
 
 Dim fso, shell, projectRoot, sessionsDir, launcherLog
-Dim pythonCmd, parentDir, sharedUiDir, cmd, dryRun
+Dim pythonExe, cmd, dryRun
 
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
@@ -37,83 +37,41 @@ Sub AppendLog(msg)
   ts.Close
 End Sub
 
-Function FindSharedUi(startDir)
-  ' Walk up for the shared_ui checkout rather than assuming it sits exactly one
-  ' level above this one.  It does for the primary checkout, and did not for an
-  ' agent's worktree under .claude\worktrees\, which is two levels further down
-  ' -- so launching what an agent had just built died on "No module named
-  ' shared_ui", and the test that would have caught it could only skip.  The
-  ' primary checkout finds it on the first candidate, exactly as before.
-  Dim dir, candidate
-  dir = startDir
-  Do While Len(dir) > 0
-    candidate = fso.BuildPath(dir, "shared_ui")
-    If fso.FolderExists(candidate) Then
-      FindSharedUi = candidate
-      Exit Function
-    End If
-    If fso.GetParentFolderName(dir) = dir Then Exit Do
-    dir = fso.GetParentFolderName(dir)
-  Loop
-  ' Nothing found -- name the original candidate anyway, so the launcher log
-  ' records the path that was expected instead of an empty entry.
-  FindSharedUi = fso.BuildPath(startDir, "shared_ui")
-End Function
+' Scripture runs on the project venv and nothing else -- no conda, no PATH
+' search.  This file used to prefer %USERPROFILE%\miniconda3\python.exe because
+' that interpreter had a CUDA build of torch and the venv's was CPU-only, which
+' cotracker_tracking.py cannot use: it pins every tensor to "cuda" with no
+' fallback.  That made Scripture the only app here launching on an interpreter
+' the suite never runs and the repo never declares -- and the torch it picked up
+' was not even conda's, but a per-user site-packages copy shared with every
+' other Python on the machine.  The venv now carries the CUDA build itself (see
+' CLAUDE.md), so the interpreter that runs the tests is the interpreter that
+' runs the app.
+'
+' Falling back to a PATH python is not a lesser launch, it is a broken one: it
+' has neither torch nor shared_ui, and it would die while importing, before any
+' window and before any log line.  So there is no fallback.
+pythonExe = projectRoot & "\.venv\Scripts\python.exe"
 
-Function FindPythonCommand()
-  Dim condaPython, venvPython, candidates, i
-  ' Prefer conda env (has torch+CUDA for CoTracker3)
-  condaPython = shell.ExpandEnvironmentStrings("%USERPROFILE%") & "\miniconda3\python.exe"
-  If fso.FileExists(condaPython) Then
-    FindPythonCommand = Quote(condaPython)
-    Exit Function
-  End If
-
-  venvPython = projectRoot & "\.venv\Scripts\python.exe"
-  If fso.FileExists(venvPython) Then
-    FindPythonCommand = Quote(venvPython)
-    Exit Function
-  End If
-
-  candidates = Array( _
-    "python", _
-    "py -3" _
-  )
-  For i = 0 To UBound(candidates)
-    If shell.Run("cmd /c where " & Split(candidates(i), " ")(0) & " >nul 2>nul", 0, True) = 0 Then
-      FindPythonCommand = candidates(i)
-      Exit Function
-    End If
-  Next
-  FindPythonCommand = ""
-End Function
-
-pythonCmd = FindPythonCommand()
-If pythonCmd = "" Then
-  AppendLog "ERROR: Could not find python launcher"
-  If dryRun Then
-    WScript.Echo "ERROR: Could not find python launcher"
-    WScript.Quit 1
-  End If
-  MsgBox "Could not find python or py launcher.", vbCritical, "Scripture"
-  WScript.Quit 1
-End If
-
-' The interpreter picked above is usually conda's, which has no shared_ui
-' installed and no .pth pointing at one, so PYTHONPATH is the only thing that
-' makes it importable. The parent directory alone is not enough: it resolves
-' "shared_ui" to the checkout as a namespace package, whose real package sits
-' one level further down (shared_ui/shared_ui/), so "from shared_ui.colors
-' import ..." in gui.py still fails. Naming the checkout too fixes that, and
-' the parent stays for any sibling laid out flat.
-parentDir = fso.GetParentFolderName(projectRoot)
-sharedUiDir = FindSharedUi(parentDir)
-cmd = "cmd /c cd /d " & Quote(projectRoot) & " && set PYTHONPATH=" & parentDir & ";" & sharedUiDir & "&&" & pythonCmd & " -m scripture 1>>" & Quote(launcherLog) & " 2>&1"
+' No PYTHONPATH.  The venv resolves shared_ui through the editable install's
+' .pth, the working directory below resolves the top-level `content` module and
+' this checkout's own `scripture` package, and that is the whole path story.
+cmd = "cmd /c cd /d " & Quote(projectRoot) & " && " & Quote(pythonExe) & " -m scripture 1>>" & Quote(launcherLog) & " 2>&1"
 
 AppendLog "INFO: Launching with command: " & cmd
+
+' The dry run reports the command it resolved and stops, without requiring the
+' venv to be there: it is a check on what this file decides, and it has to work
+' in CI, where the suite runs on a plain checkout that has no .venv at all.
 If dryRun Then
   WScript.Echo "OK: " & cmd
   WScript.Quit 0
+End If
+
+If Not fso.FileExists(pythonExe) Then
+  AppendLog "ERROR: virtual environment missing: " & pythonExe
+  MsgBox "Scripture's virtual environment is missing:" & vbCrLf & pythonExe, vbCritical, "Scripture"
+  WScript.Quit 1
 End If
 
 shell.Run cmd, 0, False

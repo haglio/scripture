@@ -1,3 +1,35 @@
+# scripture — Project-Specific Instructions
+
+Shared rules are in the global `~/.claude/CLAUDE.md`. This file contains only
+scripture-specific overrides.
+
+## The venv needs a CUDA build of torch, and PyPI does not have one
+
+`cotracker_tracking.py` pins every tensor to `"cuda"` with no CPU fallback, so a
+CPU-only torch does not degrade the tracker — it breaks it, the first time you
+track anything. `pyproject.toml` can only ask for `torch>=2.0`, and installing
+that from PyPI on Windows gives you the CPU build. So after creating or
+rebuilding `.venv`, replace it from PyTorch's own index:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu130
+```
+
+Pick the `cuXXX` index that the installed NVIDIA driver supports (`nvidia-smi`
+prints the highest CUDA version it can run). Confirm with
+`python -c "import torch; print(torch.cuda.is_available())"` — `False` means the
+CPU wheel is still installed and the tracker will raise on first use.
+
+This is also why `launch_scripture.vbs` runs the venv and nothing else. It used
+to prefer `%USERPROFILE%\miniconda3\python.exe`, which was the only interpreter
+here with CUDA torch — and made Scripture the one app in this family launching
+on an interpreter the suite never runs and the repo never declares. CI installs
+the CPU wheel and stays green: no test loads a model, and the suite drives the
+numpy/OpenCV logic with synthetic data.
+
+`shared_ui` is a sibling checkout, not a PyPI package, and the launcher exports
+no `PYTHONPATH` — the venv resolves it through the editable install, so a fresh
+venv also needs `pip install -e ../shared_ui`.
 
 ## Test fixtures must be fabricated, never copied from the real library
 
