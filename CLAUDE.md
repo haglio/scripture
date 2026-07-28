@@ -16,9 +16,10 @@ rebuilding `.venv`, replace it from PyTorch's own index:
 ```
 
 Pick the `cuXXX` index that the installed NVIDIA driver supports (`nvidia-smi`
-prints the highest CUDA version it can run). Confirm with
-`python -c "import torch; print(torch.cuda.is_available())"` — `False` means the
-CPU wheel is still installed and the tracker will raise on first use.
+prints the highest CUDA version it can run). You do not have to remember to
+check: `tests/test_tracker_environment.py` fails the suite on any machine with
+an NVIDIA driver whose torch is the CPU build or cannot reach the GPU, and names
+this command when it does. It skips where no driver exists, which is CI.
 
 This is also why `launch_scripture.vbs` runs the venv and nothing else. It used
 to prefer `%USERPROFILE%\miniconda3\python.exe`, which was the only interpreter
