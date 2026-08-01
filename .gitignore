@@ -13,6 +13,7 @@ funscripts/
 # a committed *.example.* template documenting its shape.
 /content.local.json
 /sanitize/blocklist.local.txt
+/sanitize/library_roots.local.txt
 
 # Windows shortcuts are machine-specific and embed the real install path.
 *.lnk
