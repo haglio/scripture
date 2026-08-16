@@ -51,7 +51,16 @@ End Sub
 ' Falling back to a PATH python is not a lesser launch, it is a broken one: it
 ' has neither torch nor shared_ui, and it would die while importing, before any
 ' window and before any log line.  So there is no fallback.
+
+' The copy a previous run left named for this app, ahead of the plain venv
+' interpreter.  Windows identifies a process by the file it was started from, so
+' a bare interpreter arrives as one more anonymous "Python" among every other
+' Python app on the machine; app_support.process_identity makes a copy that says
+' Scripture instead, and each run makes it for the run after.
 pythonExe = projectRoot & "\.venv\Scripts\python.exe"
+If fso.FileExists(projectRoot & "\.venv\Scripts\Scripture-Scripture.exe") Then
+  pythonExe = projectRoot & "\.venv\Scripts\Scripture-Scripture.exe"
+End If
 
 ' No PYTHONPATH.  The venv resolves shared_ui through the editable install's
 ' .pth, the working directory below resolves the top-level `content` module and
