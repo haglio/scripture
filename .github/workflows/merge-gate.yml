@@ -49,6 +49,7 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip
           pip install "shared_ui @ git+https://github.com/haglio/shared_ui.git"
+          pip install "app_support @ git+https://github.com/haglio/app_support.git"
           pip install -e ".[dev]" --config-settings editable_mode=compat
       - name: Run the suite
         run: python -m pytest -q
