@@ -20,9 +20,9 @@ from PyQt6.QtWidgets import (
 )
 
 from shared_ui.colors import (
-    BG_PRIMARY, BG_SECONDARY, BG_TERTIARY, BG_BUTTON,
+    BG_PRIMARY, BG_SECONDARY, BG_TERTIARY, BG_BUTTON, BG_KEYCAP,
     TEXT_PRIMARY, TEXT_MUTED,
-    BLUE, BORDER_SUBTLE,
+    BLUE, BORDER_SUBTLE, RED,
 )
 from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
 from shared_ui.spacing import MARGIN_STANDARD, GAP_MEDIUM
@@ -38,7 +38,8 @@ from scripture.stroke_extract import extract_strokes
 from scripture.funscript import build_funscript, save_funscript
 from scripture.project import save_project, load_project
 
-_ICON_COLOR = "#ddd"
+# The chrome's own text color rather than a near-white of this app's own.
+_ICON_COLOR = TEXT_PRIMARY.name()
 _LAST_SESSION_FILE = Path(__file__).resolve().parent.parent / "sessions" / ".last_session"
 
 _MENU_STYLE = f"""
@@ -71,7 +72,7 @@ _BTN_STYLE = f"""
         font-size: {SIZE_SMALL}pt;
     }}
     QPushButton:hover {{
-        background: {BG_TERTIARY.name()};
+        background: {BG_KEYCAP.name()};
     }}
     QPushButton:disabled {{
         color: {TEXT_MUTED.name()};
@@ -1097,20 +1098,6 @@ class App(QMainWindow):
         left_pad.setFixedWidth(MARGIN_STANDARD)
         tb.addWidget(left_pad)
 
-        for icon, label, handler in [
-            ("fa5s.folder-open", "New", self._open_video),
-            ("fa5s.save", "Save", self._save_project),
-            ("fa5s.copy", "Save As", self._save_project_as),
-            ("fa5s.folder", "Load", self._load_project),
-        ]:
-            act = QAction(qta.icon(icon, color=_ICON_COLOR), label, self)
-            act.triggered.connect(handler)
-            tb.addAction(act)
-        tb.addSeparator()
-        act = QAction(qta.icon("fa5s.file-export", color=_ICON_COLOR), "Export", self)
-        act.triggered.connect(self._export)
-        tb.addAction(act)
-
         # Spacer — fills toolbar when progress bar is hidden
         self._spacer = QWidget()
         self._spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -1125,10 +1112,27 @@ class App(QMainWindow):
         self.progress_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._progress_action = tb.addWidget(self.progress_bar)
         self._progress_action.setVisible(False)
-        self._abort_action = QAction(qta.icon("fa5s.stop", color="#ff6666"), "Abort", self)
+        self._abort_action = QAction(qta.icon("fa5s.stop", color=RED.name()), "Abort", self)
         self._abort_action.triggered.connect(self._abort_processing)
         self._abort_action.setVisible(False)
         tb.addAction(self._abort_action)
+
+        # The file actions sit at the RIGHT, the way Evolver's toolbar puts its
+        # own -- the spacer above is what pushes them there.  They were flush
+        # left, which left the two apps' top bars reading as different chrome.
+        for icon, label, handler in [
+            ("fa5s.folder-open", "New", self._open_video),
+            ("fa5s.save", "Save", self._save_project),
+            ("fa5s.copy", "Save As", self._save_project_as),
+            ("fa5s.folder", "Load", self._load_project),
+        ]:
+            act = QAction(qta.icon(icon, color=_ICON_COLOR), label, self)
+            act.triggered.connect(handler)
+            tb.addAction(act)
+        tb.addSeparator()
+        act = QAction(qta.icon("fa5s.file-export", color=_ICON_COLOR), "Export", self)
+        act.triggered.connect(self._export)
+        tb.addAction(act)
 
         # Right pad
         right_pad = QWidget()
