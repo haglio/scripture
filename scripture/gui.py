@@ -9,7 +9,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import qtawesome as qta
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPointF
+from PyQt6.QtCore import QSize, Qt, QThread, pyqtSignal, QPointF
 from PyQt6.QtGui import (
     QAction, QIcon, QImage, QPixmap, QPainter, QPen, QBrush, QColor,
     QShortcut, QKeySequence, QPolygonF, QCursor,
@@ -25,7 +25,7 @@ from shared_ui.colors import (
     BLUE, BORDER_SUBTLE, RED,
 )
 from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
-from shared_ui.spacing import MARGIN_STANDARD, GAP_MEDIUM
+from shared_ui.spacing import BUTTON_ICON, MARGIN_STANDARD, GAP_MEDIUM
 
 from content import load_content
 
@@ -1091,6 +1091,9 @@ class App(QMainWindow):
         tb.setMovable(False)
         tb.setFloatable(False)
         tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        # The family's icon size, so a mark here is the size a mark in any
+        # other app's row of buttons is.
+        tb.setIconSize(QSize(BUTTON_ICON, BUTTON_ICON))
         self.addToolBar(tb)
 
         # Left pad to match central widget margin
