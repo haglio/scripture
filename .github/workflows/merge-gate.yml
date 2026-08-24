@@ -53,3 +53,14 @@ jobs:
           pip install -e ".[dev]" --config-settings editable_mode=compat
       - name: Run the suite
         run: python -m pytest -q
+      # Again, back to front. Nothing in this suite leaned on its neighbours when
+      # the audit looked, and the autouse QApplication that could have made one do
+      # so is gone -- this is what keeps it that way, by inverting every "this runs
+      # before that" the suite has so the next lean goes red on the commit that
+      # introduces it. TEST_COLLECTION_ORDER=shuffle with TEST_COLLECTION_SEED is
+      # the deeper local check (see tests/conftest.py); the gate takes the
+      # deterministic one.
+      - name: Run the suite back to front
+        env:
+          TEST_COLLECTION_ORDER: reverse
+        run: python -m pytest -q
