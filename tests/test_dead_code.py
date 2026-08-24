@@ -37,8 +37,6 @@ WHITELIST = {
     "scripture/gui.py:_on_canvas_context_menu.gy",
     "scripture/gui.py:_on_timeline_context_menu.gx",
     "scripture/gui.py:_on_timeline_context_menu.gy",
-    # -- pytest fixtures (invoked by the framework, not by user code) --
-    "scripture/tests/conftest.py:qapp",
 }
 
 
