@@ -34,6 +34,12 @@ concurrency:
 jobs:
   full-suite:
     runs-on: windows-latest
+    # About three times a green run, so it can only fire on a hang. A green job
+    # is ~142 s of checkout and installing torch and ultralytics, plus two ~16 s
+    # suite legs, so ~174 s. Without this, the queue's required check would sit
+    # on a hung run until GitHub's six-hour default and print nothing that named
+    # it.
+    timeout-minutes: 9
     env:
       QT_QPA_PLATFORM: offscreen
     defaults:
