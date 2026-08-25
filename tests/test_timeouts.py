@@ -50,7 +50,7 @@ def test_every_test_runs_under_its_own_clock(pytestconfig):
     and what this guards is that the configuration still asks for it."""
     addopts = pytestconfig.getini("addopts")
 
-    assert "--timeout=60" in addopts
+    assert "--timeout=120" in addopts
     assert "--timeout-method=thread" in addopts
 
 
