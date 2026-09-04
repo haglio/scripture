@@ -1,42 +1,67 @@
 """PyQt6 GUI for scripture: manual scene splitting, axis annotation, and export."""
 
 import bisect
-import json
-import sys
 import time
 from pathlib import Path
 
 import cv2
 import numpy as np
 import qtawesome as qta
-from PyQt6.QtCore import QSize, Qt, QThread, pyqtSignal, QPointF
+from PyQt6.QtCore import QPointF, QSize, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import (
-    QAction, QIcon, QImage, QPixmap, QPainter, QPen, QBrush, QColor,
-    QShortcut, QKeySequence, QPolygonF, QCursor,
+    QAction,
+    QBrush,
+    QColor,
+    QCursor,
+    QIcon,
+    QImage,
+    QKeySequence,
+    QPainter,
+    QPen,
+    QPixmap,
+    QPolygonF,
+    QShortcut,
 )
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QToolBar,
-    QLabel, QPushButton, QFileDialog, QMessageBox, QProgressBar, QMenu, QSizePolicy,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMenu,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QSizePolicy,
+    QToolBar,
+    QVBoxLayout,
+    QWidget,
 )
-
 from shared_ui.colors import (
-    BG_PRIMARY, BG_SECONDARY, BG_TERTIARY, BG_BUTTON, BG_KEYCAP,
-    TEXT_PRIMARY, TEXT_MUTED,
-    BLUE, BORDER_SUBTLE, RED,
+    BG_BUTTON,
+    BG_KEYCAP,
+    BG_PRIMARY,
+    BG_SECONDARY,
+    BG_TERTIARY,
+    BLUE,
+    BORDER_SUBTLE,
+    RED,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
 )
 from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
-from shared_ui.spacing import BUTTON_ICON, MARGIN_STANDARD, GAP_MEDIUM
+from shared_ui.spacing import BUTTON_ICON, GAP_MEDIUM, MARGIN_STANDARD
 
 from content import load_content
-
 from scripture.auto_funscript import (
-    pipeline_result_from_state, pipeline_result_to_state, run_pipeline,
+    pipeline_result_from_state,
+    pipeline_result_to_state,
+    run_pipeline,
 )
-from scripture.scene import Scene, actions_by_scene, scenes_from_splits
-from scripture.motion_tracker import AxisDefinition, TrackingResult, track_motion
-from scripture.stroke_extract import extract_strokes
 from scripture.funscript import build_funscript, save_funscript
-from scripture.project import save_project, load_project
+from scripture.motion_tracker import AxisDefinition, TrackingResult, track_motion
+from scripture.project import load_project, save_project
+from scripture.scene import Scene, actions_by_scene, scenes_from_splits
+from scripture.stroke_extract import extract_strokes
 
 # The chrome's own text color rather than a near-white of this app's own.
 _ICON_COLOR = TEXT_PRIMARY.name()
@@ -716,14 +741,13 @@ class FrameCanvas(QWidget):
             p.setPen(QPen(contact_color))
             p.setFont(make_font(size=SIZE_BODY, bold=gt.get("is_action", False)))
             p.drawText(ccx + 12, ccy + 5, str(pos))
-        else:
-            # No contact indicator — show "—" near the axis midpoint
-            if gt.get("tip") and gt.get("base"):
-                mx = (tx + bx) // 2
-                my = (ty + by) // 2
-                p.setPen(QPen(QColor(255, 150, 50)))
-                p.setFont(make_font(size=SIZE_BODY, bold=True))
-                p.drawText(mx + 10, my + 5, "no contact")
+        # No contact indicator — show "—" near the axis midpoint
+        elif gt.get("tip") and gt.get("base"):
+            mx = (tx + bx) // 2
+            my = (ty + by) // 2
+            p.setPen(QPen(QColor(255, 150, 50)))
+            p.setFont(make_font(size=SIZE_BODY, bold=True))
+            p.drawText(mx + 10, my + 5, "no contact")
 
     def mousePressEvent(self, event):
         if not self._frame_w:

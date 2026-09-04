@@ -1,7 +1,7 @@
 """Motion tracking along a user-defined axis."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import cv2
 import numpy as np
@@ -38,7 +38,9 @@ def track_motion(video_path: str, axis: AxisDefinition,
     coordinates.
     """
     from scripture.cotracker_tracking import (
-        cotrack_axis, sample_axis_intensity, find_contact_gradient,
+        cotrack_axis,
+        find_contact_gradient,
+        sample_axis_intensity,
         sanitize_positions,
     )
 

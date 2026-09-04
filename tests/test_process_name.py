@@ -36,7 +36,7 @@ def test_the_launcher_prefers_the_copy_named_for_this_app():
     # the launcher picks python.exe first and only then swaps in the named copy,
     # so the swap has to come second to win.
     assert LAUNCHER.rindex(expected) > LAUNCHER.index(r"pythonExe = projectRoot")
-    assert f"pythonExe = projectRoot" in LAUNCHER
+    assert "pythonExe = projectRoot" in LAUNCHER
 
 
 def test_the_launcher_still_works_before_any_run_has_named_it():

@@ -29,7 +29,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from app_support.launch_smoke import (
     assert_an_unresolvable_import_is_caught,
     assert_every_import_resolves,
