@@ -11,7 +11,6 @@ every file, turning the scan into a no-op that always passed.  Nothing under
 import subprocess
 import sys
 
-
 # Vulture false positives: Qt overrides and signal-slot callback parameters.
 # Each entry is "path:name" where path is relative to the repo root.
 WHITELIST = {

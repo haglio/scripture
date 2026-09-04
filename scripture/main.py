@@ -48,6 +48,7 @@ def main():
     _name_this_process()
 
     from PyQt6.QtWidgets import QApplication
+
     from scripture.gui import App
 
     app = QApplication.instance() or QApplication(sys.argv)

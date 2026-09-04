@@ -1,6 +1,6 @@
 import numpy as np
 
-from scripture.stroke_extract import smooth_signal, extract_strokes, remove_drift
+from scripture.stroke_extract import extract_strokes, remove_drift, smooth_signal
 
 
 class TestSmoothSignal:

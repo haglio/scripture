@@ -59,9 +59,8 @@ def _enforce_alternating(indices: np.ndarray, values: np.ndarray) -> np.ndarray:
             if prev_is_peak:
                 if curr_val > prev_val:
                     result[-1] = indices[i]
-            else:
-                if curr_val < prev_val:
-                    result[-1] = indices[i]
+            elif curr_val < prev_val:
+                result[-1] = indices[i]
         else:
             result.append(indices[i])
     return np.array(result, dtype=indices.dtype)

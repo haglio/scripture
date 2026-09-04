@@ -1,4 +1,4 @@
-from scripture.project import save_project, load_project
+from scripture.project import load_project, save_project
 
 
 class TestProjectPersistence:

@@ -1,9 +1,11 @@
 import numpy as np
 
 from scripture.cotracker_tracking import (
-    scale_coords, sanitize_positions,
-    compute_pos_from_points, sample_axis_intensity,
+    compute_pos_from_points,
     find_contact_gradient,
+    sample_axis_intensity,
+    sanitize_positions,
+    scale_coords,
 )
 
 
