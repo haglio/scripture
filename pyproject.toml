@@ -18,7 +18,7 @@ dependencies = [
 scripture = "scripture.main:main"
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-timeout", "vulture"]
+dev = ["pytest", "pytest-timeout", "vulture", "ruff==0.16.6"]
 
 [tool.pytest.ini_options]
 # A ceiling on a hang, not a performance budget. The slowest test on a
