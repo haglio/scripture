@@ -1,24 +1,6 @@
+# The family's merge gate, published once in haglio/.github; this file says only what
+# differs about this repo. The check the merge queue requires is `full-suite / suite`.
 name: merge gate (full suite)
-
-# The merge queue's required check. The queue builds the candidate merge of a PR
-# onto current main, runs the whole suite on that candidate, and fast-forwards
-# main only when this is green -- so a red tree can never land. Also runs on PRs
-# for early feedback and on push to main as a visible post-merge backstop.
-#
-# Runs on windows-latest: scripture is a Windows PyQt6 app whose tests build a
-# QApplication, kept headless here with QT_QPA_PLATFORM=offscreen. The editable
-# install MUST use compat mode -- the suite imports the top-level `content` and
-# `tools` modules that sit beside the `scripture` package at the repo root, and
-# only compat mode puts that root on sys.path (packages.find is scoped to
-# scripture*). The heavy ML deps (torch, ultralytics) install but their model-
-# loading paths are never exercised: every test drives the numpy/OpenCV logic
-# with synthetic data, so CI needs no GPU and downloads no weights.
-#
-# shared_ui is a sibling package, never published to PyPI, that gui.py imports
-# directly (no sys.path bootstrap of its own -- a dev checkout gets it from a
-# .pth in the venv). It installs from its public repo so the GUI module can be
-# imported here at all; without it tests/test_gui_import.py cannot run, which
-# is how an import-time NameError in that module survived a green suite before.
 
 on:
   pull_request:
@@ -33,42 +15,9 @@ concurrency:
 
 jobs:
   full-suite:
-    runs-on: windows-latest
-    # A green job is ~142 s of checkout and installing torch and ultralytics,
-    # plus two ~16 s suite legs, so ~174 s. Three times that would be 9 minutes,
-    # and this is 15: almost all of the run is one uncached, un-retried pip
-    # install of the heaviest dependency set in the family, where a slow wheel
-    # CDN alone can cost minutes without anything being wrong. Without a budget
-    # at all, the queue's required check would sit on a hung run until GitHub's
-    # six-hour default and print nothing that named it.
-    timeout-minutes: 15
-    env:
-      QT_QPA_PLATFORM: offscreen
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install (editable, compat mode)
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          pip install "shared_ui @ git+https://github.com/haglio/shared_ui.git"
-          pip install "app_support @ git+https://github.com/haglio/app_support.git"
-          pip install -e ".[dev]" --config-settings editable_mode=compat
-      - name: Run the suite
-        run: python -m pytest -q
-      # Again, back to front. Nothing in this suite leaned on its neighbours when
-      # the audit looked, and the autouse QApplication that could have made one do
-      # so is gone -- this is what keeps it that way, by inverting every "this runs
-      # before that" the suite has so the next lean goes red on the commit that
-      # introduces it. TEST_COLLECTION_ORDER=shuffle with TEST_COLLECTION_SEED is
-      # the deeper local check (see tests/conftest.py); the gate takes the
-      # deterministic one.
-      - name: Run the suite back to front
-        env:
-          TEST_COLLECTION_ORDER: reverse
-        run: python -m pytest -q
+    uses: haglio/.github/.github/workflows/merge-gate.yml@main
+    with:
+      siblings: "app_support shared_ui"
+      python-version: "3.12"
+      timeout-minutes: 15
+      qt-platform: offscreen
