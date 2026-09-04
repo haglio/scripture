@@ -1383,7 +1383,6 @@ class App(QMainWindow):
         """Interpolate pos from action list for a given timestamp."""
         if not actions:
             return 50, False
-        is_action = False
         for a in actions:
             if abs(a["at"] - frame_ms) < half_frame_ms:
                 return a["pos"], True
