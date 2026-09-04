@@ -1,111 +1,62 @@
-"""Ensure no dead code accumulates in the scripture package.
+"""This repo's dead-code gate. Every check it runs is `app_support.dead_code` or
+`app_support.unread`, the family's one shape."""
+from __future__ import annotations
 
-Vulture is pointed at the ``scripture`` package and given no ``.claude``
-exclude.  Its ``--exclude`` patterns match *absolute* paths, and agents run
-from a ``.claude/worktrees/<name>`` checkout whose own root contains
-``.claude`` — so that pattern matched the worktree root and silently excluded
-every file, turning the scan into a no-op that always passed.  Nothing under
-``scripture/`` is ever a virtualenv or a worktree, so no exclude is needed.
-"""
+from pathlib import Path
 
-import subprocess
-import sys
+from app_support import unread
+from app_support.dead_code import (
+    assert_every_package_is_scanned,
+    assert_no_dead_code,
+    assert_no_function_takes_an_argument_it_never_reads,
+    assert_nothing_is_imported_or_assigned_and_left_unread,
+    assert_whitelist_is_live,
+)
 
-# Vulture false positives: Qt overrides and signal-slot callback parameters.
-# Each entry is "path:name" where path is relative to the repo root.
-WHITELIST = {
-    # -- Qt method overrides (called by the framework, not by our code) --
-    # ProcessWorker (QThread)
-    "scripture/gui.py:ProcessWorker.run",
-    # TimelineWidget (QWidget)
-    "scripture/gui.py:TimelineWidget.paintEvent",
-    "scripture/gui.py:TimelineWidget.mousePressEvent",
-    "scripture/gui.py:TimelineWidget.mouseMoveEvent",
-    "scripture/gui.py:TimelineWidget.mouseReleaseEvent",
-    "scripture/gui.py:TimelineWidget.wheelEvent",
-    # FrameCanvas (QWidget)
-    "scripture/gui.py:FrameCanvas.paintEvent",
-    "scripture/gui.py:FrameCanvas.mousePressEvent",
-    "scripture/gui.py:FrameCanvas.mouseMoveEvent",
-    "scripture/gui.py:FrameCanvas.mouseReleaseEvent",
-    "scripture/gui.py:FrameCanvas.wheelEvent",
-    # App (QMainWindow)
-    "scripture/gui.py:App.closeEvent",
-    # -- Signal-slot callback parameters (signal emits them; slot must accept) --
-    "scripture/gui.py:_on_canvas_context_menu.gx",
-    "scripture/gui.py:_on_canvas_context_menu.gy",
-    "scripture/gui.py:_on_timeline_context_menu.gx",
-    "scripture/gui.py:_on_timeline_context_menu.gy",
-}
-
-
-def _parse_vulture_line(line: str) -> str | None:
-    """Extract 'path:name' from a vulture output line.
-
-    Vulture output format:
-        scripture\\gui.py:114: unused method 'run' (60% confidence)
-        scripture\\gui.py:1174: unused variable 'gx' (100% confidence)
-
-    We need to map these to whitelist keys.  For methods we look up the
-    class that owns them; for variables in a method we use method.var.
-    """
-    # Strip trailing confidence
-    if "unused" not in line:
-        return None
-    # e.g. "scripture\\gui.py:114: unused method 'run' (60% confidence)"
-    parts = line.split(": unused ")
-    if len(parts) != 2:
-        return None
-    file_and_line = parts[0]  # "scripture\\gui.py:114"
-    rest = parts[1]           # "method 'run' (60% confidence)"
-
-    file_path = file_and_line.rsplit(":", 1)[0].replace("\\", "/")
-
-    # Extract the name from 'run', 'gx', etc.
-    quote_start = rest.find("'")
-    quote_end = rest.find("'", quote_start + 1)
-    if quote_start == -1 or quote_end == -1:
-        return None
-    name = rest[quote_start + 1:quote_end]
-
-    return f"{file_path}:{name}"
-
-
-def _find_whitelist_match(key: str) -> bool:
-    """Check whether a vulture finding matches any whitelist entry.
-
-    key is "path:name" (e.g. "scripture/gui.py:run").
-    Whitelist entries are "path:Class.method" or "path:method.var".
-    We match if any whitelist entry ends with the bare name.
-    """
-    if key in WHITELIST:
-        return True
-    # "scripture/gui.py:run" matches "scripture/gui.py:ProcessWorker.run"
-    path, name = key.rsplit(":", 1)
-    return any(
-        entry.startswith(path + ":") and entry.endswith("." + name)
-        for entry in WHITELIST
-    )
+ROOT = Path(__file__).resolve().parent.parent
+PACKAGES = (ROOT / "scripture",)
+SCANNED = (*PACKAGES, ROOT / "content.py", ROOT / "tools")
+WHITELIST = ROOT / "vulture_whitelist.py"
 
 
 def test_no_dead_code():
-    result = subprocess.run(
-        [sys.executable, "-m", "vulture", "scripture/", "--min-confidence", "60"],
-        capture_output=True, text=True,
-    )
-    lines = [l.strip() for l in result.stdout.splitlines() + result.stderr.splitlines() if l.strip()]
+    assert_no_dead_code(*SCANNED, whitelist=WHITELIST)
 
-    unwhitelisted = []
-    for line in lines:
-        key = _parse_vulture_line(line)
-        if key is None:
-            continue
-        if not _find_whitelist_match(key):
-            unwhitelisted.append(line)
 
-    assert not unwhitelisted, (
-        "Vulture found dead code not in the whitelist:\n"
-        + "\n".join(unwhitelisted)
-        + "\n\nIf these are framework false positives, add them to WHITELIST in "
-        "tests/test_dead_code.py."
-    )
+def test_the_whitelist_still_suppresses_what_it_claims_to():
+    assert_whitelist_is_live(*SCANNED, whitelist=WHITELIST)
+
+
+def test_every_package_in_the_tree_is_scanned():
+    assert_every_package_is_scanned(ROOT, ("scripture",))
+
+
+def test_nothing_is_imported_or_assigned_and_left_unread():
+    assert_nothing_is_imported_or_assigned_and_left_unread(ROOT, *SCANNED, ROOT / "tests")
+
+
+def test_no_function_takes_an_argument_it_never_reads():
+    assert_no_function_takes_an_argument_it_never_reads(ROOT, *SCANNED)
+
+
+def test_no_module_level_constant_goes_unread():
+    unread.assert_no_module_constant_goes_unread(ROOT, SCANNED)
+
+
+def test_no_constructor_parameter_is_stored_and_never_read():
+    unread.assert_no_constructor_parameter_is_stored_and_never_read(ROOT, SCANNED)
+
+
+def test_no_dataclass_field_goes_unread():
+    # Two result fields nothing reads. Scripture is parked pending its owner (WHATS-LEFT section 5);
+    # whether its tracking result keeps them is judged when it is worked, not deleted here.
+    unread.assert_no_dataclass_field_goes_unread(
+        ROOT, SCANNED, allowing=("CoTrackResult.visibility", "CoTrackResult.t_params"))
+
+
+def test_every_declared_command_line_option_is_read():
+    unread.assert_every_argparse_option_is_read(ROOT, SCANNED)
+
+
+def test_no_test_helper_is_written_and_never_called():
+    unread.assert_no_test_helper_is_written_and_never_called(ROOT, ROOT / "tests")
