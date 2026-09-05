@@ -34,10 +34,14 @@ def main():
     _name_this_process()
 
     from PyQt6.QtWidgets import QApplication
+    from shared_ui.chrome import family_stylesheet
 
     from scripture.gui import App
 
     app = QApplication.instance() or QApplication(sys.argv)
+    # On the application, not the window: the family's tooltip rule reaches a
+    # top-level popup only from here.
+    app.setStyleSheet(family_stylesheet())
     window = App()
     window.show()
     sys.exit(app.exec())
