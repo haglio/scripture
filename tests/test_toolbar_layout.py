@@ -43,9 +43,16 @@ def test_the_row_still_ends_with_its_margin_pad():
 
 def test_the_toolbar_colors_come_from_the_family_palette():
     # The icons were tinted with this app's own near-white and the abort mark
-    # with its own red.
-    source = _GUI.read_text(encoding="utf-8")
+    # with its own red.  Read off the syntax tree rather than as text, so a
+    # reformat of the assignment cannot turn this red with the color unchanged.
+    tree = ast.parse(_GUI.read_text(encoding="utf-8"))
+    icon_color = next(
+        node.value for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == "_ICON_COLOR" for t in node.targets))
+    literals = {node.value for node in ast.walk(tree)
+                if isinstance(node, ast.Constant) and isinstance(node.value, str)}
 
-    assert "_ICON_COLOR = TEXT_PRIMARY.name()" in source
-    assert '"#ddd"' not in source
-    assert '"#ff6666"' not in source
+    assert ast.unparse(icon_color) == "TEXT_PRIMARY.name()"
+    assert "#ddd" not in literals
+    assert "#ff6666" not in literals

@@ -19,6 +19,7 @@ there drives the numpy/OpenCV logic with synthetic data.
 """
 from __future__ import annotations
 
+import ast
 import shutil
 import subprocess
 from pathlib import Path
@@ -59,10 +60,11 @@ def test_the_tracker_still_pins_every_tensor_to_cuda():
     """Why the two tests below exist. If a CPU path is ever added here, the
     CUDA build stops being a hard requirement and this whole file should go --
     so the premise is checked rather than assumed."""
-    source = TRACKER.read_text(encoding="utf-8")
+    devices = {node.value for node in ast.walk(ast.parse(TRACKER.read_text(encoding="utf-8")))
+               if isinstance(node, ast.Constant) and isinstance(node.value, str)}
 
-    assert 'device="cuda"' in source or '.to("cuda")' in source
-    assert '"cpu"' not in source, (
+    assert "cuda" in devices
+    assert "cpu" not in devices, (
         "cotracker_tracking now names a CPU device; if it can fall back, this "
         "file's premise no longer holds and it should be revisited"
     )
