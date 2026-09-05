@@ -19,18 +19,19 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 
 import numpy as np
+from app_support.overlay import overlay_value
 
-from content import load_content
+from content import LOCAL_CONTENT, load_content
 
 _CONTENT = load_content()
 
 # The detector's weights and class vocabulary are private; they reach the code
 # through the content overlay (content.example.json documents the shape).
-DEFAULT_MODEL_PATH = _CONTENT["model_path"]
+DEFAULT_MODEL_PATH = overlay_value(_CONTENT, "model_path", path=LOCAL_CONTENT)
 
 # The classes the ROI can anchor on, most-preferred first: the model often
 # still sees the second when the first is occluded.
-ANCHOR_CLASSES: tuple[str, ...] = tuple(_CONTENT["anchor_classes"])
+ANCHOR_CLASSES: tuple[str, ...] = tuple(overlay_value(_CONTENT, "anchor_classes", path=LOCAL_CONTENT))
 
 
 @dataclass
@@ -48,7 +49,7 @@ _INTERACTION_DISTANCE_FACTOR = 0.85
 # Classes that can be the thing touching the anchor.  When the anchor itself
 # is occluded, one of these overlapping its last known position is evidence
 # the interaction is still happening there.
-_CONTACT_CLASSES: tuple[str, ...] = tuple(_CONTENT["contact_classes"])
+_CONTACT_CLASSES: tuple[str, ...] = tuple(overlay_value(_CONTENT, "contact_classes", path=LOCAL_CONTENT))
 
 
 def _center(box: tuple[int, int, int, int]) -> tuple[float, float]:

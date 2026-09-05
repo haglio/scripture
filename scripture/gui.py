@@ -7,6 +7,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import qtawesome as qta
+from app_support.overlay import overlay_value
 from PyQt6.QtCore import QPointF, QSize, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import (
     QAction,
@@ -51,7 +52,7 @@ from shared_ui.colors import (
 from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
 from shared_ui.spacing import BUTTON_ICON, GAP_MEDIUM, MARGIN_STANDARD
 
-from content import load_content
+from content import LOCAL_CONTENT, load_content
 from scripture.auto_funscript import (
     pipeline_result_from_state,
     pipeline_result_to_state,
@@ -191,7 +192,7 @@ _ACTION_DOT_COLOR = QColor(80, 255, 80, 180)
 # Detection box colors by class (drawn in the auto-tracking overlay).  The class
 # names are private, so the map comes from the content overlay.
 _DET_COLORS = {
-    name: QColor(*rgb) for name, rgb in load_content()["class_colors"].items()
+    name: QColor(*rgb) for name, rgb in overlay_value(load_content(), "class_colors", path=LOCAL_CONTENT).items()
 }
 _DET_DEFAULT_COLOR = QColor(200, 200, 200)
 
