@@ -1,23 +1,24 @@
+import contextlib
 import sys
 from pathlib import Path
 
 from app_support.process_identity import ProcessNamer
+from app_support.win32 import set_app_user_model_id
 
 SCRIPTURE_APP_USER_MODEL_ID = "FunTime.Scripture"
 _ICON = Path(__file__).resolve().parent.parent / "icon.ico"
 
 
 def _set_windows_app_user_model_id() -> None:
+    """Claim the identity the pinned shortcut carries, before any window exists.
+
+    Cosmetic: a window under the interpreter's icon is still a window, so a
+    refusal costs the icon and nothing else.
+    """
     if sys.platform != "win32":
         return
-    try:
-        import ctypes
-        set_app_id = ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID
-        set_app_id.argtypes = [ctypes.c_wchar_p]
-        set_app_id.restype = ctypes.c_long
-        set_app_id(SCRIPTURE_APP_USER_MODEL_ID)
-    except Exception:
-        pass
+    with contextlib.suppress(OSError):
+        set_app_user_model_id(SCRIPTURE_APP_USER_MODEL_ID)
 
 
 def _name_this_process() -> None:
