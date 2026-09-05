@@ -38,8 +38,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 from shared_ui.colors import (
-    BG_BUTTON,
-    BG_KEYCAP,
     BG_PRIMARY,
     BG_SECONDARY,
     BG_TERTIARY,
@@ -67,44 +65,6 @@ from scripture.stroke_extract import extract_strokes
 # The chrome's own text color rather than a near-white of this app's own.
 _ICON_COLOR = TEXT_PRIMARY.name()
 _LAST_SESSION_FILE = Path(__file__).resolve().parent.parent / "sessions" / ".last_session"
-
-_MENU_STYLE = f"""
-    QMenu {{
-        background: {BG_TERTIARY.name()};
-        color: {TEXT_PRIMARY.name()};
-        border: 1px solid {BORDER_SUBTLE.name()};
-        padding: 2px;
-    }}
-    QMenu::item {{
-        padding: 4px 16px 4px 8px;
-    }}
-    QMenu::item:selected {{
-        background: {BLUE.name()};
-    }}
-    QMenu::separator {{
-        height: 1px;
-        background: {BORDER_SUBTLE.name()};
-        margin: 2px 4px;
-    }}
-"""
-
-_BTN_STYLE = f"""
-    QPushButton {{
-        color: {TEXT_PRIMARY.name()};
-        background: {BG_BUTTON.name()};
-        border: 1px solid {BORDER_SUBTLE.name()};
-        padding: 4px 10px;
-        border-radius: 3px;
-        font-size: {SIZE_SMALL}pt;
-    }}
-    QPushButton:hover {{
-        background: {BG_KEYCAP.name()};
-    }}
-    QPushButton:disabled {{
-        color: {TEXT_MUTED.name()};
-        background: {BG_SECONDARY.name()};
-    }}
-"""
 
 _PROGRESS_STYLE = f"""
     QProgressBar {{
@@ -793,7 +753,6 @@ class App(QMainWindow):
         _icon_path = Path(__file__).resolve().parent.parent / "icon.ico"
         if _icon_path.exists():
             self.setWindowIcon(QIcon(str(_icon_path)))
-        self.setStyleSheet(f"background: {BG_PRIMARY.name()}; color: {TEXT_PRIMARY.name()};")
 
         self.video_path = None
         self.cap = None
@@ -1185,23 +1144,19 @@ class App(QMainWindow):
         bottom.setSpacing(GAP_MEDIUM)
 
         self.btn_auto_process = QPushButton("Auto Process (YOLO)")
-        self.btn_auto_process.setStyleSheet(_BTN_STYLE)
         self.btn_auto_process.clicked.connect(self._auto_process)
         bottom.addWidget(self.btn_auto_process)
 
         self.btn_process_all = QPushButton("Process All")
-        self.btn_process_all.setStyleSheet(_BTN_STYLE)
         self.btn_process_all.clicked.connect(self._process_all)
         bottom.addWidget(self.btn_process_all)
 
         self.btn_label_session = QPushButton("Label Session")
-        self.btn_label_session.setStyleSheet(_BTN_STYLE)
         self.btn_label_session.setCheckable(True)
         self.btn_label_session.clicked.connect(self._toggle_label_session)
         bottom.addWidget(self.btn_label_session)
 
         self.btn_reset_labels = QPushButton("Reset Labels")
-        self.btn_reset_labels.setStyleSheet(_BTN_STYLE)
         self.btn_reset_labels.clicked.connect(self._reset_scene_labels)
         bottom.addWidget(self.btn_reset_labels)
 
@@ -1484,7 +1439,6 @@ class App(QMainWindow):
         idx = self._current_scene_idx()
         has_axis = idx in self.scene_axes
         menu = QMenu(self)
-        menu.setStyleSheet(_MENU_STYLE)
 
         if has_axis or self.pending_tip:
             menu.addAction("\u2717 Remove Tip", lambda: self._delete_point("tip"))
@@ -1505,7 +1459,6 @@ class App(QMainWindow):
 
         idx = self._current_scene_idx()
         menu = QMenu(self)
-        menu.setStyleSheet(_MENU_STYLE)
 
         if frame in self.splits:
             menu.addAction("Unsplit", lambda: self._do_unsplit(frame))
