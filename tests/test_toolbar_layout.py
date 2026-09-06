@@ -1,6 +1,6 @@
 """The file actions sit at the right of the toolbar, the way Evolver's do.
 
-They were flush left behind a margin pad, which left the two apps' top bars
+They were flush left after a margin pad, which left the two apps' top bars
 reading as different chrome for the same kind of row.  What puts them right is
 the expanding spacer ahead of them -- so this checks the ORDER, which is the
 thing that would silently come undone if the actions were ever moved back up.

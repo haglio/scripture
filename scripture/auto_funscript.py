@@ -261,7 +261,7 @@ class TrackSignal:
 
 
 def compute_positions(signal: TrackSignal, config: TrackConfig) -> np.ndarray:
-    """The final per-frame 0-100 position series behind the actions."""
+    """The final per-frame 0-100 position series beneath the actions."""
     positions = flow_to_position(
         signal.dy, gain=config.gain, median_window=config.median_window)
     return anti_plateau_normalize(
