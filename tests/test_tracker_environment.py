@@ -72,8 +72,8 @@ def test_the_tracker_still_pins_every_tensor_to_cuda():
 
 @needs_a_gpu
 def test_torch_is_a_cuda_build():
-    """The CPU wheel is what a plain ``pip install torch`` leaves behind, and
-    it is indistinguishable from the right one until the tracker runs."""
+    """The CPU wheel is what a plain ``pip install torch`` installs, and it is
+    indistinguishable from the right one until the tracker runs."""
     import torch
 
     assert torch.version.cuda is not None, (

@@ -24,7 +24,7 @@ def _set_windows_app_user_model_id() -> None:
 def _name_this_process() -> None:
     """Leave ``launch_scripture.vbs`` an interpreter that says "Scripture" next
     time.  The console interpreter, because that is the one the launcher runs --
-    it redirects the app's output into its log.  Why it is one launch behind, and
+    it redirects the app's output into its log.  Why it is one launch late, and
     why it can never cost the launch: :meth:`ProcessNamer.name_this_process`."""
     ProcessNamer("Scripture", icon=_ICON).name_this_process("Scripture", interpreter="python.exe")
 
