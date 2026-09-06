@@ -12,6 +12,6 @@ ICON_PATH = Path(scripture.__file__).resolve().parent.parent / "icon.ico"
 
 
 def test_the_icon_is_the_familys_s():
-    # One PINK block letter on the family's 5x5 grid, checked the way every
+    # One MAGENTA block letter on the family's 5x5 grid, checked the way every
     # app's is.
     assert_follows_the_family_spec(ICON_PATH, "S")
