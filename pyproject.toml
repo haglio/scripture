@@ -29,9 +29,9 @@ dev = ["pytest", "pytest-timeout", "vulture", "ruff==0.16.6"]
 # qtawesome and PyQt6 -- at about a second, and four launcher tests that are
 # skipped off Windows and so cannot be timed from this machine at all. 120 s
 # rather than 60 for that blind spot. --timeout-method=thread is the half that
-# pays for itself: it dumps the hung stack, which turns a stalled required
-# check into a one-line diagnosis. tests/test_timeouts.py holds all three
-# halves of it.
+# pays for itself: it dumps the stack of the test that stopped, which turns a
+# stalled required check into a one-line diagnosis. tests/test_timeouts.py
+# holds all three halves of it.
 addopts = "--timeout=120 --timeout-method=thread -p app_support.sanitize.pytest_plugin"
 testpaths = ["tests"]
 
