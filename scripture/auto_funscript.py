@@ -221,7 +221,7 @@ def weighted_flow(flow: np.ndarray) -> tuple[float, float]:
 
 @dataclass
 class TrackConfig:
-    """Tuning knobs; defaults mirror the FunGen run that produced a usable
+    """Tuning dials; defaults mirror the FunGen run that produced a usable
     script (padding/persistence/smoothing) plus offline-only additions."""
     detect_every: int = 3
     conf_threshold: float = 0.4
