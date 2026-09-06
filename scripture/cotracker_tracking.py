@@ -27,7 +27,7 @@ def sanitize_positions(positions: np.ndarray, fps: float = 30.0) -> np.ndarray:
     """Apply temporal smoothing and physical constraints to raw pos signal.
 
     - Smooths the signal to remove single-frame noise
-    - Enforces a maximum speed (full stroke in no less than ~0.25s)
+    - Enforces a maximum speed (full travel in no less than ~0.25s)
     - Clamps output to [0, 1]
     """
     from scipy.signal import savgol_filter
@@ -48,7 +48,7 @@ def sanitize_positions(positions: np.ndarray, fps: float = 30.0) -> np.ndarray:
     if window >= 5:
         cleaned = savgol_filter(cleaned, window, 3)
 
-    # 3. Enforce max speed: full stroke (0→1) takes at least 0.25s
+    # 3. Enforce max speed: full travel (0→1) takes at least 0.25s
     max_delta_per_frame = 1.0 / (fps * 0.25)
     for i in range(1, n):
         delta = cleaned[i] - cleaned[i - 1]

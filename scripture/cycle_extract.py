@@ -1,4 +1,4 @@
-"""Extract stroke peaks and valleys from a position signal."""
+"""Extract cycle peaks and valleys from a position signal."""
 
 import numpy as np
 from scipy.signal import find_peaks, savgol_filter
@@ -66,14 +66,14 @@ def _enforce_alternating(indices: np.ndarray, values: np.ndarray) -> np.ndarray:
     return np.array(result, dtype=indices.dtype)
 
 
-def extract_strokes(positions: np.ndarray, timestamps_ms: np.ndarray,
-                    min_stroke_height: float = 0.15,
-                    min_stroke_distance_ms: float = 200.0,
-                    fps: float = 30.0) -> list[dict]:
-    """Find stroke turnaround points (peaks and valleys).
+def extract_cycles(positions: np.ndarray, timestamps_ms: np.ndarray,
+                   min_cycle_height: float = 0.15,
+                   min_cycle_distance_ms: float = 200.0,
+                   fps: float = 30.0) -> list[dict]:
+    """Find cycle turnaround points (peaks and valleys).
 
     Returns a list of {"at": timestamp_ms, "pos": 0-100} dicts, containing
-    only the extrema — the minimal representation of the stroke pattern.
+    only the extrema — the minimal representation of the cycle pattern.
     """
     # Remove drift before smoothing
     detrended = remove_drift(positions, cutoff_period_frames=max(5, int(fps * 10)))
@@ -83,11 +83,11 @@ def extract_strokes(positions: np.ndarray, timestamps_ms: np.ndarray,
     smoothed = smooth_signal(detrended, window=smooth_window)
 
     avg_frame_interval_ms = np.mean(np.diff(timestamps_ms)) if len(timestamps_ms) > 1 else 1000 / fps
-    min_distance_frames = max(1, int(min_stroke_distance_ms / avg_frame_interval_ms))
+    min_distance_frames = max(1, int(min_cycle_distance_ms / avg_frame_interval_ms))
 
     prominence = _adaptive_prominence(smoothed, fps)
     # Use the smaller of adaptive and the caller's threshold
-    effective_prominence = min(prominence, min_stroke_height)
+    effective_prominence = min(prominence, min_cycle_height)
 
     # Find peaks (high positions = near tip)
     peaks, _ = find_peaks(smoothed, distance=min_distance_frames, prominence=effective_prominence)

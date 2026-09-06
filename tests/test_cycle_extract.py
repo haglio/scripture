@@ -1,6 +1,6 @@
 import numpy as np
 
-from scripture.stroke_extract import extract_strokes, remove_drift, smooth_signal
+from scripture.cycle_extract import extract_cycles, remove_drift, smooth_signal
 
 
 class TestSmoothSignal:
@@ -21,13 +21,13 @@ class TestSmoothSignal:
         assert smooth_error < noisy_error
 
 
-class TestExtractStrokes:
+class TestExtractCycles:
 
     def test_simple_sine_finds_peaks_and_valleys(self):
         t = np.linspace(0, 4 * np.pi, 400)
         positions = (np.sin(t) + 1) / 2  # 0 to 1 range
         timestamps_ms = np.linspace(0, 4000, 400)
-        actions = extract_strokes(positions, timestamps_ms, min_stroke_height=0.3)
+        actions = extract_cycles(positions, timestamps_ms, min_cycle_height=0.3)
         # A 2-cycle sine should produce roughly 4 peaks + 4 valleys = ~4-5 extrema
         assert len(actions) >= 3
         # All positions should be in 0-100 range
@@ -35,10 +35,10 @@ class TestExtractStrokes:
             assert 0 <= a["pos"] <= 100
             assert a["at"] >= 0
 
-    def test_flat_signal_no_strokes(self):
+    def test_flat_signal_no_cycles(self):
         positions = np.full(100, 0.5)
         timestamps_ms = np.linspace(0, 1000, 100)
-        actions = extract_strokes(positions, timestamps_ms)
+        actions = extract_cycles(positions, timestamps_ms)
         assert actions == []
 
 
@@ -51,10 +51,10 @@ class TestRemoveDrift:
 
     def test_removes_linear_trend(self):
         drift = np.linspace(0, 1, 500)
-        strokes = 0.1 * np.sin(np.linspace(0, 20 * np.pi, 500))
-        signal = np.clip(drift + strokes + 0.5, 0, 1)
+        cycles = 0.1 * np.sin(np.linspace(0, 20 * np.pi, 500))
+        signal = np.clip(drift + cycles + 0.5, 0, 1)
         result = remove_drift(signal, cutoff_period_frames=101)
-        # Strokes should survive
+        # Cycles should survive
         assert np.std(result) > 0.02
         # Drift slope should be removed: linear fit on result should be near-flat
         slope = np.polyfit(np.arange(len(result)), result, 1)[0]
@@ -74,20 +74,20 @@ class TestRemoveDrift:
         assert result_odd.shape == signal.shape
 
 
-class TestExtractStrokesImproved:
+class TestExtractCyclesImproved:
 
-    def test_drifting_signal_detects_strokes(self):
-        """Globally-normalized drift drowns strokes when drift >> stroke amplitude.
-        After normalization, strokes have prominence ~0.06, well below the
-        default 0.15 threshold.  extract_strokes must still find them.
+    def test_drifting_signal_detects_cycles(self):
+        """Globally-normalized drift drowns cycles when drift >> cycle amplitude.
+        After normalization, cycles have prominence ~0.06, well below the
+        default 0.15 threshold.  extract_cycles must still find them.
         """
         drift = np.linspace(0, 15, 1000)
-        strokes = np.sin(np.linspace(0, 20 * np.pi, 1000))
-        raw = drift + strokes
+        cycles = np.sin(np.linspace(0, 20 * np.pi, 1000))
+        raw = drift + cycles
         # Simulate global normalization
         positions = (raw - raw.min()) / (raw.max() - raw.min())
         timestamps_ms = np.linspace(0, 33333, 1000)  # ~33s at 30fps
-        actions = extract_strokes(positions, timestamps_ms, fps=30)
+        actions = extract_cycles(positions, timestamps_ms, fps=30)
         # 10 cycles × 2 extrema = ~20 expected
         assert len(actions) >= 12
 
@@ -96,7 +96,7 @@ class TestExtractStrokesImproved:
         t = np.linspace(0, 10 * np.pi, 500)
         positions = (np.sin(t) + 1) / 2
         timestamps_ms = np.linspace(0, 5000, 500)
-        actions = extract_strokes(positions, timestamps_ms, fps=30)
+        actions = extract_cycles(positions, timestamps_ms, fps=30)
         assert len(actions) >= 4
         for i in range(1, len(actions)):
             if actions[i - 1]["pos"] > 50:  # was a peak

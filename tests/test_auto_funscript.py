@@ -11,7 +11,7 @@ from scripture.auto_funscript import (
     anti_plateau_normalize,
     combine_roi,
     compute_positions,
-    contact_near_box,
+    contact_near_rect,
     find_interacting,
     flow_to_position,
     is_scene_cut,
@@ -30,7 +30,7 @@ ANCHOR, ANCHOR_TIP = ANCHOR_CLASSES[0], ANCHOR_CLASSES[1]
 
 
 def det(cls, x, y, w, h, conf=0.9):
-    return Detection(class_name=cls, confidence=conf, box=(x, y, w, h))
+    return Detection(class_name=cls, confidence=conf, rect=(x, y, w, h))
 
 
 class TestFindInteracting:
@@ -50,37 +50,37 @@ class TestContactNearBox:
     def test_face_overlapping_box_is_contact(self):
         anchor_box = (100, 100, 50, 100)
         face = det("face", 90, 80, 120, 130)
-        assert contact_near_box(anchor_box, [face]) == [face]
+        assert contact_near_rect(anchor_box, [face]) == [face]
 
     def test_distant_contact_ignored(self):
         anchor_box = (100, 100, 50, 100)
         far_hand = det("hand", 600, 400, 50, 50)
-        assert contact_near_box(anchor_box, [far_hand]) == []
+        assert contact_near_rect(anchor_box, [far_hand]) == []
 
     def test_non_contact_classes_ignored(self):
         anchor_box = (100, 100, 50, 100)
         anchor_tip = det(ANCHOR_TIP, 100, 100, 30, 30)
         navel = det("navel", 110, 110, 20, 20)
-        assert contact_near_box(anchor_box, [anchor_tip, navel]) == []
+        assert contact_near_rect(anchor_box, [anchor_tip, navel]) == []
 
 
 class TestCombineRoi:
     def test_union_with_padding(self):
-        boxes = [(200, 200, 100, 200), (180, 150, 80, 80)]
+        rects = [(200, 200, 100, 200), (180, 150, 80, 80)]
         # Union: x 180-300, y 150-400. Padding 20 -> 160-320, 130-420.
-        assert combine_roi(boxes, frame_size=(544, 960), padding=20) == (160, 130, 160, 290)
+        assert combine_roi(rects, frame_size=(544, 960), padding=20) == (160, 130, 160, 290)
 
     def test_clamped_to_frame(self):
-        boxes = [(0, 0, 200, 200)]
-        x, y, w, h = combine_roi(boxes, frame_size=(544, 960), padding=30)
+        rects = [(0, 0, 200, 200)]
+        x, y, w, h = combine_roi(rects, frame_size=(544, 960), padding=30)
         assert (x, y) == (0, 0)
         assert (w, h) == (230, 230)
 
     def test_minimum_size_enforced(self):
-        boxes = [(400, 300, 20, 20)]
-        x, y, w, h = combine_roi(boxes, frame_size=(544, 960), padding=0, min_size=128)
+        rects = [(400, 300, 20, 20)]
+        x, y, w, h = combine_roi(rects, frame_size=(544, 960), padding=0, min_size=128)
         assert w == 128 and h == 128
-        # Still centered on the small box and inside the frame
+        # Still centered on the small rect and inside the frame
         assert 0 <= x <= 960 - 128 and 0 <= y <= 544 - 128
 
 
@@ -268,7 +268,7 @@ class TestTrackFlowSignal:
 
     def test_belief_stays_frozen_during_occlusion(self):
         # Measured on real footage: every attempt to move the remembered
-        # box (global-motion translation, contact pinning) predicted the
+        # rect (global-motion translation, contact pinning) predicted the
         # re-appearing anchor WORSE than simply freezing it. Freeze it.
         frames = [textured_frame(0) for _ in range(10)]
         anchor = Detection(ANCHOR, 0.9, (100, 60, 60, 90))
@@ -317,15 +317,15 @@ class TestComputePositions:
 
 
 class TestSignalToActions:
-    def test_oscillating_flow_yields_alternating_strokes(self):
+    def test_oscillating_flow_yields_alternating_cycles(self):
         fps = 30.0
         n = 300
         t = np.arange(n)
-        # ~1 stroke/sec oscillation in flow velocity, active throughout
+        # ~1 cycle/sec oscillation in flow velocity, active throughout
         dy = 3.0 * np.sin(2 * np.pi * t / 30)
         signal = TrackSignal(dy=dy, lock=["anchor"] * n)
         actions = signal_to_actions(signal, fps=fps, config=TrackConfig())
-        # ~10 strokes -> ~20 turnarounds; allow slack for edge handling
+        # ~10 cycles -> ~20 turnarounds; allow slack for edge handling
         assert 12 <= len(actions) <= 28
         pos = np.array([a["pos"] for a in actions])
         # Normalization should spread turnarounds wide
@@ -421,11 +421,44 @@ class TestPipelineResultSerialization:
         assert restored.signal.rois == [(10, 20, 130, 140), (12, 22, 130, 140), None]
         assert restored.signal.beliefs == [(10, 20, 30, 40), (11, 21, 30, 40), None]
         det = restored.signal.detections[0][0]
-        assert det.class_name == ANCHOR and det.box == (10, 20, 30, 40)
+        assert det.class_name == ANCHOR and det.rect == (10, 20, 30, 40)
         np.testing.assert_allclose(restored.positions, original.positions)
         assert restored.actions == original.actions
         assert restored.fps == pytest.approx(29.97)
         assert restored.start_frame == 100 and restored.total_frames == 500
+
+    def test_a_project_saved_before_the_field_was_renamed_still_loads(self):
+        """A saved detection's rect used to sit under a different key.
+
+        That key cannot be named in this tree any more, so the loader finds it
+        by elimination -- a saved detection carries the class name, the
+        confidence, and one other value, which is the rect. Projects are saved
+        wherever the user chose, so there is no directory to migrate ahead of
+        time; this read is the migration. Without it the load raises KeyError,
+        and the caller that opens the last session swallows it, so the user's
+        tracking would vanish with no message.
+        """
+        state = {
+            "dy": [0.0, 1.0],
+            "lock": ["anchor", "none"],
+            "cuts": [],
+            "rois": [(10, 20, 130, 140), None],
+            "beliefs": [(10, 20, 30, 40), None],
+            "detections": {
+                "0": [{"class_name": ANCHOR, "confidence": 0.9,
+                       "the_older_key": [10, 20, 30, 40]}],
+            },
+            "positions": [50.0, 65.0],
+            "actions": [],
+            "fps": 30.0,
+            "start_frame": 0,
+            "total_frames": 2,
+        }
+
+        restored = pipeline_result_from_state(state)
+
+        det = restored.signal.detections[0][0]
+        assert det.class_name == ANCHOR and det.rect == (10, 20, 30, 40)
 
 
 class TestParseArgs:
