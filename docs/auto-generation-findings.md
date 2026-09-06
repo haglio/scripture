@@ -37,7 +37,7 @@ checkpointing everywhere (crashes cost one item), duty-cycle GPU throttling
 (sustained peak load rebooted the machine three times), audio-envelope
 cross-correlation to locate a clip inside its source when frame hashes fail
 across upscale lineages (0.93 peak where frames scored zero), and gap-masking
-partial truth scripts (inter-action gaps over ~3s are unscripted holes, not
+partial truth scripts (inter-action gaps over ~3s are unscripted blanks, not
 slow strokes — one truth video was 20 minutes long with 4.5 scripted).
 
 ## The central negative result
