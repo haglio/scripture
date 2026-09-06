@@ -1139,26 +1139,26 @@ class App(QMainWindow):
         self.timeline.context_menu_requested.connect(self._on_timeline_context_menu)
         root.addWidget(self.timeline)
 
-        # --- Bottom bar: Process All + info ---
-        bottom = QHBoxLayout()
-        bottom.setSpacing(GAP_MEDIUM)
+        # --- Footer: Process All + info ---
+        footer = QHBoxLayout()
+        footer.setSpacing(GAP_MEDIUM)
 
         self.btn_auto_process = QPushButton("Auto Process (YOLO)")
         self.btn_auto_process.clicked.connect(self._auto_process)
-        bottom.addWidget(self.btn_auto_process)
+        footer.addWidget(self.btn_auto_process)
 
         self.btn_process_all = QPushButton("Process All")
         self.btn_process_all.clicked.connect(self._process_all)
-        bottom.addWidget(self.btn_process_all)
+        footer.addWidget(self.btn_process_all)
 
         self.btn_label_session = QPushButton("Label Session")
         self.btn_label_session.setCheckable(True)
         self.btn_label_session.clicked.connect(self._toggle_label_session)
-        bottom.addWidget(self.btn_label_session)
+        footer.addWidget(self.btn_label_session)
 
         self.btn_reset_labels = QPushButton("Reset Labels")
         self.btn_reset_labels.clicked.connect(self._reset_scene_labels)
-        bottom.addWidget(self.btn_reset_labels)
+        footer.addWidget(self.btn_reset_labels)
 
         self.info_label = QLabel("")
         self.info_label.setFont(make_font(size=SIZE_SMALL))
@@ -1166,9 +1166,9 @@ class App(QMainWindow):
             f"color: {TEXT_MUTED.name()}; background: {BG_SECONDARY.name()}; "
             f"padding: 3px 6px; border-radius: 2px;"
         )
-        bottom.addWidget(self.info_label, stretch=1)
+        footer.addWidget(self.info_label, stretch=1)
 
-        root.addLayout(bottom)
+        root.addLayout(footer)
 
     def _set_status(self, text):
         self.info_label.setText(text)
