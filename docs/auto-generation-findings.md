@@ -115,7 +115,7 @@ Levers never pulled, in rough order of expected value:
 
 1. Mainstream hand/pose tracking as a feature for hand-dominant content —
    hands are the one relevant class mainstream CV is superb at, and no
-   NSFW-capable hand tracker was ever integrated.
+   in-domain hand tracker was ever integrated.
 2. Per-video micro-supervision at scale: the ~15-minute click session that
    took one video to r = 0.61 was never industrialized (active-learning
    schedules existed in the GUI's label-session mode).
