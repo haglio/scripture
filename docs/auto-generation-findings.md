@@ -18,7 +18,7 @@ carries a generated script the player loads automatically, device-approved
 
 1. **Domain fine-tune of the detector from auto-labels.** Seed a video
    segmentation tracker (SAM2) with every detector hit, harvest its per-frame
-   anchor masks as bounding-box labels, exclude frames where the mask is
+   anchor masks as bounding-rect labels, exclude frames where the mask is
    suspect rather than labeling them empty (an empty label trains a false
    negative), keep other classes as pseudo-labels so they aren't forgotten.
    This lifted anchor recall on held-out material from 4–38% to 54–91% in
@@ -26,7 +26,7 @@ carries a generated script the player loads automatically, device-approved
 2. **ROI optical flow for the signal.** The detector aims a padded union ROI;
    DIS optical flow inside it, magnitude-weighted mean dy, mapped as
    `pos = 50 + gain*dy`. This is a *velocity* signal, phase-shifted a quarter
-   stroke from true position — measured, and perceptually irrelevant for
+   cycle from true position — measured, and perceptually irrelevant for
    rhythmic content.
 3. **Ultimate Autotune as the output stage** (imported from the FunGen
    checkout). Raw signals score ~0.10 lower against truth without it, and the
@@ -38,7 +38,7 @@ checkpointing everywhere (crashes cost one item), duty-cycle GPU throttling
 cross-correlation to locate a clip inside its source when frame hashes fail
 across upscale lineages (0.93 peak where frames scored zero), and gap-masking
 partial truth scripts (inter-action gaps over ~3s are unscripted blanks, not
-slow strokes — one truth video was 20 minutes long with 4.5 scripted).
+slow cycles — one truth video was 20 minutes long with 4.5 scripted).
 
 ## The central negative result
 
@@ -70,13 +70,13 @@ projected onto the anchor's axis* — and licking counts. But what carries that
 information differs by content:
 
 - **Mouth-dominant action:** the occlusion front (where the visible anchor
-  ends) and the face position track the stroke. Face detection is the most
+  ends) and the face position track the motion cycle. Face detection is the most
   reliable class (~91% of frames) and face-y alone reached r = 0.55 on such
   content.
 - **Hand-dominant action** (most of the clip lane): geometry goes blind — a
   hand slides along a mostly visible anchor without changing its outline, so
-  occlusion-front, face, and box features all decorrelate (measured ≈ 0 per
-  frame). Only *motion* (flow rhythm) carries the stroke. Truth scripts on
+  occlusion-front, face, and rect features all decorrelate (measured ≈ 0 per
+  frame). Only *motion* (flow rhythm) carries the cycle. Truth scripts on
   such content encode rhythm, not per-frame depth.
 
 Long-form videos mix both plus idle/positional segments, which is presumably
@@ -89,7 +89,7 @@ median vs truth). Unresolved.
   skin under occlusion cycles and undersegments unpredictably; r ≈ 0.26 after
   drift-guarding. (As a *label source* seeded from frequent detector hits it
   is excellent — that contradiction is real and both halves are measured.)
-- Moving an occluded anchor's remembered box by camera/flow heuristics: worse
+- Moving an occluded anchor's remembered rect by camera/flow heuristics: worse
   than freezing it (89px median error frozen vs 151px compensated).
 - Confidence-threshold lowering to fix recall: plateaus ~4 points above
   baseline; the misses are occlusion blindness, not calibration.

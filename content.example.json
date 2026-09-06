@@ -1,5 +1,5 @@
 {
-  "_comment": "Placeholder content overlay. The real values live in content.local.json (git-ignored). anchor_classes are the detector labels for the object the ROI anchors on, most-preferred first; contact_classes are the labels that can be touching it; class_colors gives each label its overlay box colour as [r, g, b]; model_path points at the YOLO weights.",
+  "_comment": "Placeholder content overlay. The real values live in content.local.json (git-ignored). anchor_classes are the detector labels for the object the ROI anchors on, most-preferred first; contact_classes are the labels that can be touching it; class_colors gives each label its overlay rect color as [r, g, b]; model_path points at the YOLO weights.",
   "model_path": "C:/path/to/FunGen/models/FunGen-12s-pov-1.1.0.pt",
   "anchor_classes": [
     "anchor",

@@ -56,11 +56,11 @@ from scripture.auto_funscript import (
     pipeline_result_to_state,
     run_pipeline,
 )
+from scripture.cycle_extract import extract_cycles
 from scripture.funscript import build_funscript, save_funscript
 from scripture.motion_tracker import AxisDefinition, TrackingResult, track_motion
 from scripture.project import load_project, save_project
 from scripture.scene import Scene, actions_by_scene, scenes_from_splits
-from scripture.stroke_extract import extract_strokes
 
 # The chrome's own text color rather than a near-white of this app's own.
 _ICON_COLOR = TEXT_PRIMARY.name()
@@ -117,7 +117,7 @@ class ProcessWorker(QThread):
                     self.video_path, axis, scene.start_frame, scene.end_frame,
                     on_frame=lambda f, _o=offset: self.frame_progress.emit(_o + f),
                 )
-                actions = extract_strokes(result.positions, result.timestamps_ms, fps=self.fps)
+                actions = extract_cycles(result.positions, result.timestamps_ms, fps=self.fps)
                 self.scene_done.emit(idx, actions, result)
             except Exception as e:
                 import traceback
@@ -149,7 +149,7 @@ class AutoProcessWorker(QThread):
 
 _ACTION_DOT_COLOR = QColor(80, 255, 80, 180)
 
-# Detection box colors by class (drawn in the auto-tracking overlay).  The class
+# Detection rect colors by class (drawn in the auto-tracking overlay).  The class
 # names are private, so the map comes from the content overlay.
 _DET_COLORS = {
     name: QColor(*rgb) for name, rgb in overlay_value(load_content(), "class_colors", path=LOCAL_CONTENT).items()
@@ -595,7 +595,7 @@ class FrameCanvas(QWidget):
         ov = self._auto_overlay
 
         for det in ov.get("detections") or []:
-            x, y, w, h = det.box
+            x, y, w, h = det.rect
             color = _DET_COLORS.get(det.class_name, _DET_DEFAULT_COLOR)
             cx1, cy1 = self._frame_to_canvas(x, y)
             cx2, cy2 = self._frame_to_canvas(x + w, y + h)

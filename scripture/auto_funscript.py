@@ -36,14 +36,14 @@ ANCHOR_CLASSES: tuple[str, ...] = tuple(overlay_value(_CONTENT, "anchor_classes"
 
 @dataclass
 class Detection:
-    """One YOLO detection with box in (x, y, w, h) pixel coords."""
+    """One YOLO detection with rect in (x, y, w, h) pixel coords."""
     class_name: str
     confidence: float
-    box: tuple[int, int, int, int]
+    rect: tuple[int, int, int, int]
 
 
 # An object interacts with the anchor when its center is closer than this
-# fraction of the two boxes' combined half-diagonals.
+# fraction of the two rects' combined half-diagonals.
 _INTERACTION_DISTANCE_FACTOR = 0.85
 
 # Classes that can be the thing touching the anchor.  When the anchor itself
@@ -52,24 +52,24 @@ _INTERACTION_DISTANCE_FACTOR = 0.85
 _CONTACT_CLASSES: tuple[str, ...] = tuple(overlay_value(_CONTENT, "contact_classes", path=LOCAL_CONTENT))
 
 
-def _center(box: tuple[int, int, int, int]) -> tuple[float, float]:
-    x, y, w, h = box
+def _center(rect: tuple[int, int, int, int]) -> tuple[float, float]:
+    x, y, w, h = rect
     return x + w / 2, y + h / 2
 
 
-def _half_diagonal(box: tuple[int, int, int, int]) -> float:
-    _, _, w, h = box
+def _half_diagonal(rect: tuple[int, int, int, int]) -> float:
+    _, _, w, h = rect
     return math.hypot(w, h) / 2
 
 
 def _within_interaction_distance(
-    box_a: tuple[int, int, int, int],
-    box_b: tuple[int, int, int, int],
+    rect_a: tuple[int, int, int, int],
+    rect_b: tuple[int, int, int, int],
 ) -> bool:
-    acx, acy = _center(box_a)
-    bcx, bcy = _center(box_b)
+    acx, acy = _center(rect_a)
+    bcx, bcy = _center(rect_b)
     dist = math.hypot(bcx - acx, bcy - acy)
-    max_dist = (_half_diagonal(box_a) + _half_diagonal(box_b)) * _INTERACTION_DISTANCE_FACTOR
+    max_dist = (_half_diagonal(rect_a) + _half_diagonal(rect_b)) * _INTERACTION_DISTANCE_FACTOR
     return dist < max_dist
 
 
@@ -79,37 +79,37 @@ def find_interacting(anchor: Detection, detections: list[Detection]) -> list[Det
     return [
         d for d in detections
         if d.class_name != ANCHOR_CLASSES[0]
-        and _within_interaction_distance(anchor.box, d.box)
+        and _within_interaction_distance(anchor.rect, d.rect)
     ]
 
 
-def contact_near_box(
-    box: tuple[int, int, int, int],
+def contact_near_rect(
+    rect: tuple[int, int, int, int],
     detections: list[Detection],
 ) -> list[Detection]:
-    """Contact-class detections close enough to `box` to be touching it."""
+    """Contact-class detections close enough to `rect` to be touching it."""
     return [
         d for d in detections
         if d.class_name in _CONTACT_CLASSES
-        and _within_interaction_distance(box, d.box)
+        and _within_interaction_distance(rect, d.rect)
     ]
 
 
 def combine_roi(
-    boxes: list[tuple[int, int, int, int]],
+    rects: list[tuple[int, int, int, int]],
     frame_size: tuple[int, int],
     padding: int = 20,
     min_size: int = 128,
 ) -> tuple[int, int, int, int]:
-    """Union of boxes, padded and clamped to the frame, at least min_size.
+    """Union of rects, padded and clamped to the frame, at least min_size.
 
     frame_size is (height, width); the returned ROI is (x, y, w, h).
     """
     frame_h, frame_w = frame_size
-    x1 = max(0, min(b[0] for b in boxes) - padding)
-    y1 = max(0, min(b[1] for b in boxes) - padding)
-    x2 = min(frame_w, max(b[0] + b[2] for b in boxes) + padding)
-    y2 = min(frame_h, max(b[1] + b[3] for b in boxes) + padding)
+    x1 = max(0, min(b[0] for b in rects) - padding)
+    y1 = max(0, min(b[1] for b in rects) - padding)
+    x2 = min(frame_w, max(b[0] + b[2] for b in rects) + padding)
+    y2 = min(frame_h, max(b[1] + b[3] for b in rects) + padding)
 
     w, h = x2 - x1, y2 - y1
     if w < min_size:
@@ -144,7 +144,7 @@ def flow_to_position(
 
     This is the mapping FunGen's live tracker actually ships: the position
     is the (median-filtered) flow velocity scaled around a center of 50.
-    For rhythmic stroking a scaled velocity is itself a stroke wave, just
+    For rhythmic motion a scaled velocity is itself a cycle wave, just
     phase-shifted, which is why this works.
     """
     from scipy.ndimage import median_filter
@@ -158,11 +158,11 @@ def anti_plateau_normalize(
     window: int = 120,
     threshold: float = 15.0,
 ) -> np.ndarray:
-    """Rescale positions so local stroke ranges span the full 0-100.
+    """Rescale positions so local cycle ranges span the full 0-100.
 
     For each sample, the surrounding window's p10..p90 band is stretched to
     0..100 — but only where that band exceeds the threshold, so idle jitter
-    stays small instead of being blown up into fake strokes.  Offline we can
+    stays small instead of being blown up into fake cycles.  Offline we can
     center the window, avoiding the lag FunGen's causal version has.
     """
     from numpy.lib.stride_tricks import sliding_window_view
@@ -193,7 +193,7 @@ def is_scene_cut(
 ) -> bool:
     """Detect a hard cut by comparing grayscale histograms.
 
-    Histograms ignore in-scene motion (pans, strokes) but shift sharply
+    Histograms ignore in-scene motion (pans, cycles) but shift sharply
     when the shot changes.  threshold is the L1 distance between the two
     normalized histograms (0 = identical, 2 = disjoint).
     """
@@ -245,7 +245,7 @@ class TrackSignal:
     anchor_tip detected), "contact" (anchor occluded but a contact-class object
     covers its last known position), "coast" (nothing relevant detected,
     persistence window still open), or "none" (no ROI).  rois has one entry
-    per frame; detections holds the YOLO boxes for exactly the frames where
+    per frame; detections holds the YOLO rects for exactly the frames where
     detection ran.  All of it exists so a GUI can replay what the tracker saw.
     """
     dy: np.ndarray
@@ -275,7 +275,7 @@ def signal_to_actions(
     start_frame: int = 0,
 ) -> list[dict]:
     """Turn the per-frame flow signal into funscript turnaround actions."""
-    from scripture.stroke_extract import extract_strokes
+    from scripture.cycle_extract import extract_cycles
 
     if not signal.roi_active.any():
         return []
@@ -283,11 +283,11 @@ def signal_to_actions(
     positions = compute_positions(signal, config)
     frame_ms = 1000.0 / fps
     timestamps_ms = (start_frame + np.arange(len(positions))) * frame_ms
-    return extract_strokes(positions / 100.0, timestamps_ms, fps=fps)
+    return extract_cycles(positions / 100.0, timestamps_ms, fps=fps)
 
 
 def _best_anchor(detections: list[Detection]) -> Detection | None:
-    """Pick the box that anchors the ROI: the first anchor class, falling back
+    """Pick the rect that anchors the ROI: the first anchor class, falling back
     to the next (which the model often still sees when the first is occluded)."""
     for cls in ANCHOR_CLASSES:
         candidates = [d for d in detections if d.class_name == cls]
@@ -323,7 +323,7 @@ def track_flow_signal(
 
     roi: tuple[int, int, int, int] | None = None
     # Where the anchor is believed to be while occluded. Every attempt to
-    # move this box between sightings (global-motion translation, contact
+    # move this rect between sightings (global-motion translation, contact
     # pinning) predicted the reappearing anchor WORSE on real footage than
     # freezing it, so it stays exactly where the anchor was last seen.
     belief: tuple[int, int, int, int] | None = None
@@ -350,23 +350,23 @@ def track_flow_signal(
             detection_log[idx] = detections
             anchor = _best_anchor(detections)
             if anchor is not None:
-                belief = anchor.box
+                belief = anchor.rect
                 lock_mode = "anchor"
                 lock_refreshed = True
-                boxes = [anchor.box] + [
-                    d.box for d in find_interacting(anchor, detections)]
+                rects = [anchor.rect] + [
+                    d.rect for d in find_interacting(anchor, detections)]
                 target = combine_roi(
-                    boxes, gray.shape, config.roi_padding, config.roi_min_size)
+                    rects, gray.shape, config.roi_padding, config.roi_min_size)
                 roi = smooth_roi(roi, target, config.roi_smoothing)
             elif roi is not None and belief is not None:
                 # Anchor occluded: something touching its believed spot is
                 # evidence the interaction continues right there.
-                contacts = contact_near_box(belief, detections)
+                contacts = contact_near_rect(belief, detections)
                 if contacts:
                     lock_mode = "contact"
                     lock_refreshed = True
                     target = combine_roi(
-                        [belief] + [d.box for d in contacts],
+                        [belief] + [d.rect for d in contacts],
                         gray.shape, config.roi_padding, config.roi_min_size)
                     roi = smooth_roi(roi, target, config.roi_smoothing)
                 else:
@@ -440,12 +440,14 @@ def _make_yolo_detector(model_path: str, conf_threshold: float):
         results = model(frame, device=0, verbose=False, conf=conf_threshold)
         detections = []
         for result in results:
-            for box in result.boxes:
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
+            # The attribute is the detector library's own and has no alias,
+            # so it keeps that library's spelling; the name beside it is ours.
+            for found in result.boxes:
+                x1, y1, x2, y2 = found.xyxy[0].tolist()
                 detections.append(Detection(
-                    class_name=result.names[int(box.cls[0])],
-                    confidence=float(box.conf[0]),
-                    box=(int(x1), int(y1), int(x2 - x1), int(y2 - y1)),
+                    class_name=result.names[int(found.cls[0])],
+                    confidence=float(found.conf[0]),
+                    rect=(int(x1), int(y1), int(x2 - x1), int(y2 - y1)),
                 ))
         return detections
 
@@ -528,7 +530,7 @@ def pipeline_result_to_state(result: PipelineResult) -> dict:
         "detections": {
             str(idx): [
                 {"class_name": d.class_name, "confidence": d.confidence,
-                 "box": list(d.box)}
+                 "rect": list(d.rect)}
                 for d in dets
             ]
             for idx, dets in sig.detections.items()
@@ -539,6 +541,23 @@ def pipeline_result_to_state(result: PipelineResult) -> dict:
         "start_frame": result.start_frame,
         "total_frames": result.total_frames,
     }
+
+
+def _detection_from_state(saved: dict) -> Detection:
+    """One saved detection, whichever key its rect was written under.
+
+    A project saved before the field was renamed carries the older key. It
+    cannot be named here, so it is read by elimination: a saved detection has
+    exactly three keys, two of which are the class name and the confidence.
+    Projects live wherever the user saved them, so there is no set of files to
+    rewrite ahead of time -- the migration is this read.
+    """
+    rect = saved["rect"] if "rect" in saved else next(
+        value for key, value in saved.items()
+        if key not in ("class_name", "confidence"))
+    return Detection(class_name=saved["class_name"],
+                     confidence=saved["confidence"],
+                     rect=tuple(rect))
 
 
 def pipeline_result_from_state(state: dict) -> PipelineResult:
@@ -555,12 +574,7 @@ def pipeline_result_from_state(state: dict) -> PipelineResult:
         beliefs=[tuple(b) if b is not None else None
                  for b in state.get("beliefs", [None] * len(state["rois"]))],
         detections={
-            int(idx): [
-                Detection(class_name=d["class_name"],
-                          confidence=d["confidence"],
-                          box=tuple(d["box"]))
-                for d in dets
-            ]
+            int(idx): [_detection_from_state(d) for d in dets]
             for idx, dets in state["detections"].items()
         },
     )
