@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import pytest
 from PyQt6.QtCore import QEvent, QPointF, Qt
-from PyQt6.QtGui import QMouseEvent
+from PyQt6.QtGui import QMouseEvent, QPixmap
 
 from scripture.gui import FrameCanvas, TimelineWidget
+from scripture.motion_tracker import AxisDefinition
+from scripture.scene import Scene
 
 
 def _right_click_at(x, y):
@@ -48,3 +50,23 @@ def test_the_canvas_asks_for_a_menu_at_the_video_point_under_the_click(qt_app, e
     canvas.mousePressEvent(_right_click_at(160, 120))
 
     assert emitted == [canvas._canvas_to_frame(160, 120)]
+
+
+def test_the_timeline_paints_a_scene_with_labels_and_actions(qt_app):
+    """paintEvent is the widget's longest method and had no coverage at all.
+    Rendering it offscreen is what makes changes to what it reads safe."""
+    timeline = TimelineWidget()
+    timeline.resize(400, 60)
+    timeline.set_state(
+        scenes=[Scene(0, 400), Scene(400, 800)],
+        scene_axes={0: AxisDefinition(tip=(40, 30), base=(40, 150), frame=5)},
+        scene_actions={0: [{"at": 100, "pos": 50}]},
+        splits=[400],
+        total_frames=800,
+        current_frame=200,
+        ground_truth={1: {600: {"tip": None, "base": None,
+                                "contact": (40, 90), "is_action": True}}},
+        fps=30.0,
+    )
+
+    timeline.render(QPixmap(timeline.size()))
