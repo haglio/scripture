@@ -188,14 +188,14 @@ class TimelineWidget(QWidget):
         self._scroll = 0.0     # left edge in frame-fraction (0.0 to 1.0 - 1/zoom)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
-    def set_state(self, scenes, scene_axes, scene_actions, splits, total_frames, current_frame, ground_truth=None):
+    def set_state(self, scenes, scene_axes, scene_actions, splits, total_frames, current_frame, ground_truth):
         self.scenes = scenes
         self.scene_axes = scene_axes
         self.scene_actions = scene_actions
         self.splits = splits
         self.total_frames = total_frames
         self.current_frame = current_frame
-        self.ground_truth = ground_truth or {}
+        self.ground_truth = ground_truth
         self.update()
 
     def _frame_to_x(self, frame):
