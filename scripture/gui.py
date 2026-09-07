@@ -1179,11 +1179,24 @@ class App(QMainWindow):
         h, m = divmod(m, 60)
         return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
-    def _current_scene_idx(self):
+    def _scene_index_for_frame(self, frame):
         for i, sc in enumerate(self.scenes):
-            if self.current_frame_idx < sc.end_frame:
+            if frame < sc.end_frame:
                 return i
         return max(0, len(self.scenes) - 1)
+
+    def _current_scene_idx(self):
+        return self._scene_index_for_frame(self.current_frame_idx)
+
+    def _remap_labels(self):
+        labels = self.ground_truth
+        self.ground_truth = {}
+        for frames in labels.values():
+            for frame, entry in frames.items():
+                self.ground_truth.setdefault(
+                    self._scene_index_for_frame(frame), {})[frame] = entry
+        self._session_undo = [(self._scene_index_for_frame(frame), frame)
+                              for _old_idx, frame in self._session_undo]
 
     def _rebuild_scenes(self, clear_annotations=True):
         old_axes, old_actions = dict(self.scene_axes), dict(self.scene_actions)
@@ -1193,15 +1206,14 @@ class App(QMainWindow):
             self.scene_axes.clear()
             self.scene_actions.clear()
             self.scene_positions.clear()
-            for _oi, axis in old_axes.items():
-                for ni, sc in enumerate(self.scenes):
-                    if sc.start_frame <= axis.frame < sc.end_frame:
-                        self.scene_axes[ni] = axis
-                        if _oi in old_actions:
-                            self.scene_actions[ni] = old_actions[_oi]
-                        if _oi in old_positions:
-                            self.scene_positions[ni] = old_positions[_oi]
-                        break
+            for oi, axis in old_axes.items():
+                ni = self._scene_index_for_frame(axis.frame)
+                self.scene_axes[ni] = axis
+                if oi in old_actions:
+                    self.scene_actions[ni] = old_actions[oi]
+                if oi in old_positions:
+                    self.scene_positions[ni] = old_positions[oi]
+            self._remap_labels()
         # Auto actions are global; re-bucket them into the new scene layout
         if self.auto_result is not None:
             self.scene_actions = actions_by_scene(
