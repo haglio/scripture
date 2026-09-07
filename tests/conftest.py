@@ -1,11 +1,12 @@
 """What the whole suite runs under.
 
-No QApplication. There used to be one here, session-scoped and autouse, and no
-test ever asked for it -- the only PyQt6 import in `tests/` was the fixture's
-own. Its one effect was to leave the process Qt-initialised before the first
-test module was collected, which is exactly the condition
-`test_launch_smoke.py` exists to rule out: a green run on a launch sequence that
-never completes. When `gui.py` gets widget tests they can ask for one by name.
+The QApplication is a fixture a test asks for by name, never autouse. An autouse
+one stood here once and no test ever asked for it -- the only PyQt6 import in
+`tests/` was the fixture's own -- so its one effect was to leave the process
+Qt-initialised before the first test module was collected, which is exactly the
+condition `test_launch_smoke.py` exists to rule out: a green run on a launch
+sequence that never completes. Asking by name keeps Qt out of every run that
+does not build a widget.
 """
 
 import os
@@ -13,12 +14,38 @@ import random
 
 import pytest
 
-# Ask Qt for a headless platform anyway. Nothing here builds a widget today, and
-# the subprocesses that import `scripture.gui` set this in their own env -- but
-# the day one of them stops, or a widget test arrives, the difference is a window
-# on the screen of the machine this is run from. The merge gate sets it too;
+# Ask Qt for a headless platform. The window fixture below builds a real
+# QMainWindow, and the subprocesses that import `scripture.gui` set this in
+# their own env -- but the day one of them stops, the difference is a window on
+# the screen of the machine this is run from. The merge gate sets it too;
 # setdefault lets a developer override it to watch something on a real display.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+
+@pytest.fixture(scope="session")
+def qt_app():
+    """The one QApplication a widget test needs, built when one asks for it."""
+    from PyQt6.QtWidgets import QApplication
+
+    return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture
+def window(qt_app, tmp_path, monkeypatch):
+    """A real `App`, with the last-session pointer aimed at a scratch file.
+
+    Left alone, `App.__init__` finishes by reopening whatever project the
+    developer had open last -- reading their video off disk in a unit test.
+    """
+    from scripture import gui
+
+    monkeypatch.setattr(gui, "_LAST_SESSION_FILE", tmp_path / ".last_session")
+    app_window = gui.App()
+    yield app_window
+    # The close guard asks about unsaved work, and a modal question with no one
+    # to answer it would hang the suite.
+    app_window._mark_clean()
+    app_window.close()
 
 
 def pytest_collection_modifyitems(items):
