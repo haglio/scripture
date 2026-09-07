@@ -5,6 +5,7 @@ reads it as text, not as a module -- so an import-time error in it survives a
 fully green run and only shows up as an app that will not start.
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -37,13 +38,26 @@ def test_gui_module_imports_in_a_fresh_interpreter():
     assert "App" in result.stdout
 
 
-def test_the_detection_colors_come_from_the_content_overlay():
-    """The class names are private, so the map is built from the overlay."""
+def test_the_detection_colors_are_whatever_the_loaded_overlay_says(tmp_path):
+    """This compared `_DET_COLORS` with the dict it was built from, so it held
+    for any overlay at all -- renaming every `class_colors` key left it green.
+    It substitutes an overlay and asks what the map came out as instead.
+
+    The class names are private, so a fabricated overlay is also the only kind
+    a test may name.
+    """
+    overlay = json.loads(
+        (REPO_ROOT / "content.example.json").read_text(encoding="utf-8"))
+    overlay["class_colors"] = {"widget": [1, 2, 3], "sprocket": [4, 5, 6]}
+    overlay_path = tmp_path / "content.local.json"
+    overlay_path.write_text(json.dumps(overlay), encoding="utf-8")
+
     result = _fresh_interpreter(
+        "import content; from pathlib import Path;"
+        f"content.LOCAL_CONTENT = Path({str(overlay_path)!r});"
         "import scripture.gui as m;"
-        "from content import load_content;"
-        "print(sorted(m._DET_COLORS) == sorted(load_content()['class_colors']))"
+        "print(sorted(m._DET_COLORS), m._DET_COLORS['widget'].getRgb()[:3])"
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "True"
+    assert result.stdout.strip() == "['sprocket', 'widget'] (1, 2, 3)"
