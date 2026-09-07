@@ -12,51 +12,13 @@ from PyQt6.QtWidgets import QMessageBox
 
 from scripture import gui
 from scripture.project import load_project
-
-
-class _CloseEvent:
-    """Stands in for the QCloseEvent Qt hands to `closeEvent`."""
-
-    def __init__(self):
-        self.accepted = None
-
-    def accept(self):
-        self.accepted = True
-
-    def ignore(self):
-        self.accepted = False
-
-
-class _Dialogs:
-    """Stands in for `gui.QMessageBox`, answering with a queued button."""
-
-    StandardButton = QMessageBox.StandardButton
-
-    def __init__(self, *answers):
-        self._answers = list(answers)
-        self.warnings = []
-
-    def question(self, *_args):
-        return self._answers.pop(0)
-
-    def warning(self, _parent, title, text):
-        self.warnings.append((title, text))
-
-
-class _SaveDialog:
-    """Stands in for `gui.QFileDialog`, offering one Save As answer."""
-
-    def __init__(self, chosen=""):
-        self._chosen = chosen
-
-    def getSaveFileName(self, *_args):  # noqa: N802 - Qt spells it this way
-        return self._chosen, ""
+from tests.gui_doubles import CloseEvent, Dialogs, SaveDialog
 
 
 def _close_asking_to_save(window, monkeypatch, save_dialog):
-    monkeypatch.setattr(gui, "QMessageBox", _Dialogs(QMessageBox.StandardButton.Save))
+    monkeypatch.setattr(gui, "QMessageBox", Dialogs(QMessageBox.StandardButton.Save))
     monkeypatch.setattr(gui, "QFileDialog", save_dialog)
-    event = _CloseEvent()
+    event = CloseEvent()
     window.closeEvent(event)
     return event
 
@@ -65,7 +27,7 @@ def test_a_cancelled_save_as_dialog_leaves_the_window_open(window, monkeypatch, 
     window.video_path = str(tmp_path / "example clip.mp4")
     window._mark_dirty()
 
-    event = _close_asking_to_save(window, monkeypatch, _SaveDialog(chosen=""))
+    event = _close_asking_to_save(window, monkeypatch, SaveDialog(chosen=""))
 
     assert event.accepted is False
     assert window._dirty, "the unsaved work is still unsaved"
@@ -75,7 +37,7 @@ def test_closing_with_no_video_open_leaves_the_window_open(window, monkeypatch):
     """The other branch that returns having written nothing."""
     window._mark_dirty()
 
-    event = _close_asking_to_save(window, monkeypatch, _SaveDialog())
+    event = _close_asking_to_save(window, monkeypatch, SaveDialog())
 
     assert event.accepted is False
     assert window._dirty
@@ -87,7 +49,7 @@ def test_choosing_a_file_saves_it_and_closes(window, monkeypatch, tmp_path):
     window._mark_dirty()
     chosen = tmp_path / "example clip.scripture"
 
-    event = _close_asking_to_save(window, monkeypatch, _SaveDialog(chosen=str(chosen)))
+    event = _close_asking_to_save(window, monkeypatch, SaveDialog(chosen=str(chosen)))
 
     assert event.accepted is True
     assert not window._dirty
@@ -98,9 +60,9 @@ def test_discarding_closes_without_writing_anything(window, monkeypatch, tmp_pat
     window.video_path = str(tmp_path / "example clip.mp4")
     window._mark_dirty()
     monkeypatch.setattr(
-        gui, "QMessageBox", _Dialogs(QMessageBox.StandardButton.Discard))
-    monkeypatch.setattr(gui, "QFileDialog", _SaveDialog())
-    event = _CloseEvent()
+        gui, "QMessageBox", Dialogs(QMessageBox.StandardButton.Discard))
+    monkeypatch.setattr(gui, "QFileDialog", SaveDialog())
+    event = CloseEvent()
 
     window.closeEvent(event)
 

@@ -1927,13 +1927,14 @@ class App(QMainWindow):
     def _do_load(self, path):
         state = load_project(path)
         vp = state["video_path"]
-        if self.cap:
-            self.cap.release()
         cap = cv2.VideoCapture(vp)
         if not cap.isOpened():
+            cap.release()
             QMessageBox.critical(self, "Video not found", f"Cannot open: {vp}")
             return
 
+        if self.cap:
+            self.cap.release()
         self.cap = cap
         self.video_path = vp
         self.fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
