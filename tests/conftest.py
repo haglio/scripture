@@ -39,7 +39,7 @@ def window(qt_app, tmp_path, monkeypatch):
     """
     from scripture import gui
 
-    monkeypatch.setattr(gui, "_LAST_SESSION_FILE", tmp_path / ".last_session")
+    monkeypatch.setattr(gui, "_LAST_PROJECT_FILE", tmp_path / ".last_session")
     app_window = gui.App()
     yield app_window
     # The close guard asks about unsaved work, and a modal question with no one

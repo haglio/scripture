@@ -51,7 +51,7 @@ def _saved(window, tmp_path, name="example clip.scripture"):
 
 def _reopened(project, tmp_path, monkeypatch):
     """A second window with that project loaded, its video answered for."""
-    monkeypatch.setattr(gui, "_LAST_SESSION_FILE", tmp_path / ".last_session")
+    monkeypatch.setattr(gui, "_LAST_PROJECT_FILE", tmp_path / ".last_session")
     monkeypatch.setattr(gui.cv2, "VideoCapture", lambda _path: Capture())
     reopened = gui.App()
     reopened._do_load(str(project))
