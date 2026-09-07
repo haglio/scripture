@@ -171,7 +171,7 @@ _LOCK_LABELS = {
 
 class TimelineWidget(QWidget):
     frame_changed = pyqtSignal(int)
-    context_menu_requested = pyqtSignal(int, int, int)  # frame, global_x, global_y
+    context_menu_requested = pyqtSignal(int)  # frame
 
     def __init__(self):
         super().__init__()
@@ -320,8 +320,7 @@ class TimelineWidget(QWidget):
                 self.frame_changed.emit(self._x_to_frame(x))
         elif event.button() == Qt.MouseButton.RightButton and self.total_frames > 0:
             frame = self._x_to_frame(int(event.position().x()))
-            gp = self.mapToGlobal(event.position().toPoint())
-            self.context_menu_requested.emit(frame, gp.x(), gp.y())
+            self.context_menu_requested.emit(frame)
 
     def mouseMoveEvent(self, event):
         if self._dragging and self.total_frames > 0:
@@ -357,7 +356,7 @@ class TimelineWidget(QWidget):
 class FrameCanvas(QWidget):
     clicked = pyqtSignal(int, int)
     point_dragged = pyqtSignal(str, int, int)  # "tip" or "base", frame_x, frame_y
-    context_menu_requested = pyqtSignal(int, int, int, int)  # frame_x, frame_y, global_x, global_y
+    context_menu_requested = pyqtSignal(int, int)  # frame_x, frame_y
 
     def __init__(self):
         super().__init__()
@@ -719,8 +718,7 @@ class FrameCanvas(QWidget):
         elif event.button() == Qt.MouseButton.RightButton:
             cx, cy = int(event.position().x()), int(event.position().y())
             fx, fy = self._canvas_to_frame(cx, cy)
-            gp = self.mapToGlobal(event.position().toPoint())
-            self.context_menu_requested.emit(fx, fy, gp.x(), gp.y())
+            self.context_menu_requested.emit(fx, fy)
 
     def mouseMoveEvent(self, event):
         if self._dragging_point:
@@ -1447,7 +1445,7 @@ class App(QMainWindow):
 
     # ── Context menus ──────────────────────────────────────────────
 
-    def _on_canvas_context_menu(self, fx, fy, gx, gy):
+    def _on_canvas_context_menu(self, fx, fy):
         if not self.scenes:
             return
         idx = self._current_scene_idx()
@@ -1466,7 +1464,7 @@ class App(QMainWindow):
 
         menu.exec(QCursor.pos())
 
-    def _on_timeline_context_menu(self, frame, gx, gy):
+    def _on_timeline_context_menu(self, frame):
         if self.total_frames == 0:
             return
         self._show_frame(frame)
