@@ -51,15 +51,17 @@ from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
 from shared_ui.spacing import BUTTON_ICON, GAP_MEDIUM, MARGIN_STANDARD
 
 from content import LOCAL_CONTENT, load_content
-from scripture.auto_funscript import (
-    pipeline_result_from_state,
-    pipeline_result_to_state,
-    run_pipeline,
-)
+from scripture.auto_funscript import run_pipeline
 from scripture.cycle_extract import extract_cycles
 from scripture.funscript import build_funscript, save_funscript
-from scripture.motion_tracker import AxisDefinition, TrackingResult, track_motion
-from scripture.project import load_project, save_project
+from scripture.motion_tracker import AxisDefinition, track_motion
+from scripture.project import (
+    ProjectDocument,
+    document_from_state,
+    load_project,
+    save_project,
+    state_from_document,
+)
 from scripture.scene import Scene, actions_by_scene, scenes_from_splits
 
 # The chrome's own text color rather than a near-white of this app's own.
@@ -1846,42 +1848,20 @@ class App(QMainWindow):
 
     # ── Project save/load ──────────────────────────────────────────
 
+    def _document(self):
+        return ProjectDocument(
+            video_path=self.video_path,
+            splits=self.splits,
+            axes=self.scene_axes,
+            actions=self.scene_actions,
+            tracking=self.scene_positions,
+            labels=self.ground_truth,
+            auto=self.auto_result,
+            current_frame=self.current_frame_idx,
+        )
+
     def _build_state(self):
-        axes = {str(i): {"tip": list(a.tip), "base": list(a.base), "frame": a.frame}
-                for i, a in self.scene_axes.items()}
-        acts = {str(i): a for i, a in self.scene_actions.items()}
-        # Serialize per-frame tracking coordinates
-        tracking = {}
-        for i, result in self.scene_positions.items():
-            entry = {
-                "timestamps_ms": result.timestamps_ms.tolist(),
-                "positions": result.positions.tolist(),
-            }
-            if result.tip_coords is not None:
-                entry["tip_coords"] = result.tip_coords.tolist()
-            if result.base_coords is not None:
-                entry["base_coords"] = result.base_coords.tolist()
-            tracking[str(i)] = entry
-        # Serialize ground truth annotations
-        gt = {}
-        for scene_idx, frames in self.ground_truth.items():
-            gt_frames = {}
-            for frame_idx, entry in frames.items():
-                gt_frames[str(frame_idx)] = {
-                    "tip": list(entry["tip"]) if entry.get("tip") else None,
-                    "base": list(entry["base"]) if entry.get("base") else None,
-                    "contact": list(entry["contact"]) if entry.get("contact") else None,
-                    "is_action": entry.get("is_action", False),
-                }
-            gt[str(scene_idx)] = gt_frames
-        return {
-            "video_path": self.video_path, "splits": self.splits,
-            "axes": axes, "actions": acts, "tracking": tracking,
-            "ground_truth": gt,
-            "auto": (pipeline_result_to_state(self.auto_result)
-                     if self.auto_result is not None else None),
-            "current_frame": self.current_frame_idx,
-        }
+        return state_from_document(self._document())
 
     def _do_save(self, path):
         save_project(path, self._build_state())
@@ -1921,8 +1901,8 @@ class App(QMainWindow):
             self._do_load(path)
 
     def _do_load(self, path):
-        state = load_project(path)
-        vp = state["video_path"]
+        document = document_from_state(load_project(path))
+        vp = document.video_path
         cap = cv2.VideoCapture(vp)
         if not cap.isOpened():
             cap.release()
@@ -1939,44 +1919,19 @@ class App(QMainWindow):
         self.frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
         self._reset_document()
-        self.splits = state["splits"]
+        self.splits = document.splits
         self._rebuild_scenes(clear_annotations=False)
-        for k, v in state.get("axes", {}).items():
-            self.scene_axes[int(k)] = AxisDefinition(tip=tuple(v["tip"]), base=tuple(v["base"]), frame=v.get("frame", 0))
-        for k, v in state.get("actions", {}).items():
-            self.scene_actions[int(k)] = v
-        for k, v in state.get("tracking", {}).items():
-            tip_c = np.array(v["tip_coords"]) if "tip_coords" in v else None
-            base_c = np.array(v["base_coords"]) if "base_coords" in v else None
-            self.scene_positions[int(k)] = TrackingResult(
-                timestamps_ms=np.array(v["timestamps_ms"]),
-                positions=np.array(v["positions"]),
-                tip_coords=tip_c,
-                base_coords=base_c,
-            )
-
-        # Load ground truth annotations
-        for scene_k, frames in state.get("ground_truth", {}).items():
-            scene_gt = {}
-            for frame_k, entry in frames.items():
-                scene_gt[int(frame_k)] = {
-                    "tip": tuple(entry["tip"]) if entry.get("tip") else None,
-                    "base": tuple(entry["base"]) if entry.get("base") else None,
-                    "contact": tuple(entry["contact"]) if entry.get("contact") else None,
-                    "is_action": entry.get("is_action", False),
-                }
-            self.ground_truth[int(scene_k)] = scene_gt
-
-        # Load auto-pipeline diagnostics
-        auto_state = state.get("auto")
-        self._set_auto_result(
-            pipeline_result_from_state(auto_state) if auto_state else None)
+        self.scene_axes.update(document.axes)
+        self.scene_actions.update(document.actions)
+        self.scene_positions.update(document.tracking)
+        self.ground_truth.update(document.labels)
+        self._set_auto_result(document.auto)
 
         self._project_path = path
         self._mark_clean()
         self._cancel_placing()
         self._save_last_session(path)
-        self.current_frame_idx = state.get("current_frame", 0)
+        self.current_frame_idx = document.current_frame
         self._show_frame(self.current_frame_idx)
 
     def _save_last_session(self, path):
