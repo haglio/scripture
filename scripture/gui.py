@@ -1247,6 +1247,21 @@ class App(QMainWindow):
 
     # ── Video loading ──────────────────────────────────────────────
 
+    def _reset_document(self):
+        self.splits = []
+        self.scenes = []
+        self.scene_axes.clear()
+        self.scene_actions.clear()
+        self.scene_positions.clear()
+        self.ground_truth.clear()
+        self._session_undo.clear()
+        self._session_target = None
+        self.label_session = False
+        self.btn_label_session.setChecked(False)
+        self._set_auto_result(None)
+        self.current_frame_idx = 0
+        self._project_path = None
+
     def _open_video(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Open Video", "",
@@ -1255,14 +1270,8 @@ class App(QMainWindow):
         if not path:
             return
         self._load_video(path)
-        self.splits = []
+        self._reset_document()
         self.scenes = [Scene(0, self.total_frames)]
-        self.scene_axes.clear()
-        self.scene_actions.clear()
-        self.scene_positions.clear()
-        self._set_auto_result(None)
-        self.current_frame_idx = 0
-        self._project_path = None
         self._mark_dirty()
         self._show_frame(0)
 
@@ -1942,13 +1951,11 @@ class App(QMainWindow):
         self.frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
+        self._reset_document()
         self.splits = state["splits"]
         self._rebuild_scenes(clear_annotations=False)
-        self.scene_axes.clear()
         for k, v in state.get("axes", {}).items():
             self.scene_axes[int(k)] = AxisDefinition(tip=tuple(v["tip"]), base=tuple(v["base"]), frame=v.get("frame", 0))
-        self.scene_actions.clear()
-        self.scene_positions.clear()
         for k, v in state.get("actions", {}).items():
             self.scene_actions[int(k)] = v
         for k, v in state.get("tracking", {}).items():
@@ -1962,7 +1969,6 @@ class App(QMainWindow):
             )
 
         # Load ground truth annotations
-        self.ground_truth.clear()
         for scene_k, frames in state.get("ground_truth", {}).items():
             scene_gt = {}
             for frame_k, entry in frames.items():
