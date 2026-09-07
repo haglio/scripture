@@ -1716,8 +1716,7 @@ class App(QMainWindow):
         if self._is_processing():
             self._set_status("Already processing \u2014 wait for it to finish.")
             return
-        if not self.video_path:
-            QMessageBox.warning(self, "No video", "Open a video first.")
+        if not self._require_video():
             return
         self._show_progress_ui(self.total_frames, "Auto tracking\u2026 %p%")
         self._worker = AutoProcessWorker(self.video_path)
@@ -1882,25 +1881,30 @@ class App(QMainWindow):
         self._mark_clean()
         self._save_last_session(path)
         self._set_status(f"Saved to {Path(path).name}")
+        return True
+
+    def _require_video(self):
+        if self.video_path:
+            return True
+        QMessageBox.warning(self, "No video", "Open a video first.")
+        return False
 
     def _save_project(self):
-        if not self.video_path:
-            QMessageBox.warning(self, "No video", "Open a video first.")
-            return
+        if not self._require_video():
+            return False
         if self._project_path:
-            self._do_save(self._project_path)
-        else:
-            self._save_project_as()
+            return self._do_save(self._project_path)
+        return self._save_project_as()
 
     def _save_project_as(self):
-        if not self.video_path:
-            QMessageBox.warning(self, "No video", "Open a video first.")
-            return
+        if not self._require_video():
+            return False
         sd = str(Path(__file__).resolve().parent.parent / "sessions")
         dn = Path(self.video_path).stem + ".scripture"
         path, _ = QFileDialog.getSaveFileName(self, "Save As", str(Path(sd) / dn), "Scripture (*.scripture);;All (*)")
-        if path:
-            self._do_save(path)
+        if not path:
+            return False
+        return self._do_save(path)
 
     def _load_project(self):
         sd = str(Path(__file__).resolve().parent.parent / "sessions")
@@ -2023,8 +2027,10 @@ class App(QMainWindow):
                 QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
             )
             if reply == QMessageBox.StandardButton.Save:
-                self._save_project()
-                event.accept()
+                if self._save_project():
+                    event.accept()
+                else:
+                    event.ignore()
             elif reply == QMessageBox.StandardButton.Discard:
                 event.accept()
             else:
