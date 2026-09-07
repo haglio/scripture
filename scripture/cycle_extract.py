@@ -71,7 +71,7 @@ def _enforce_alternating(indices: np.ndarray, values: np.ndarray) -> np.ndarray:
 
 
 def extract_cycles(positions: np.ndarray, timestamps_ms: np.ndarray,
-                   min_cycle_height: float = 0.15,
+                   max_prominence: float = 0.15,
                    fps: float = 30.0) -> list[dict]:
     """Find cycle turnaround points (peaks and valleys).
 
@@ -89,8 +89,7 @@ def extract_cycles(positions: np.ndarray, timestamps_ms: np.ndarray,
     min_distance_frames = max(1, int(_MIN_CYCLE_DISTANCE_MS / avg_frame_interval_ms))
 
     prominence = _adaptive_prominence(smoothed, fps)
-    # Use the smaller of adaptive and the caller's threshold
-    effective_prominence = min(prominence, min_cycle_height)
+    effective_prominence = min(prominence, max_prominence)
 
     # Find peaks (high positions = near tip)
     peaks, _ = find_peaks(smoothed, distance=min_distance_frames, prominence=effective_prominence)

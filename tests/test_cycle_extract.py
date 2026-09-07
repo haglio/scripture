@@ -32,7 +32,7 @@ class TestExtractCycles:
         t = np.linspace(0, 4 * np.pi, 400)
         positions = (np.sin(t) + 1) / 2  # 0 to 1 range
         timestamps_ms = np.linspace(0, 4000, 400)
-        actions = extract_cycles(positions, timestamps_ms, min_cycle_height=0.3)
+        actions = extract_cycles(positions, timestamps_ms, max_prominence=0.3)
         # A 2-cycle sine should produce roughly 4 peaks + 4 valleys = ~4-5 extrema
         assert len(actions) >= 3
         # All positions should be in 0-100 range

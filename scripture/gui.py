@@ -66,7 +66,7 @@ from scripture.scene import Scene, actions_by_scene, scenes_from_splits
 
 # The chrome's own text color rather than a near-white of this app's own.
 _ICON_COLOR = TEXT_PRIMARY.name()
-_LAST_SESSION_FILE = Path(__file__).resolve().parent.parent / "sessions" / ".last_session"
+_LAST_PROJECT_FILE = Path(__file__).resolve().parent.parent / "sessions" / ".last_session"
 
 _PROGRESS_STYLE = f"""
     QProgressBar {{
@@ -771,7 +771,7 @@ class App(QMainWindow):
 
         self._build_ui()
         self._build_shortcuts()
-        self._try_load_last_session()
+        self._try_load_last_project()
 
     def _mark_dirty(self):
         self._dirty = True
@@ -1188,22 +1188,21 @@ class App(QMainWindow):
         self._session_undo = [(self._scene_index_for_frame(frame), frame)
                               for _old_idx, frame in self._session_undo]
 
-    def _rebuild_scenes(self, clear_annotations=True):
+    def _rebuild_scenes(self):
         old_axes, old_actions = dict(self.scene_axes), dict(self.scene_actions)
         old_positions = dict(self.scene_positions)
         self.scenes = scenes_from_splits(self.splits, self.total_frames)
-        if clear_annotations:
-            self.scene_axes.clear()
-            self.scene_actions.clear()
-            self.scene_positions.clear()
-            for oi, axis in old_axes.items():
-                ni = self._scene_index_for_frame(axis.frame)
-                self.scene_axes[ni] = axis
-                if oi in old_actions:
-                    self.scene_actions[ni] = old_actions[oi]
-                if oi in old_positions:
-                    self.scene_positions[ni] = old_positions[oi]
-            self._remap_labels()
+        self.scene_axes.clear()
+        self.scene_actions.clear()
+        self.scene_positions.clear()
+        for oi, axis in old_axes.items():
+            ni = self._scene_index_for_frame(axis.frame)
+            self.scene_axes[ni] = axis
+            if oi in old_actions:
+                self.scene_actions[ni] = old_actions[oi]
+            if oi in old_positions:
+                self.scene_positions[ni] = old_positions[oi]
+        self._remap_labels()
         # Auto actions are global; re-bucket them into the new scene layout
         if self.auto_result is not None:
             self.scene_actions = actions_by_scene(
@@ -1860,7 +1859,7 @@ class App(QMainWindow):
         save_project(path, self._build_state())
         self._project_path = path
         self._mark_clean()
-        self._save_last_session(path)
+        self._save_last_project(path)
         self._set_status(f"Saved to {Path(path).name}")
         return True
 
@@ -1913,7 +1912,7 @@ class App(QMainWindow):
 
         self._reset_document()
         self.splits = document.splits
-        self._rebuild_scenes(clear_annotations=False)
+        self._rebuild_scenes()
         self.scene_axes.update(document.axes)
         self.scene_actions.update(document.actions)
         self.scene_positions.update(document.tracking)
@@ -1923,21 +1922,21 @@ class App(QMainWindow):
         self._project_path = path
         self._mark_clean()
         self._cancel_placing()
-        self._save_last_session(path)
+        self._save_last_project(path)
         self.current_frame_idx = document.current_frame
         self._show_frame(self.current_frame_idx)
 
-    def _save_last_session(self, path):
+    def _save_last_project(self, path):
         try:
-            _LAST_SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
-            _LAST_SESSION_FILE.write_text(path)
+            _LAST_PROJECT_FILE.parent.mkdir(parents=True, exist_ok=True)
+            _LAST_PROJECT_FILE.write_text(path)
         except OSError:
             pass
 
-    def _try_load_last_session(self):
+    def _try_load_last_project(self):
         try:
-            if _LAST_SESSION_FILE.exists():
-                path = _LAST_SESSION_FILE.read_text().strip()
+            if _LAST_PROJECT_FILE.exists():
+                path = _LAST_PROJECT_FILE.read_text().strip()
                 if path and Path(path).exists():
                     self._do_load(path)
         except Exception:
