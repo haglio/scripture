@@ -3,7 +3,7 @@
 The QApplication is a fixture a test asks for by name, never autouse. An autouse
 one stood here once and no test ever asked for it -- the only PyQt6 import in
 `tests/` was the fixture's own -- so its one effect was to leave the process
-Qt-initialised before the first test module was collected, which is exactly the
+Qt-initialized before the first test module was collected, which is exactly the
 condition `test_launch_smoke.py` exists to rule out: a green run on a launch
 sequence that never completes. Asking by name keeps Qt out of every run that
 does not build a widget.
