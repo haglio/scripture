@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from scripture.scene import Scene, actions_by_scene, scenes_from_splits
 
 

@@ -1,4 +1,5 @@
 """Motion tracking along a user-defined axis."""
+from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass

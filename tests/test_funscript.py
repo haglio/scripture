@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 
 from scripture.funscript import build_funscript, save_funscript

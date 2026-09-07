@@ -3,6 +3,7 @@
 Only the wrapper was reachable from here before -- the schema lived inside the
 Qt window, so nothing could round-trip it without standing a window up.
 """
+from __future__ import annotations
 
 import json
 

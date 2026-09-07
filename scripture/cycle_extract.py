@@ -1,4 +1,5 @@
 """Extract cycle peaks and valleys from a position signal."""
+from __future__ import annotations
 
 import numpy as np
 from scipy.signal import find_peaks, savgol_filter

@@ -1,4 +1,5 @@
 """Tests for sparse ground-truth labeling sessions."""
+from __future__ import annotations
 
 from scripture.annotate import next_scheduled, schedule_frames
 

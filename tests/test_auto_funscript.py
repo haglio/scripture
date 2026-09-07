@@ -1,4 +1,5 @@
 """Tests for the automatic YOLO+flow funscript pipeline."""
+from __future__ import annotations
 
 from pathlib import Path
 
