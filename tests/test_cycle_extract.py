@@ -46,41 +46,6 @@ class TestExtractCycles:
         actions = extract_cycles(positions, timestamps_ms)
         assert actions == []
 
-
-class TestRemoveDrift:
-
-    def test_flat_signal_stays_centered(self):
-        signal = np.full(500, 0.5)
-        result = remove_drift(signal)
-        np.testing.assert_allclose(result, 0.5, atol=0.01)
-
-    def test_removes_linear_trend(self):
-        drift = np.linspace(0, 1, 500)
-        cycles = 0.1 * np.sin(np.linspace(0, 20 * np.pi, 500))
-        signal = np.clip(drift + cycles + 0.5, 0, 1)
-        result = remove_drift(signal, cutoff_period_frames=101)
-        # Cycles should survive
-        assert np.std(result) > 0.02
-        # Drift slope should be removed: linear fit on result should be near-flat
-        slope = np.polyfit(np.arange(len(result)), result, 1)[0]
-        assert abs(slope) < 0.001
-
-    def test_short_signal_no_crash(self):
-        signal = np.array([0.0, 0.5, 1.0])
-        result = remove_drift(signal)
-        assert result.shape == signal.shape
-
-    def test_even_cutoff_no_crash(self):
-        signal = np.random.RandomState(42).rand(500)
-        # Even and odd should both work without error
-        result_even = remove_drift(signal, cutoff_period_frames=300)
-        result_odd = remove_drift(signal, cutoff_period_frames=301)
-        assert result_even.shape == signal.shape
-        assert result_odd.shape == signal.shape
-
-
-class TestExtractCyclesImproved:
-
     def test_drifting_signal_detects_cycles(self):
         """Globally-normalized drift drowns cycles when drift >> cycle amplitude.
         After normalization, cycles have prominence ~0.06, well below the
@@ -108,6 +73,43 @@ class TestExtractCyclesImproved:
                 assert actions[i]["pos"] < 50, "Two consecutive peaks"
             else:  # was a valley
                 assert actions[i]["pos"] > 50, "Two consecutive valleys"
+
+
+class TestRemoveDrift:
+
+    def test_flat_signal_stays_centered(self):
+        signal = np.full(500, 0.5)
+        result = remove_drift(signal)
+        np.testing.assert_allclose(result, 0.5, atol=0.01)
+
+    def test_removes_linear_trend(self):
+        drift = np.linspace(0, 1, 500)
+        cycles = 0.1 * np.sin(np.linspace(0, 20 * np.pi, 500))
+        signal = np.clip(drift + cycles + 0.5, 0, 1)
+        result = remove_drift(signal, cutoff_period_frames=101)
+        # Cycles should survive
+        assert np.std(result) > 0.02
+        # Drift slope should be removed: linear fit on result should be near-flat
+        slope = np.polyfit(np.arange(len(result)), result, 1)[0]
+        assert abs(slope) < 0.001
+
+    def test_a_signal_shorter_than_the_window_is_only_recentered(self):
+        """Too short to fit the filter, so there is no drift to find: it comes
+        back centered on 0.5 with its shape intact."""
+        signal = np.array([0.0, 0.5, 1.0])
+
+        result = remove_drift(signal)
+
+        np.testing.assert_allclose(result, [0.0, 0.5, 1.0])
+
+    def test_an_even_window_is_the_odd_one_above_it(self):
+        """savgol needs an odd window, so an even cutoff is nudged up by one --
+        which means 300 and 301 are the same request."""
+        signal = np.random.RandomState(42).rand(500)
+
+        np.testing.assert_allclose(
+            remove_drift(signal, cutoff_period_frames=300),
+            remove_drift(signal, cutoff_period_frames=301))
 
 
 class TestEnforceAlternating:
