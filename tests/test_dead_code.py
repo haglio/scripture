@@ -48,10 +48,7 @@ def test_no_constructor_parameter_is_stored_and_never_read():
 
 
 def test_no_dataclass_field_goes_unread():
-    # Two result fields nothing reads. Scripture is parked pending its owner (WHATS-LEFT section 5);
-    # whether its tracking result keeps them is judged when it is worked, not deleted here.
-    unread.assert_no_dataclass_field_goes_unread(
-        ROOT, SCANNED, allowing=("CoTrackResult.visibility", "CoTrackResult.t_params"))
+    unread.assert_no_dataclass_field_goes_unread(ROOT, SCANNED)
 
 
 def test_every_declared_command_line_option_is_read():

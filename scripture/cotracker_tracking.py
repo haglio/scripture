@@ -205,9 +205,6 @@ class CoTrackResult:
     """Full output from cotrack_axis."""
     tip_coords: np.ndarray     # (N_frames, 2) in original frame coords
     base_coords: np.ndarray    # (N_frames, 2) in original frame coords
-    visibility: np.ndarray     # (N_frames, n_points) visibility scores
-    t_params: np.ndarray       # (n_points,) parametric positions 0=base, 1=tip
-    positions: np.ndarray      # (N_frames,) contact position 0.0-1.0
 
 
 def cotrack_axis(
@@ -352,13 +349,4 @@ def cotrack_axis(
     base_coords = scale_coords(base_coords_s, scaled_size, orig_size)
     tip_coords = scale_coords(tip_coords_s, scaled_size, orig_size)
 
-    # Pos is computed by track_motion via intensity gradient (not here)
-    positions = np.full(n_frames, 0.5)
-
-    return CoTrackResult(
-        tip_coords=tip_coords,
-        base_coords=base_coords,
-        visibility=all_vis,
-        t_params=t_params,
-        positions=positions,
-    )
+    return CoTrackResult(tip_coords=tip_coords, base_coords=base_coords)
