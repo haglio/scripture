@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from scripture.cotracker_tracking import (
     compute_pos_from_points,
@@ -20,12 +21,18 @@ class TestSanitizePositions:
         assert np.corrcoef(positions, result)[0, 1] > 0.9
 
     def test_removes_single_frame_spikes(self):
-        """A spike from 50 to 0 back to 50 in one frame should be smoothed."""
+        """A spike from 50 to 0 back to 50 in one frame is gone, not reduced.
+
+        `> 0.3` held with the median filter deleted -- the smoothing that
+        follows lifts the spike to 0.33 on its own -- so the tolerance here is
+        one only the median filter can reach.
+        """
         positions = np.full(100, 0.5)
         positions[50] = 0.0  # single-frame spike
+
         result = sanitize_positions(positions, fps=30)
-        # The spike should be gone or greatly reduced
-        assert result[50] > 0.3
+
+        assert result[50] == pytest.approx(0.5, abs=0.01)
 
     def test_enforces_max_speed(self):
         """A jump from 0 to 100 in one frame should be limited."""
@@ -59,16 +66,19 @@ class TestIntensityGradientContact:
         pred_t = find_contact_gradient(t_vals, intensities, search_min=0.0)
         assert abs(pred_t - 0.60) < 0.05
 
-    def test_no_edge_returns_within_range(self):
-        """Uniform image should still return something in [0, 1]."""
+    def test_no_edge_falls_back_to_the_middle_of_the_search_range(self):
+        """An image with no gradient anywhere. `0 <= pred_t <= 1` held for any
+        answer at all, `return 0.0` included."""
         gray = np.full((100, 200), 128, dtype=np.uint8)
         base = np.array([0, 50], dtype=np.float64)
         tip = np.array([199, 50], dtype=np.float64)
         axis_vec = tip - base
         perp = np.array([0, 1], dtype=np.float64)
         t_vals, intensities = sample_axis_intensity(gray, base, axis_vec, perp, n=100, strip_w=5)
+
         pred_t = find_contact_gradient(t_vals, intensities, search_min=0.0)
-        assert 0 <= pred_t <= 1
+
+        assert pred_t == pytest.approx(0.5)
 
 
 class TestComputePosFromPoints:
