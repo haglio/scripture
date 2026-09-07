@@ -1,24 +1,39 @@
+# The only pyproject in the family that opened at [project]. Without this table
+# pip falls back to a legacy build with whatever setuptools the environment
+# happens to hold -- while the file already uses [tool.setuptools.packages.find],
+# which is the 61+ syntax this table is what states.
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "scripture"
 version = "0.1.0"
 description = "Semi-automated funscript generator from 2D video"
-requires-python = ">=3.10"
+# 3.12, not 3.10: every gate in the family runs 3.12 and nothing has ever
+# collected a suite on anything older, so >=3.10 was a promise no run backed.
+requires-python = ">=3.12"
+# Every requirement carries a ceiling now, floors unchanged. Without one each run
+# installs whatever PyPI served that morning: this repo's venv holds
+# opencv-python 4 and the gate was installing opencv-python 5, so the imaging
+# stack the tracker stands on was a different major version in CI than in
+# production. torchvision's next minor is the breaking unit for a 0.x.
 dependencies = [
-    "opencv-python>=4.8",
-    "numpy>=1.24",
-    "scipy>=1.11",
-    "torch>=2.0",
-    "torchvision>=0.15",
-    "ultralytics>=8.4",
-    "PyQt6",
-    "qtawesome",
+    "opencv-python>=4.8,<5",
+    "numpy>=1.24,<3",
+    "scipy>=1.11,<2",
+    "torch>=2.0,<3",
+    "torchvision>=0.15,<0.29",
+    "ultralytics>=8.4,<9",
+    "PyQt6>=6,<7",
+    "qtawesome>=1,<2",
 ]
 
 [project.scripts]
 scripture = "scripture.main:main"
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-timeout", "vulture", "ruff==0.16.6"]
+dev = ["pytest>=9,<10", "pytest-timeout>=2.4,<3", "vulture>=2.16,<3", "ruff==0.16.6"]
 
 [tool.pytest.ini_options]
 # A ceiling on a hang, not a performance budget. The slowest test on a
@@ -34,6 +49,15 @@ dev = ["pytest", "pytest-timeout", "vulture", "ruff==0.16.6"]
 # holds all three halves of it.
 addopts = "--timeout=120 --timeout-method=thread -p app_support.sanitize.pytest_plugin"
 testpaths = ["tests"]
+
+# The family checkouts this one is installed beside. Both were imported and
+# named nowhere: `gui.py` reaches for three shared_ui modules at import time and
+# `main.py` for app_support, so a checkout following this file's own documented
+# install got a GUI that raised ModuleNotFoundError. Neither is published, so
+# neither can go in [project.dependencies]; tests/test_dependencies.py holds this
+# list against the tree instead.
+[tool.haglio]
+siblings = ["app_support", "shared_ui"]
 
 [tool.setuptools.packages.find]
 include = ["scripture*"]
