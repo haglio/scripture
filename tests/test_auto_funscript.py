@@ -1,5 +1,7 @@
 """Tests for the automatic YOLO+flow funscript pipeline."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -14,6 +16,7 @@ from scripture.auto_funscript import (
     contact_near_rect,
     find_interacting,
     flow_to_position,
+    generate_funscript,
     is_scene_cut,
     parse_args,
     pipeline_result_from_state,
@@ -27,6 +30,29 @@ from scripture.auto_funscript import (
 
 # The class vocabulary is private; take it from whichever overlay is loaded.
 ANCHOR, ANCHOR_TIP = ANCHOR_CLASSES[0], ANCHOR_CLASSES[1]
+
+
+def _a_flat_video(path, frames=30, size=(160, 120)):
+    """A short clip of one unchanging textured frame, written to `path`."""
+    import cv2
+
+    writer = cv2.VideoWriter(
+        str(path), cv2.VideoWriter_fourcc(*"mp4v"), 30.0, size)
+    frame = np.random.default_rng(3).integers(
+        0, 255, (size[1], size[0], 3)).astype(np.uint8)
+    for _ in range(frames):
+        writer.write(frame)
+    writer.release()
+    return str(path)
+
+
+def _flow_of(dy):
+    """A flow field of constant vertical motion, whatever the frames."""
+    def flow_fn(_prev_gray, gray):
+        flow = np.zeros((*gray.shape, 2), dtype=np.float32)
+        flow[..., 1] = dy
+        return flow
+    return flow_fn
 
 
 def det(cls, x, y, w, h, conf=0.9):
@@ -166,13 +192,6 @@ def textured_frame(seed=0, shape=(200, 300)):
 
 
 class TestTrackFlowSignal:
-    def _constant_flow_fn(self, dy_value):
-        def flow_fn(prev_gray, gray):
-            flow = np.zeros((*gray.shape, 2), dtype=np.float32)
-            flow[..., 1] = dy_value
-            return flow
-        return flow_fn
-
     def test_tracks_dy_when_anchor_and_contact_detected(self):
         frames = [textured_frame(0) for _ in range(6)]
         detections = [
@@ -180,7 +199,7 @@ class TestTrackFlowSignal:
             Detection("hand", 0.9, (110, 70, 50, 50)),
         ]
         result = track_flow_signal(
-            iter(frames), lambda f: detections, self._constant_flow_fn(3.0),
+            iter(frames), lambda f: detections, _flow_of(3.0),
             TrackConfig(detect_every=2),
         )
         assert len(result.dy) == 6
@@ -192,7 +211,7 @@ class TestTrackFlowSignal:
     def test_no_detections_means_flat_signal(self):
         frames = [textured_frame(0) for _ in range(4)]
         result = track_flow_signal(
-            iter(frames), lambda f: [], self._constant_flow_fn(3.0),
+            iter(frames), lambda f: [], _flow_of(3.0),
             TrackConfig(),
         )
         np.testing.assert_allclose(result.dy, 0.0)
@@ -208,7 +227,7 @@ class TestTrackFlowSignal:
             return dets if calls["n"] == 1 else []
 
         result = track_flow_signal(
-            iter(frames), detect_fn, self._constant_flow_fn(2.0),
+            iter(frames), detect_fn, _flow_of(2.0),
             TrackConfig(detect_every=1, roi_persistence_frames=3),
         )
         # ROI from frame 0 persists 3 frames after loss, then clears
@@ -220,7 +239,7 @@ class TestTrackFlowSignal:
         frames = [textured_frame(1)] * 3 + [bright] * 3
         detections = [Detection(ANCHOR, 0.9, (100, 60, 60, 90))]
         result = track_flow_signal(
-            iter(frames), lambda f: detections, self._constant_flow_fn(4.0),
+            iter(frames), lambda f: detections, _flow_of(4.0),
             TrackConfig(detect_every=1),
         )
         # Flow must not bridge the cut at index 3
@@ -240,7 +259,7 @@ class TestTrackFlowSignal:
             return [anchor, face_over_anchor] if calls["n"] == 1 else [face_over_anchor]
 
         result = track_flow_signal(
-            iter(frames), detect_fn, self._constant_flow_fn(2.0),
+            iter(frames), detect_fn, _flow_of(2.0),
             TrackConfig(detect_every=1, roi_persistence_frames=3),
         )
         assert result.roi_active.all()
@@ -258,7 +277,7 @@ class TestTrackFlowSignal:
             return [anchor, far_face] if calls["n"] == 1 else [far_face]
 
         result = track_flow_signal(
-            iter(frames), detect_fn, self._constant_flow_fn(2.0),
+            iter(frames), detect_fn, _flow_of(2.0),
             TrackConfig(detect_every=1, roi_persistence_frames=3),
         )
         # Far face is not holding the lock: coast, then expire
@@ -280,7 +299,7 @@ class TestTrackFlowSignal:
             return [anchor, face_over_anchor] if calls["n"] == 1 else [face_over_anchor]
 
         result = track_flow_signal(
-            iter(frames), detect_fn, self._constant_flow_fn(2.0),
+            iter(frames), detect_fn, _flow_of(2.0),
             TrackConfig(detect_every=1, roi_persistence_frames=30),
         )
         assert set(result.lock[1:]) == {"contact"}
@@ -293,7 +312,7 @@ class TestTrackFlowSignal:
             Detection("hand", 0.8, (110, 70, 50, 50)),
         ]
         result = track_flow_signal(
-            iter(frames), lambda f: dets, self._constant_flow_fn(1.0),
+            iter(frames), lambda f: dets, _flow_of(1.0),
             TrackConfig(detect_every=2),
         )
         # One ROI tuple per frame (persisted between detections)
@@ -357,35 +376,40 @@ class TestSignalToActions:
 
 class TestRunPipeline:
     def test_processes_video_file_with_injected_stages(self, tmp_path):
-        import cv2
-
-        video_path = str(tmp_path / "clip.mp4")
-        writer = cv2.VideoWriter(
-            video_path, cv2.VideoWriter_fourcc(*"mp4v"), 30.0, (160, 120))
-        rng = np.random.default_rng(3)
-        base = rng.integers(0, 255, (120, 160, 3)).astype(np.uint8)
-        for _ in range(30):
-            writer.write(base)
-        writer.release()
-
+        video_path = _a_flat_video(tmp_path / "example clip.mp4")
         dets = [Detection(ANCHOR, 0.9, (40, 30, 40, 60))]
-
-        def fake_flow(prev_gray, gray):
-            flow = np.zeros((*gray.shape, 2), dtype=np.float32)
-            flow[..., 1] = 2.0
-            return flow
 
         progress = []
         result = run_pipeline(
             video_path, config=TrackConfig(detect_every=5),
             on_frame=progress.append,
-            detect_fn=lambda f: dets, flow_fn=fake_flow,
+            detect_fn=lambda f: dets, flow_fn=_flow_of(2.0),
         )
         assert len(result.positions) == 30
         assert len(result.signal.rois) == 30
         assert result.fps == pytest.approx(30.0, abs=0.1)
         assert isinstance(result.actions, list)
         assert progress == list(range(30))
+
+
+class TestGenerateFunscript:
+    def test_a_video_becomes_a_funscript_file_with_injected_stages(self, tmp_path):
+        """The whole headless composition -- video in, file out. Nothing had
+        run it end to end, because the stages could not be injected past
+        run_pipeline."""
+        import json
+
+        video_path = _a_flat_video(tmp_path / "example clip.mp4")
+        output_path = str(tmp_path / "example clip.funscript")
+
+        actions = generate_funscript(
+            video_path, output_path, config=TrackConfig(detect_every=5),
+            detect_fn=lambda _frame: [Detection(ANCHOR, 0.9, (40, 30, 40, 60))],
+            flow_fn=_flow_of(2.0))
+
+        written = json.loads(Path(output_path).read_text(encoding="utf-8"))
+        assert written["metadata"]["creator"] == "scripture"
+        assert written["actions"] == sorted(actions, key=lambda a: a["at"])
 
 
 class TestPipelineResultSerialization:
