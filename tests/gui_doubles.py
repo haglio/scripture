@@ -43,13 +43,16 @@ class Dialogs:
         self.shown.append((title, text))
 
 
-class SaveDialog:
-    """`gui.QFileDialog`: one Save As answer, empty for a cancelled dialog."""
+class FileDialog:
+    """`gui.QFileDialog`: one answer, empty for a dialog the user cancelled."""
 
     def __init__(self, chosen=""):
         self._chosen = chosen
 
     def getSaveFileName(self, *_args):  # noqa: N802 - Qt spells it this way
+        return self._chosen, ""
+
+    def getOpenFileName(self, *_args):  # noqa: N802 - Qt spells it this way
         return self._chosen, ""
 
 
