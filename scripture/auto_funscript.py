@@ -596,13 +596,16 @@ def generate_funscript(
     end_frame: int | None = None,
     config: TrackConfig | None = None,
     on_frame: Callable[[int], None] | None = None,
+    detect_fn: Callable[[np.ndarray], list[Detection]] | None = None,
+    flow_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None,
 ) -> list[dict]:
     """Video in, funscript out.  Returns the action list it wrote."""
     from scripture.funscript import build_funscript, save_funscript
 
     result = run_pipeline(
         video_path, model_path=model_path, start_frame=start_frame,
-        end_frame=end_frame, config=config, on_frame=on_frame)
+        end_frame=end_frame, config=config, on_frame=on_frame,
+        detect_fn=detect_fn, flow_fn=flow_fn)
     funscript = build_funscript(
         result.actions, duration_seconds=int(result.total_frames / result.fps))
     save_funscript(funscript, output_path)
