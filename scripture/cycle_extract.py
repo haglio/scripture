@@ -42,6 +42,10 @@ def _adaptive_prominence(positions: np.ndarray, fps: float,
     return max(floor, 0.3 * median_std * 1.35)
 
 
+# The closest two turnarounds can be and still count as two cycles.
+_MIN_CYCLE_DISTANCE_MS = 200.0
+
+
 def _enforce_alternating(indices: np.ndarray, values: np.ndarray) -> np.ndarray:
     """Keep only alternating extrema — when two peaks/valleys are consecutive,
     keep the more extreme one."""
@@ -68,7 +72,6 @@ def _enforce_alternating(indices: np.ndarray, values: np.ndarray) -> np.ndarray:
 
 def extract_cycles(positions: np.ndarray, timestamps_ms: np.ndarray,
                    min_cycle_height: float = 0.15,
-                   min_cycle_distance_ms: float = 200.0,
                    fps: float = 30.0) -> list[dict]:
     """Find cycle turnaround points (peaks and valleys).
 
@@ -83,7 +86,7 @@ def extract_cycles(positions: np.ndarray, timestamps_ms: np.ndarray,
     smoothed = smooth_signal(detrended, window=smooth_window)
 
     avg_frame_interval_ms = np.mean(np.diff(timestamps_ms)) if len(timestamps_ms) > 1 else 1000 / fps
-    min_distance_frames = max(1, int(min_cycle_distance_ms / avg_frame_interval_ms))
+    min_distance_frames = max(1, int(_MIN_CYCLE_DISTANCE_MS / avg_frame_interval_ms))
 
     prominence = _adaptive_prominence(smoothed, fps)
     # Use the smaller of adaptive and the caller's threshold

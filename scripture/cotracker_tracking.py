@@ -90,22 +90,26 @@ def sample_axis_intensity(
     return t_values, uniform_filter1d(intensities, size=5)
 
 
+# The far end of the axis: t runs 0 (base) to 1 (tip), so the search stops at
+# the tip.
+_SEARCH_MAX = 1.0
+
+
 def find_contact_gradient(
     t_values: np.ndarray,
     intensities: np.ndarray,
     search_min: float = 0.4,
-    search_max: float = 1.0,
 ) -> float:
     """Find the contact point as the largest intensity gradient along the axis.
 
     Returns t in [0, 1] where 0=base, 1=tip.
     """
     gradient = np.abs(np.diff(intensities))
-    search = (t_values[:-1] >= search_min) & (t_values[:-1] <= search_max)
+    search = (t_values[:-1] >= search_min) & (t_values[:-1] <= _SEARCH_MAX)
     g = gradient.copy()
     g[~search] = 0
     if g.max() < 1e-6:
-        return (search_min + search_max) / 2
+        return (search_min + _SEARCH_MAX) / 2
     return float(t_values[g.argmax()])
 
 
@@ -146,6 +150,7 @@ def scale_coords(
 
 
 _TARGET_LONG_SIDE = 384
+_AXIS_POINTS = 30  # points handed to CoTracker3 along the axis
 _MAX_CHUNK_FRAMES = 300  # CoTracker3 internal attention uses ~50x the video tensor size
 
 
@@ -212,11 +217,10 @@ def cotrack_axis(
     axis: AxisDefinition,
     start_frame: int,
     end_frame: int,
-    n_points: int = 30,
 ) -> CoTrackResult:
     """Track tip/base and detect contact position using CoTracker3.
 
-    Places n_points along the axis on the representative frame, tracks
+    Places a row of points along the axis on the representative frame, tracks
     all of them, reconstructs per-frame tip/base via line fitting from
     visible points, and derives the contact position from the visibility
     transition boundary.
@@ -234,18 +238,18 @@ def cotrack_axis(
     # Generate query points along the axis (in scaled coordinates)
     tip = np.array(axis.tip, dtype=np.float64)
     base = np.array(axis.base, dtype=np.float64)
-    t_params = np.linspace(0, 1, n_points)
+    t_params = np.linspace(0, 1, _AXIS_POINTS)
     axis_points = np.array([base + t * (tip - base) for t in t_params])
     axis_points_scaled = scale_coords(axis_points, orig_size, scaled_size)
 
     # Allocate output arrays (in scaled coords, converted at the end)
-    all_tracks = np.zeros((n_frames, n_points, 2), dtype=np.float64)
-    all_vis = np.zeros((n_frames, n_points), dtype=np.float64)
+    all_tracks = np.zeros((n_frames, _AXIS_POINTS, 2), dtype=np.float64)
+    all_vis = np.zeros((n_frames, _AXIS_POINTS), dtype=np.float64)
 
     if n_frames <= _MAX_CHUNK_FRAMES:
         # Small enough to process in one shot
         video = _read_chunk(video_path, start_frame, n_frames, scaled_size)
-        queries = torch.zeros(1, n_points, 3, device="cuda")
+        queries = torch.zeros(1, _AXIS_POINTS, 3, device="cuda")
         queries[0, :, 0] = ref_local
         queries[0, :, 1] = torch.from_numpy(axis_points_scaled[:, 0]).float()
         queries[0, :, 2] = torch.from_numpy(axis_points_scaled[:, 1]).float()
@@ -265,7 +269,7 @@ def cotrack_axis(
         def _run_chunk(c_start, c_end, q_frame, q_points):
             c_len = c_end - c_start
             video = _read_chunk(video_path, start_frame + c_start, c_len, scaled_size)
-            queries = torch.zeros(1, n_points, 3, device="cuda")
+            queries = torch.zeros(1, _AXIS_POINTS, 3, device="cuda")
             queries[0, :, 0] = q_frame
             queries[0, :, 1] = torch.from_numpy(q_points[:, 0].copy()).float()
             queries[0, :, 2] = torch.from_numpy(q_points[:, 1].copy()).float()
