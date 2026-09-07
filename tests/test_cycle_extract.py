@@ -1,6 +1,11 @@
 import numpy as np
 
-from scripture.cycle_extract import extract_cycles, remove_drift, smooth_signal
+from scripture.cycle_extract import (
+    _enforce_alternating,
+    extract_cycles,
+    remove_drift,
+    smooth_signal,
+)
 
 
 class TestSmoothSignal:
@@ -103,3 +108,29 @@ class TestExtractCyclesImproved:
                 assert actions[i]["pos"] < 50, "Two consecutive peaks"
             else:  # was a valley
                 assert actions[i]["pos"] > 50, "Two consecutive valleys"
+
+
+class TestEnforceAlternating:
+    """Two extrema of the same kind in a row: the branch that picks between
+    them ran in no test, so flipping the valley half left the suite green."""
+
+    def test_two_peaks_in_a_row_leave_only_the_higher(self):
+        values = np.array([0.9, 0.7, 0.1])
+
+        kept = _enforce_alternating(np.array([0, 1, 2]), values)
+
+        assert list(kept) == [0, 2]
+
+    def test_two_valleys_in_a_row_leave_only_the_deeper(self):
+        values = np.array([0.2, 0.05, 0.9])
+
+        kept = _enforce_alternating(np.array([0, 1, 2]), values)
+
+        assert list(kept) == [1, 2]
+
+    def test_extrema_that_already_alternate_are_all_kept(self):
+        values = np.array([0.9, 0.1, 0.8])
+
+        kept = _enforce_alternating(np.array([0, 1, 2]), values)
+
+        assert list(kept) == [0, 1, 2]
