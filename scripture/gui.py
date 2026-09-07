@@ -425,11 +425,6 @@ class FrameCanvas(QWidget):
         self._auto_overlay = overlay
         self.update()
 
-    def clear(self):
-        self._pixmap = self._axis = self._pending_tip = self._pending_base = self._overlay = self._gt = None
-        self._auto_overlay = None
-        self.update()
-
     def _display_scale(self):
         if not self._frame_w or not self._frame_h:
             return 1.0
