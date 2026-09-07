@@ -185,12 +185,15 @@ class TimelineWidget(QWidget):
         self.splits = []
         self.total_frames = 0
         self.current_frame = 0
+        self.ground_truth = {}
+        self.fps = 30.0
         self._dragging = False
         self._zoom = 1.0       # 1.0 = fully zoomed out (all frames visible)
         self._scroll = 0.0     # left edge in frame-fraction (0.0 to 1.0 - 1/zoom)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
-    def set_state(self, scenes, scene_axes, scene_actions, splits, total_frames, current_frame, ground_truth):
+    def set_state(self, scenes, scene_axes, scene_actions, splits, total_frames,
+                  current_frame, ground_truth, fps):
         self.scenes = scenes
         self.scene_axes = scene_axes
         self.scene_actions = scene_actions
@@ -198,6 +201,7 @@ class TimelineWidget(QWidget):
         self.total_frames = total_frames
         self.current_frame = current_frame
         self.ground_truth = ground_truth
+        self.fps = fps
         self.update()
 
     def _frame_to_x(self, frame):
@@ -240,7 +244,7 @@ class TimelineWidget(QWidget):
 
         # Action frame dots along the center line
         mid_y = bar_y + bar_h // 2
-        fps = self._get_fps()
+        fps = self.fps
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(_ACTION_DOT_COLOR))
         # Show GT action frames if any annotations exist; otherwise computed
@@ -282,15 +286,6 @@ class TimelineWidget(QWidget):
         p.setPen(QPen(BORDER_SUBTLE))
         p.drawRect(0, bar_y, w - 1, bar_h - 1)
         p.end()
-
-    def _get_fps(self):
-        """Get fps from parent App if available."""
-        parent = self.parent()
-        while parent is not None:
-            if hasattr(parent, 'fps'):
-                return parent.fps
-            parent = parent.parent()
-        return 30.0
 
     def _draw_handle(self, p, x, color):
         p.setPen(Qt.PenStyle.NoPen)
@@ -1218,7 +1213,7 @@ class App(QMainWindow):
         self.timeline.set_state(
             self.scenes, self.scene_axes, self.scene_actions,
             self.splits, self.total_frames, self.current_frame_idx,
-            self.ground_truth,
+            self.ground_truth, self.fps,
         )
 
     def _update_info(self):
@@ -1380,8 +1375,6 @@ class App(QMainWindow):
             return
         self.current_frame_idx = frame_idx
         idx = self._current_scene_idx()
-        self.canvas._frame_w = self.frame_w
-        self.canvas._frame_h = self.frame_h
         self.canvas.set_frame(frame)
 
         if idx in self.scene_axes and self.scene_axes[idx].frame == frame_idx:
