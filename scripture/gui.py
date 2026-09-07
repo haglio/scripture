@@ -1820,12 +1820,10 @@ class App(QMainWindow):
     def _is_processing(self):
         return self._worker is not None and self._worker.isRunning()
 
-    def _process_scene(self, idx=None):
+    def _process_scene(self, idx):
         if self._is_processing():
             self._set_status("Already processing \u2014 wait for it to finish.")
             return
-        if idx is None:
-            idx = self._current_scene_idx()
         if idx not in self.scene_axes:
             return
         self._start_processing(self._build_jobs([idx]))
@@ -1840,9 +1838,7 @@ class App(QMainWindow):
             return
         self._start_processing(self._build_jobs(annotated))
 
-    def _discard_scene(self, idx=None):
-        if idx is None:
-            idx = self._current_scene_idx()
+    def _discard_scene(self, idx):
         if idx in self.scene_actions:
             del self.scene_actions[idx]
             self.scene_positions.pop(idx, None)
