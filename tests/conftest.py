@@ -8,6 +8,7 @@ condition `test_launch_smoke.py` exists to rule out: a green run on a launch
 sequence that never completes. Asking by name keeps Qt out of every run that
 does not build a widget.
 """
+from __future__ import annotations
 
 import os
 import random

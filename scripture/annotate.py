@@ -1,4 +1,5 @@
 """Sparse ground-truth labeling sessions: which frames to label, and what's next."""
+from __future__ import annotations
 
 
 def schedule_frames(start: int, end: int, stride: int) -> list[int]:

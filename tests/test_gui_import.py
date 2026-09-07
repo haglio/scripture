@@ -4,6 +4,7 @@ Nothing else in this suite imports ``scripture.gui`` -- the dead-code check
 reads it as text, not as a module -- so an import-time error in it survives a
 fully green run and only shows up as an app that will not start.
 """
+from __future__ import annotations
 
 import json
 import os

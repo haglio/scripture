@@ -14,6 +14,7 @@ an undeclared variable, and VBScript failed at run time, before the first log
 line, so the icon did nothing and nothing recorded why. One test here runs the
 script.
 """
+from __future__ import annotations
 
 import os
 import shutil

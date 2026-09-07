@@ -7,6 +7,8 @@ Qt-initialized process `test_launch_smoke.py` exists to rule out. What it guards
 is `conftest.py` keeping the setting, which is the difference between a headless
 suite and a window on the screen of whoever ran it.
 """
+from __future__ import annotations
+
 import os
 
 

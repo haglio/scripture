@@ -1,4 +1,5 @@
 """PyQt6 GUI for scripture: manual scene splitting, axis annotation, and export."""
+from __future__ import annotations
 
 import bisect
 import time

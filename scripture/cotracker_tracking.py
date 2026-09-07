@@ -1,4 +1,5 @@
 """CoTracker3-based axis tracking for per-frame tip/base coordinates."""
+from __future__ import annotations
 
 from dataclasses import dataclass
 

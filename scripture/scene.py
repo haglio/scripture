@@ -1,4 +1,5 @@
 """Scene data model and split-point logic."""
+from __future__ import annotations
 
 from dataclasses import dataclass
 
