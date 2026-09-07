@@ -58,3 +58,24 @@ def test_undo_after_a_split_deletes_the_label_it_was_recorded_for(window):
     window._session_undo_last()
 
     assert window._get_gt_for_frame(1, 800) is None
+
+
+def test_discarding_a_scene_drops_its_actions_and_its_tracking(window):
+    _with_one_scene(window)
+    window.scene_actions[0] = [{"at": 0, "pos": 50}]
+    window.scene_positions[0] = object()
+    window._mark_clean()
+
+    window._discard_scene(0)
+
+    assert 0 not in window.scene_actions
+    assert 0 not in window.scene_positions
+    assert window._dirty
+
+
+def test_processing_a_scene_with_no_axis_starts_nothing(window):
+    _with_one_scene(window)
+
+    window._process_scene(0)
+
+    assert window._worker is None
