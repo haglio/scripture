@@ -81,7 +81,7 @@ def test_every_workflow_job_runs_under_its_own_clock():
 def test_the_plugin_that_keeps_the_clock_is_declared_where_ci_installs_it():
     """The half no run of this suite can catch by failing.
 
-    pytest rejects an option it does not recognise before it collects anything,
+    pytest rejects an option it does not recognize before it collects anything,
     so a `--timeout` in the config with no `pytest-timeout` in the dev extra is
     not a red test -- it is a usage error, and the required check goes red with
     no suite backing it. It cannot happen locally either, because the shared
