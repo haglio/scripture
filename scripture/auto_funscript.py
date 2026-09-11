@@ -17,8 +17,10 @@ import sys
 import time
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
+from app_support.funscript import write as write_funscript
 from app_support.overlay import overlay_value
 
 from content import LOCAL_CONTENT, load_content
@@ -600,7 +602,7 @@ def generate_funscript(
     flow_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None,
 ) -> list[dict]:
     """Video in, funscript out.  Returns the action list it wrote."""
-    from scripture.funscript import build_funscript, save_funscript
+    from scripture.funscript import build_funscript
 
     result = run_pipeline(
         video_path, model_path=model_path, start_frame=start_frame,
@@ -608,7 +610,7 @@ def generate_funscript(
         detect_fn=detect_fn, flow_fn=flow_fn)
     funscript = build_funscript(
         result.actions, duration_seconds=int(result.total_frames / result.fps))
-    save_funscript(funscript, output_path)
+    write_funscript(Path(output_path), funscript)
     return result.actions
 
 

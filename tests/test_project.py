@@ -11,6 +11,8 @@ import numpy as np
 
 from scripture.motion_tracker import AxisDefinition, TrackingResult
 from scripture.project import (
+    PROJECT_FORMAT_VERSION,
+    VIDEO_PATH_FIELD,
     ProjectDocument,
     document_from_state,
     load_project,
@@ -126,3 +128,22 @@ class TestDocumentSchema:
 
         assert restored.axes == {} and restored.labels == {}
         assert restored.auto is None and restored.current_frame == 0
+
+
+class TestTheShapeAnotherAppRewrites:
+    """Evolver globs this app's sessions folder, reads the video each project
+    was cut against and writes the file back whole -- so the field name and the
+    version are its contract, not this app's private business.  Renaming either
+    without the other side is what this holds."""
+
+    def _document(self):
+        return ProjectDocument(video_path="C:/videos/example clip.mp4", splits=[])
+
+    def test_a_saved_project_says_which_shape_it_is(self):
+        assert state_from_document(self._document())["version"] == PROJECT_FORMAT_VERSION
+
+    def test_the_video_is_recorded_at_the_top_level_under_its_declared_name(self):
+        state = state_from_document(self._document())
+
+        assert state[VIDEO_PATH_FIELD] == "C:/videos/example clip.mp4"
+        assert VIDEO_PATH_FIELD == "video_path"

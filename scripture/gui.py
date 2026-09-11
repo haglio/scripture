@@ -8,6 +8,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import qtawesome as qta
+from app_support.funscript import write as write_funscript
 from app_support.overlay import overlay_value
 from PyQt6.QtCore import QPointF, QSize, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import (
@@ -54,7 +55,7 @@ from shared_ui.spacing import BUTTON_ICON, GAP_MEDIUM, MARGIN_STANDARD
 from content import LOCAL_CONTENT, load_content
 from scripture.auto_funscript import run_pipeline
 from scripture.cycle_extract import extract_cycles
-from scripture.funscript import build_funscript, save_funscript
+from scripture.funscript import build_funscript
 from scripture.motion_tracker import AxisDefinition, track_motion
 from scripture.project import (
     ProjectDocument,
@@ -1956,7 +1957,7 @@ class App(QMainWindow):
         dn = Path(self.video_path).stem + ".funscript" if self.video_path else "output.funscript"
         path, _ = QFileDialog.getSaveFileName(self, "Export", dn, "Funscript (*.funscript);;All (*)")
         if path:
-            save_funscript(fs, path)
+            write_funscript(Path(path), fs)
             self._set_status(f"Exported {len(all_a)} actions to {Path(path).name}")
 
     # ── Close guard ────────────────────────────────────────────────

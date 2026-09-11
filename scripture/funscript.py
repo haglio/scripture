@@ -1,35 +1,17 @@
-"""Funscript JSON generation."""
+"""This app's name on the funscripts it writes.
+
+What a funscript document *is* -- its keys, the metadata block an outside
+player reads, the order the actions go in -- belongs to every app in this
+family that reads or writes one, and lives in :mod:`app_support.funscript`.
+All that is this app's is the credit on the scripts it authors.
+"""
 from __future__ import annotations
 
-import json
+from app_support.funscript import document
+
+CREATOR = "scripture"
 
 
 def build_funscript(actions: list[dict], duration_seconds: int) -> dict:
-    """Build a complete funscript dict from a list of actions."""
-    return {
-        "actions": sorted(actions, key=lambda a: a["at"]),
-        "inverted": False,
-        "metadata": {
-            "bookmarks": [],
-            "chapters": [],
-            "creator": "scripture",
-            "description": "",
-            "duration": duration_seconds,
-            "license": "",
-            "notes": "",
-            "performers": [],
-            "script_url": "",
-            "tags": [],
-            "title": "",
-            "type": "basic",
-            "video_url": "",
-        },
-        "range": 100,
-        "version": "1.0",
-    }
-
-
-def save_funscript(funscript: dict, output_path: str) -> None:
-    """Write funscript dict to a JSON file."""
-    with open(output_path, "w") as f:
-        json.dump(funscript, f, indent=2)
+    """The family's funscript document over *actions*, credited to this app."""
+    return document(actions, duration_seconds=duration_seconds, creator=CREATOR)
