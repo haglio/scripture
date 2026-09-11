@@ -3,8 +3,14 @@
 The schema used to live inside the Qt window -- the key names, the `str()`-keyed
 scene indices, the tuple/list coercions, the numpy round trip -- which is the
 least reachable file in the repo for a format another program opens: evolver
-globs the sessions directory, reads the top-level `video_path` and writes the
+globs the sessions directory, reads the top-level video path and writes the
 file back whole.
+
+That makes the shape a contract rather than an implementation detail, so it
+says which shape it is.  Evolver rewrites only a version it was written for
+and leaves anything else alone, which is what turns a rename here into a
+refusal there instead of a silent mangling; `tests/test_project.py` holds both
+the version and the field name against this module.
 """
 
 from __future__ import annotations
@@ -22,6 +28,14 @@ from scripture.auto_funscript import (
 from scripture.motion_tracker import AxisDefinition, TrackingResult
 
 Label = dict[str, object]
+
+#: Which shape a saved project is.  A file written before this key existed is
+#: the first, and reads as one.
+PROJECT_FORMAT_VERSION = 1
+
+#: Where the video this project was cut against is recorded.  Evolver moves
+#: videos and repoints this in place, so the name is a contract with it.
+VIDEO_PATH_FIELD = "video_path"
 
 
 @dataclass
@@ -41,7 +55,8 @@ class ProjectDocument:
 def state_from_document(document: ProjectDocument) -> dict:
     """The document as the plain JSON object that reaches the file."""
     return {
-        "video_path": document.video_path,
+        "version": PROJECT_FORMAT_VERSION,
+        VIDEO_PATH_FIELD: document.video_path,
         "splits": document.splits,
         "axes": {str(i): {"tip": list(a.tip), "base": list(a.base), "frame": a.frame}
                  for i, a in document.axes.items()},
@@ -59,7 +74,7 @@ def document_from_state(state: dict) -> ProjectDocument:
     """The document a saved state describes, tolerating what older ones omit."""
     auto = state.get("auto")
     return ProjectDocument(
-        video_path=state["video_path"],
+        video_path=state[VIDEO_PATH_FIELD],
         splits=state["splits"],
         axes={int(k): AxisDefinition(tip=tuple(v["tip"]), base=tuple(v["base"]),
                                      frame=v.get("frame", 0))

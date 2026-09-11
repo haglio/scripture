@@ -16,7 +16,7 @@ import numpy as np
 
 from scripture import gui
 from scripture.motion_tracker import AxisDefinition, TrackingResult
-from scripture.project import save_project
+from scripture.project import PROJECT_FORMAT_VERSION, save_project
 from tests.gui_doubles import Capture
 
 _LABEL = {"tip": (40, 30), "base": (40, 150), "contact": (40, 90), "is_action": True}
@@ -63,7 +63,7 @@ def test_a_saved_project_holds_exactly_these_top_level_keys(window, tmp_path):
 
     assert sorted(state) == [
         "actions", "auto", "axes", "current_frame", "ground_truth",
-        "splits", "tracking", "video_path",
+        "splits", "tracking", "version", "video_path",
     ]
 
 
@@ -73,6 +73,17 @@ def test_the_video_path_another_repo_rewrites_is_a_top_level_string(window, tmp_
     state = _populated(window, video)._build_state()
 
     assert state["video_path"] == str(video)
+
+
+def test_a_saved_project_says_which_shape_the_repo_that_rewrites_it_is_reading(
+    window, tmp_path
+):
+    """Evolver writes this file back whole.  Without a version it had to assume
+    the shape, so a change here would have reached it as a wrong rewrite rather
+    than as a refusal."""
+    state = _populated(window, tmp_path / "example clip.mp4")._build_state()
+
+    assert state["version"] == PROJECT_FORMAT_VERSION
 
 
 def test_the_scene_indices_are_strings_so_the_file_is_plain_json(window, tmp_path):
