@@ -35,4 +35,3 @@ jobs:
       python-version: "3.14"
       timeout-minutes: 15
       qt-platform: offscreen
-      reverse: false

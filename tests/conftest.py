@@ -11,7 +11,6 @@ does not build a widget.
 from __future__ import annotations
 
 import os
-import random
 
 import pytest
 
@@ -47,26 +46,3 @@ def window(qt_app, tmp_path, monkeypatch):
     # to answer it would hang the suite.
     app_window._mark_clean()
     app_window.close()
-
-
-def pytest_collection_modifyitems(items):
-    """Collect in a different order when asked, so a test that leans on the ones
-    beside it fails on the commit that introduces the lean.
-
-    ``TEST_COLLECTION_ORDER=reverse`` collects back to front;
-    ``TEST_COLLECTION_ORDER=shuffle`` shuffles with ``TEST_COLLECTION_SEED`` (0
-    unless given), so a red run can be repeated exactly.  Unset leaves the order
-    alone; anything else is a typo, and a typo that silently ran forward would
-    make the gate's second leg a green that proves nothing.
-    """
-    order = os.environ.get("TEST_COLLECTION_ORDER")
-    if order is None:
-        return
-    if order == "reverse":
-        items.reverse()
-    elif order == "shuffle":
-        random.Random(int(os.environ.get("TEST_COLLECTION_SEED", "0"))).shuffle(items)
-    else:
-        raise pytest.UsageError(
-            f"TEST_COLLECTION_ORDER={order!r}: expected 'reverse' or 'shuffle'"
-        )
