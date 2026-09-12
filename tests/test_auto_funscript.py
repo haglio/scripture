@@ -31,6 +31,7 @@ from scripture.auto_funscript import (
     track_flow_signal,
     weighted_flow,
 )
+from tests.stamps import A_STAMP
 from tests.videos import a_flat_video
 
 # The class vocabulary is private; take it from whichever overlay is loaded.
@@ -458,18 +459,15 @@ class TestPipelineResultSerialization:
         assert restored.start_frame == 100 and restored.total_frames == 500
 
     def test_what_made_the_result_comes_back_with_it(self):
-        made = {"schema": 1, "app": "scripture", "app_commit": None, "app_dirty": None,
-                "recipe": "roi_flow", "recipe_version": "1",
-                "stamped_at": "2026-01-01T00:00:00+00:00"}
         original = PipelineResult(
             signal=TrackSignal(dy=np.array([0.0]), lock=["none"], rois=[None]),
             positions=np.array([50.0]), actions=[], fps=30.0, start_frame=0, total_frames=1,
-            provenance=made)
+            provenance=A_STAMP)
 
         restored = pipeline_result_from_state(
             json.loads(json.dumps(pipeline_result_to_state(original))))
 
-        assert restored.provenance == made
+        assert restored.provenance == A_STAMP
 
     def test_a_project_saved_before_the_field_was_renamed_still_loads(self):
         """A saved detection's rect used to sit under a different key.

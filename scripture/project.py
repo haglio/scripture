@@ -90,6 +90,19 @@ def document_from_state(state: dict) -> ProjectDocument:
     )
 
 
+def provenance_of_actions(document: ProjectDocument) -> dict | None:
+    auto = document.auto.provenance if document.auto else None
+    stamps = [document.tracking[scene].provenance if scene in document.tracking else auto
+              for scene in document.actions]
+    if document.auto:
+        stamps.append(auto)
+    if None in stamps:
+        return None
+    first, *rest = stamps
+    return {key: value if all(stamp[key] == value for stamp in rest) else None
+            for key, value in first.items()}
+
+
 def _tracking_state(result: TrackingResult) -> dict:
     entry = {
         "timestamps_ms": result.timestamps_ms.tolist(),

@@ -615,8 +615,8 @@ def generate_funscript(
         end_frame=end_frame, config=config, on_frame=on_frame,
         detect_fn=detect_fn, flow_fn=flow_fn)
     funscript = build_funscript(
-        result.actions, duration_seconds=int(result.total_frames / result.fps))
-    funscript["provenance"] = result.provenance
+        result.actions, duration_seconds=int(result.total_frames / result.fps),
+        provenance=result.provenance)
     write_funscript(Path(output_path), funscript)
     return result.actions
 
