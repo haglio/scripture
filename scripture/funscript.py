@@ -14,9 +14,11 @@ from app_support.funscript import document
 CREATOR = "scripture"
 
 
-def build_funscript(actions: list[dict], duration_seconds: int) -> dict:
-    """The family's funscript document over *actions*, credited to this app."""
-    return document(actions, duration_seconds=duration_seconds, creator=CREATOR)
+def build_funscript(actions: list[dict], duration_seconds: int, *, provenance: dict | None) -> dict:
+    """The family's funscript document over *actions*, credited to this app, and
+    what made them."""
+    return document(actions, duration_seconds=duration_seconds, creator=CREATOR) | {
+        "provenance": provenance}
 
 
 def made_by(recipe: str, recipe_version: str) -> dict:

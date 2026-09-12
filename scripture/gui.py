@@ -61,6 +61,7 @@ from scripture.project import (
     ProjectDocument,
     document_from_state,
     load_project,
+    provenance_of_actions,
     save_project,
     state_from_document,
 )
@@ -1953,7 +1954,8 @@ class App(QMainWindow):
         all_a = []
         for a in self.scene_actions.values():
             all_a.extend(a)
-        fs = build_funscript(all_a, int(self.total_frames / self.fps))
+        fs = build_funscript(all_a, int(self.total_frames / self.fps),
+                             provenance=provenance_of_actions(self._document()))
         dn = Path(self.video_path).stem + ".funscript" if self.video_path else "output.funscript"
         path, _ = QFileDialog.getSaveFileName(self, "Export", dn, "Funscript (*.funscript);;All (*)")
         if path:
