@@ -1,6 +1,7 @@
 """Tests for the automatic YOLO+flow funscript pipeline."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -8,7 +9,9 @@ import pytest
 
 from scripture.auto_funscript import (
     ANCHOR_CLASSES,
+    RECIPE_VERSION,
     Detection,
+    PipelineResult,
     TrackConfig,
     TrackSignal,
     anti_plateau_normalize,
@@ -28,23 +31,10 @@ from scripture.auto_funscript import (
     track_flow_signal,
     weighted_flow,
 )
+from tests.videos import a_flat_video
 
 # The class vocabulary is private; take it from whichever overlay is loaded.
 ANCHOR, ANCHOR_TIP = ANCHOR_CLASSES[0], ANCHOR_CLASSES[1]
-
-
-def _a_flat_video(path, frames=30, size=(160, 120)):
-    """A short clip of one unchanging textured frame, written to `path`."""
-    import cv2
-
-    writer = cv2.VideoWriter(
-        str(path), cv2.VideoWriter_fourcc(*"mp4v"), 30.0, size)
-    frame = np.random.default_rng(3).integers(
-        0, 255, (size[1], size[0], 3)).astype(np.uint8)
-    for _ in range(frames):
-        writer.write(frame)
-    writer.release()
-    return str(path)
 
 
 def _flow_of(dy):
@@ -377,7 +367,7 @@ class TestSignalToActions:
 
 class TestRunPipeline:
     def test_processes_video_file_with_injected_stages(self, tmp_path):
-        video_path = _a_flat_video(tmp_path / "example clip.mp4")
+        video_path = a_flat_video(tmp_path / "example clip.mp4")
         dets = [Detection(ANCHOR, 0.9, (40, 30, 40, 60))]
 
         progress = []
@@ -392,15 +382,23 @@ class TestRunPipeline:
         assert isinstance(result.actions, list)
         assert progress == list(range(30))
 
+    def test_the_result_says_which_tracker_made_it_and_at_which_version(self, tmp_path):
+        video_path = a_flat_video(tmp_path / "example clip.mp4")
+
+        result = run_pipeline(video_path, detect_fn=lambda _frame: [], flow_fn=_flow_of(0.0))
+
+        made = result.provenance
+        assert (made["app"], made["recipe"]) == ("scripture", "roi_flow")
+        assert made["recipe_version"] == RECIPE_VERSION
+
 
 class TestGenerateFunscript:
     def test_a_video_becomes_a_funscript_file_with_injected_stages(self, tmp_path):
         """The whole headless composition -- video in, file out. Nothing had
         run it end to end, because the stages could not be injected past
         run_pipeline."""
-        import json
 
-        video_path = _a_flat_video(tmp_path / "example clip.mp4")
+        video_path = a_flat_video(tmp_path / "example clip.mp4")
         output_path = str(tmp_path / "example clip.funscript")
 
         actions = generate_funscript(
@@ -412,13 +410,20 @@ class TestGenerateFunscript:
         assert written["metadata"]["creator"] == "scripture"
         assert written["actions"] == sorted(actions, key=lambda a: a["at"])
 
+    def test_the_file_says_which_tracker_made_it_outside_the_block_players_read(self, tmp_path):
+        video_path = a_flat_video(tmp_path / "example clip.mp4")
+        output_path = tmp_path / "example clip.funscript"
+
+        generate_funscript(
+            video_path, str(output_path), detect_fn=lambda _frame: [], flow_fn=_flow_of(0.0))
+
+        written = json.loads(output_path.read_text(encoding="utf-8"))
+        assert written["provenance"]["recipe"] == "roi_flow"
+        assert "provenance" not in written["metadata"]
+
 
 class TestPipelineResultSerialization:
     def test_json_round_trip(self):
-        import json
-
-        from scripture.auto_funscript import PipelineResult
-
         signal = TrackSignal(
             dy=np.array([0.0, 1.5, -2.0]),
             lock=["anchor", "contact", "none"],
@@ -451,6 +456,20 @@ class TestPipelineResultSerialization:
         assert restored.actions == original.actions
         assert restored.fps == pytest.approx(29.97)
         assert restored.start_frame == 100 and restored.total_frames == 500
+
+    def test_what_made_the_result_comes_back_with_it(self):
+        made = {"schema": 1, "app": "scripture", "app_commit": None, "app_dirty": None,
+                "recipe": "roi_flow", "recipe_version": "1",
+                "stamped_at": "2026-01-01T00:00:00+00:00"}
+        original = PipelineResult(
+            signal=TrackSignal(dy=np.array([0.0]), lock=["none"], rois=[None]),
+            positions=np.array([50.0]), actions=[], fps=30.0, start_frame=0, total_frames=1,
+            provenance=made)
+
+        restored = pipeline_result_from_state(
+            json.loads(json.dumps(pipeline_result_to_state(original))))
+
+        assert restored.provenance == made
 
     def test_a_project_saved_before_the_field_was_renamed_still_loads(self):
         """A saved detection's rect used to sit under a different key.

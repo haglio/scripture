@@ -20,6 +20,10 @@ from scripture.project import (
     state_from_document,
 )
 
+_STAMP = {"schema": 1, "app": "scripture", "app_commit": "0123456789abcdef0123456789abcdef01234567",
+          "app_dirty": False, "recipe": "axis_tracking", "recipe_version": "1",
+          "stamped_at": "2026-01-01T00:00:00+00:00"}
+
 
 class TestProjectPersistence:
 
@@ -113,6 +117,22 @@ class TestDocumentSchema:
 
         np.testing.assert_allclose(restored.tracking[0].positions, [0.5, 0.9])
         np.testing.assert_allclose(restored.tracking[0].tip_coords, [[40, 30], [41, 31]])
+
+    def test_what_tracked_a_scene_comes_back_with_its_tracking(self):
+        document = self._document()
+        document.tracking[0] = TrackingResult(
+            timestamps_ms=np.array([0.0]), positions=np.array([0.5]), provenance=_STAMP)
+
+        restored = self._through_json(document)
+
+        assert restored.tracking[0].provenance == _STAMP
+
+    def test_a_scene_tracked_before_the_stamp_existed_opens_unstamped(self):
+        restored = document_from_state({
+            "video_path": "C:/videos/example clip.mp4", "splits": [],
+            "tracking": {"0": {"timestamps_ms": [0.0], "positions": [0.5]}}})
+
+        assert restored.tracking[0].provenance is None
 
     def test_a_label_comes_back_with_its_points_as_pairs(self):
         restored = self._through_json(self._document())

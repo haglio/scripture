@@ -94,6 +94,7 @@ def _tracking_state(result: TrackingResult) -> dict:
     entry = {
         "timestamps_ms": result.timestamps_ms.tolist(),
         "positions": result.positions.tolist(),
+        "provenance": result.provenance,
     }
     if result.tip_coords is not None:
         entry["tip_coords"] = result.tip_coords.tolist()
@@ -108,6 +109,7 @@ def _tracking_from_state(entry: dict) -> TrackingResult:
         positions=np.array(entry["positions"]),
         tip_coords=np.array(entry["tip_coords"]) if "tip_coords" in entry else None,
         base_coords=np.array(entry["base_coords"]) if "base_coords" in entry else None,
+        provenance=entry.get("provenance"),
     )
 
 

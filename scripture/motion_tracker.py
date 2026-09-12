@@ -7,6 +7,11 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
+from scripture.funscript import made_by
+
+RECIPE = "axis_tracking"
+RECIPE_VERSION = "1"
+
 
 @dataclass
 class AxisDefinition:
@@ -21,6 +26,7 @@ class TrackingResult:
     positions: np.ndarray  # 0.0 (base) to 1.0 (tip)
     tip_coords: np.ndarray | None = None   # (N, 2) per-frame [x, y]
     base_coords: np.ndarray | None = None  # (N, 2) per-frame [x, y]
+    provenance: dict | None = None
 
 
 def track_motion(video_path: str, axis: AxisDefinition,
@@ -90,4 +96,5 @@ def track_motion(video_path: str, axis: AxisDefinition,
         positions=positions,
         tip_coords=tip_coords,
         base_coords=base_coords,
+        provenance=made_by(RECIPE, RECIPE_VERSION),
     )

@@ -24,6 +24,10 @@ from app_support.funscript import write as write_funscript
 from app_support.overlay import overlay_value
 
 from content import LOCAL_CONTENT, load_content
+from scripture.funscript import build_funscript, made_by
+
+RECIPE = "roi_flow"
+RECIPE_VERSION = "1"
 
 _CONTENT = load_content()
 
@@ -477,6 +481,7 @@ class PipelineResult:
     fps: float
     start_frame: int
     total_frames: int
+    provenance: dict | None = None
 
 
 def run_pipeline(
@@ -517,6 +522,7 @@ def run_pipeline(
         fps=fps,
         start_frame=start_frame,
         total_frames=total_frames,
+        provenance=made_by(RECIPE, RECIPE_VERSION),
     )
 
 
@@ -542,6 +548,7 @@ def pipeline_result_to_state(result: PipelineResult) -> dict:
         "fps": result.fps,
         "start_frame": result.start_frame,
         "total_frames": result.total_frames,
+        "provenance": result.provenance,
     }
 
 
@@ -587,6 +594,7 @@ def pipeline_result_from_state(state: dict) -> PipelineResult:
         fps=state["fps"],
         start_frame=state["start_frame"],
         total_frames=state["total_frames"],
+        provenance=state.get("provenance"),
     )
 
 
@@ -602,14 +610,13 @@ def generate_funscript(
     flow_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None,
 ) -> list[dict]:
     """Video in, funscript out.  Returns the action list it wrote."""
-    from scripture.funscript import build_funscript
-
     result = run_pipeline(
         video_path, model_path=model_path, start_frame=start_frame,
         end_frame=end_frame, config=config, on_frame=on_frame,
         detect_fn=detect_fn, flow_fn=flow_fn)
     funscript = build_funscript(
         result.actions, duration_seconds=int(result.total_frames / result.fps))
+    funscript["provenance"] = result.provenance
     write_funscript(Path(output_path), funscript)
     return result.actions
 

@@ -103,7 +103,7 @@ def test_each_scene_entry_carries_the_keys_the_loader_reads(window, tmp_path):
 
     assert sorted(state["axes"]["0"]) == ["base", "frame", "tip"]
     assert sorted(state["tracking"]["0"]) == [
-        "base_coords", "positions", "timestamps_ms", "tip_coords"]
+        "base_coords", "positions", "provenance", "timestamps_ms", "tip_coords"]
     assert sorted(state["ground_truth"]["1"]["800"]) == [
         "base", "contact", "is_action", "tip"]
 
