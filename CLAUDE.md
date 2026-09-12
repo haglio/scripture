@@ -57,6 +57,26 @@ already uses. The near miss that still counts: taking a real filename and
 changing a character or two — it is still that clip, still that performer. Make
 it up from scratch, don't lightly edit a real one.
 
+## A change to what a tracker makes bumps its `RECIPE_VERSION`
+
+Everything this app's trackers produce is stamped with the tracker that made it
+and that tracker's version — `RECIPE` and `RECIPE_VERSION` at the top of
+`scripture/motion_tracker.py` (the marked-axis tracker; `cotracker_tracking.py`
+is the half of it that module calls) and of `scripture/auto_funscript.py` (the
+automatic detector-and-flow pass). Both hand their positions to
+`cycle_extract.py`, so a change there changes both. A later sweep finds what an
+older version made by that number and remakes it, so a change to the actions
+that goes out without a bump leaves every file it should have caught looking
+current — the one failure the stamp exists to prevent, and nothing in the suite
+can see it.
+
+So the commit that changes what a tracker outputs bumps its `RECIPE_VERSION`; a
+refactor that leaves the actions identical does not. The near miss that still
+counts: new weights for the model a tracker loads — a different detector in the
+content overlay — change the actions without touching a line of the tracker,
+and owe the bump all the same. `RECIPE` itself never changes: files on disk
+already say it.
+
 ## Landing — GitHub merge queue, not local ff-merge
 
 This repo is public at `github.com/haglio/scripture` with a merge-queue ruleset on
