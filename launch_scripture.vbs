@@ -1,86 +1,115 @@
-' Option Explicit is load-bearing, not tidiness.  A sanitize pass renamed the
-' WScript.Shell object and missed one call site, leaving `wshShell` undeclared.
-' Without Option Explicit VBScript treats an undeclared name as an empty
-' Variant, so the call raised "Object required" at run time -- before the first
-' AppendLog -- and the icon did nothing at all: no window, no log line, no
-' error.  Declared up front, that same slip is a compile error instead.
+' Rendered from [tool.haglio.launchers."launch_scripture.vbs"] in pyproject.toml.
+' Change the spec, then run  python -m app_support.launcher --write  in this
+' folder: the suite fails on a launcher that differs from its spec.
+
 Option Explicit
 
-Dim fso, shell, projectRoot, sessionsDir, launcherLog
-Dim pythonExe, cmd, dryRun
+Dim fso, shell, root, app, interpreter, directory, arguments, logPath
 
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
+root = fso.GetParentFolderName(WScript.ScriptFullName)
+Decide
+If shell.Environment("Process").Item("HAGLIO_LAUNCHER_DRY_RUN") = "1" Then
+  Report
+Else
+  Launch
+End If
 
-projectRoot = fso.GetParentFolderName(WScript.ScriptFullName)
-sessionsDir = projectRoot & "\sessions"
-If Not fso.FolderExists(sessionsDir) Then fso.CreateFolder(sessionsDir)
-launcherLog = sessionsDir & "\scripture_launcher.log"
-
-' Dry run comes from the environment, not from an argument, so that a test runs
-' this file with the *same* argument list the shortcut passes -- which is none
-' at all.  Reading an argument to decide was itself a bug: VBScript's And does
-' not short-circuit, so `Arguments.Count > 0 And Arguments(0) = ...` evaluated
-' Arguments(0) even when there were none and died with "Subscript out of range"
-' on every real launch, while the test that passed an argument stayed green.
-dryRun = (shell.ExpandEnvironmentStrings("%SCRIPTURE_LAUNCHER_DRY_RUN%") = "1")
-
-Function Quote(s)
-  Quote = Chr(34) & s & Chr(34)
-End Function
-
-Sub AppendLog(msg)
-  On Error Resume Next
-  Dim ts
-  Set ts = fso.OpenTextFile(launcherLog, 8, True)
-  ts.WriteLine Now & " " & msg
-  ts.Close
+Sub Decide()
+  app = "Scripture"
+  logPath = fso.BuildPath(root, "sessions\scripture_launcher.log")
+  arguments = "-m scripture"
+  interpreter = fso.BuildPath(root, ".venv\Scripts\python.exe")
+  If fso.FileExists(fso.BuildPath(root, ".venv\Scripts\Scripture-Scripture.exe")) Then interpreter = fso.BuildPath(root, ".venv\Scripts\Scripture-Scripture.exe")
+  directory = root
 End Sub
 
-' Scripture runs on the project venv and nothing else -- no conda, no PATH
-' search.  This file used to prefer %USERPROFILE%\miniconda3\python.exe because
-' that interpreter had a CUDA build of torch and the venv's was CPU-only, which
-' cotracker_tracking.py cannot use: it pins every tensor to "cuda" with no
-' fallback.  That made Scripture the only app here launching on an interpreter
-' the suite never runs and the repo never declares -- and the torch it picked up
-' was not even conda's, but a per-user site-packages copy shared with every
-' other Python on the machine.  The venv now carries the CUDA build itself (see
-' CLAUDE.md), so the interpreter that runs the tests is the interpreter that
-' runs the app.
-'
-' Falling back to a PATH python is not a lesser launch, it is a broken one: it
-' has neither torch nor shared_ui, and it would die while importing, before any
-' window and before any log line.  So there is no fallback.
+Sub Report()
+  WScript.Echo "app: " & app
+  WScript.Echo "interpreter: " & interpreter
+  WScript.Echo "directory: " & directory
+  WScript.Echo "arguments: " & arguments
+  WScript.Echo "log: " & logPath
+  WScript.Echo "command: " & Command()
+End Sub
 
-' The copy a previous run left named for this app, ahead of the plain venv
-' interpreter.  Windows identifies a process by the file it was started from, so
-' a bare interpreter arrives as one more anonymous "Python" among every other
-' Python app on the machine; app_support.process_identity makes a copy that says
-' Scripture instead, and each run makes it for the run after.
-pythonExe = projectRoot & "\.venv\Scripts\python.exe"
-If fso.FileExists(projectRoot & "\.venv\Scripts\Scripture-Scripture.exe") Then
-  pythonExe = projectRoot & "\.venv\Scripts\Scripture-Scripture.exe"
-End If
+Sub Launch()
+  If Not fso.FileExists(interpreter) Then
+    Refuse app & "'s virtual environment is missing:" & vbCrLf & interpreter, vbCritical
+  End If
+  logPath = FreeLog(logPath)
+  Note logPath, "===== " & Now & " launch: " & Command()
+  shell.Run Command(), 0, False
+End Sub
 
-' No PYTHONPATH.  The venv resolves shared_ui through the editable install's
-' .pth, the working directory below resolves the top-level `content` module and
-' this checkout's own `scripture` package, and that is the whole path story.
-cmd = "cmd /c cd /d " & Quote(projectRoot) & " && " & Quote(pythonExe) & " -m scripture 1>>" & Quote(launcherLog) & " 2>&1"
+Function Command()
+  Command = "cmd /c cd /d " & Quote(directory) & " && " & Quote(interpreter) & " " & arguments & " >> " & Quote(logPath) & " 2>&1"
+End Function
 
-AppendLog "INFO: Launching with command: " & cmd
+Function Quote(text)
+  Quote = Chr(34) & text & Chr(34)
+End Function
 
-' The dry run reports the command it resolved and stops, without requiring the
-' venv to be there: it is a check on what this file decides, and it has to work
-' in CI, where the suite runs on a plain checkout that has no .venv at all.
-If dryRun Then
-  WScript.Echo "OK: " & cmd
-  WScript.Quit 0
-End If
+Sub Tell(message, icon)
+  If LCase(fso.GetFileName(WScript.FullName)) = "cscript.exe" Then
+    WScript.Echo "dialog: " & message
+  Else
+    MsgBox message, icon, app
+  End If
+End Sub
 
-If Not fso.FileExists(pythonExe) Then
-  AppendLog "ERROR: virtual environment missing: " & pythonExe
-  MsgBox "Scripture's virtual environment is missing:" & vbCrLf & pythonExe, vbCritical, "Scripture"
+Sub Refuse(message, icon)
+  Tell message, icon
   WScript.Quit 1
-End If
+End Sub
 
-shell.Run cmd, 0, False
+Function FreeLog(preferred)
+  Dim folder, candidate, index
+  folder = fso.GetParentFolderName(preferred)
+  If Not fso.FolderExists(folder) Then fso.CreateFolder folder
+  For index = 1 To 9
+    candidate = preferred
+    If index > 1 Then
+      candidate = fso.BuildPath(folder, fso.GetBaseName(preferred) & "-" & index & "." & fso.GetExtensionName(preferred))
+    End If
+    RollIfOversize candidate
+    If CanAppend(candidate) Then
+      FreeLog = candidate
+      Exit Function
+    End If
+  Next
+  FreeLog = preferred
+End Function
+
+Function CanAppend(path)
+  Dim stream
+  On Error Resume Next
+  Set stream = fso.OpenTextFile(path, 8, True)
+  CanAppend = (Err.Number = 0)
+  If CanAppend Then stream.Close
+  Err.Clear
+  On Error GoTo 0
+End Function
+
+Sub RollIfOversize(path)
+  On Error Resume Next
+  If fso.FileExists(path) Then
+    If fso.GetFile(path).Size > 1000000 Then
+      If fso.FileExists(path & ".1") Then fso.DeleteFile path & ".1"
+      fso.MoveFile path, path & ".1"
+    End If
+  End If
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
+Sub Note(path, line)
+  Dim stream
+  On Error Resume Next
+  Set stream = fso.OpenTextFile(path, 8, True)
+  stream.WriteLine line
+  stream.Close
+  Err.Clear
+  On Error GoTo 0
+End Sub

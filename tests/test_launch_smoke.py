@@ -22,8 +22,6 @@ which files the launch executes, and how its launcher starts an interpreter.
 from __future__ import annotations
 
 import os
-import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -35,6 +33,7 @@ from app_support.launch_smoke import (
     assert_the_walk_reached,
     launch_imports,
 )
+from app_support.launcher import dry_run
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "scripture"
@@ -52,9 +51,6 @@ LAUNCH_FILES = (
 # clean launch.
 _REACHED_ONLY_FROM_INSIDE_MAIN = ("scripture.gui", "PyQt6.QtWidgets")
 
-_INTERPRETER = re.compile(r"&& \"(?P<python>[^\"]+)\" -m " + PACKAGE)
-_WORKING_DIR = re.compile(r"cd /d \"(?P<cwd>[^\"]+)\"")
-
 
 def _launch_imports() -> list[str]:
     return launch_imports(PACKAGE, LAUNCH_FILES)
@@ -63,25 +59,6 @@ def _launch_imports() -> list[str]:
 # --------------------------------------------------------------------------
 # Where the launcher would run them
 # --------------------------------------------------------------------------
-
-def _launch_command() -> str:
-    """The command launch_scripture.vbs resolves, from the launcher itself.
-
-    Deriving it beats restating it: whatever the launcher decides is then what
-    gets tested, rather than a copy of its decisions kept here that can drift
-    from it without anything noticing.
-    """
-    result = subprocess.run(
-        ["cscript", "//nologo", str(LAUNCHER)],
-        capture_output=True,
-        text=True,
-        cwd=LAUNCHER.parent,
-        env={**os.environ, "SCRIPTURE_LAUNCHER_DRY_RUN": "1"},
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert result.stdout.startswith("OK: "), result.stdout + result.stderr
-    return result.stdout.strip()
-
 
 def _the_interpreter_that_will_run(named_by_the_launcher: str) -> str:
     """The launcher's interpreter where there is one, else the suite's own.
@@ -100,11 +77,9 @@ def _the_interpreter_that_will_run(named_by_the_launcher: str) -> str:
 
 
 def _run_the_launchs_way(statements: list[str]) -> subprocess.CompletedProcess:
-    command = _launch_command()
-    interpreter = _INTERPRETER.search(command)
-    assert interpreter, f"could not read the interpreter out of: {command}"
-    working_dir = _WORKING_DIR.search(command)
-    assert working_dir, f"the launcher names no working directory: {command}"
+    # Whatever the launcher decides is what gets replayed, asked of the launcher
+    # under the script host rather than restated here to drift from it.
+    report = dry_run(LAUNCHER)
 
     # No PYTHONPATH -- the launcher exports none, so neither does this. What the
     # shell handed pytest is exactly what the icon does not get.
@@ -122,8 +97,8 @@ def _run_the_launchs_way(statements: list[str]) -> subprocess.CompletedProcess:
         ]
     )
     return subprocess.run(
-        [_the_interpreter_that_will_run(interpreter["python"]), "-c", driver],
-        cwd=working_dir["cwd"],
+        [_the_interpreter_that_will_run(report.value("interpreter")), "-c", driver],
+        cwd=report.value("directory"),
         env=env,
         capture_output=True,
         text=True,
@@ -134,9 +109,7 @@ def _run_the_launchs_way(statements: list[str]) -> subprocess.CompletedProcess:
 # The tests
 # --------------------------------------------------------------------------
 
-runs_the_launcher = pytest.mark.skipif(
-    shutil.which("cscript") is None, reason="Windows Script Host only"
-)
+runs_the_launcher = pytest.mark.skipif(sys.platform != "win32", reason="the Windows script host")
 
 
 @runs_the_launcher
@@ -164,7 +137,4 @@ def test_a_launch_import_that_cannot_resolve_fails_here():
 def test_the_launcher_starts_the_app_in_this_checkout():
     """The working directory is what makes the top-level ``content`` module
     importable, and what keeps a sibling checkout from answering for this one."""
-    working_dir = _WORKING_DIR.search(_launch_command())
-
-    assert working_dir
-    assert Path(working_dir["cwd"]) == REPO_ROOT
+    assert Path(dry_run(LAUNCHER).value("directory")) == REPO_ROOT
