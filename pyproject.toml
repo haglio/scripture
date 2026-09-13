@@ -59,6 +59,14 @@ testpaths = ["tests"]
 [tool.haglio]
 siblings = ["app_support", "shared_ui"]
 
+# What launch_scripture.vbs, the file the pinned shortcut runs, starts. The
+# launcher is rendered from this by `python -m app_support.launcher --write`.
+[tool.haglio.launchers."launch_scripture.vbs"]
+app = "Scripture"
+run = "-m scripture"
+named-interpreter = "Scripture-Scripture.exe"
+log = 'sessions\scripture_launcher.log'
+
 [tool.setuptools.packages.find]
 include = ["scripture*"]
 namespaces = false
