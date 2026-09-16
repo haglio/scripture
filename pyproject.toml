@@ -10,9 +10,9 @@ build-backend = "setuptools.build_meta"
 name = "scripture"
 version = "0.1.0"
 description = "Semi-automated funscript generator from 2D video"
-# 3.12, not 3.10: every gate in the family runs 3.12 and nothing has ever
-# collected a suite on anything older, so >=3.10 was a promise no run backed.
-requires-python = ">=3.12"
+# The version every gate runs, and the one the family's machine runs: a floor
+# lower than what a run proves is a promise nothing backs.
+requires-python = ">=3.14"
 # Every requirement carries a ceiling now, floors unchanged. Without one each run
 # installs whatever PyPI served that morning: this repo's venv holds
 # opencv-python 4 and the gate was installing opencv-python 5, so the imaging
