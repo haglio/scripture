@@ -18,7 +18,14 @@ requires-python = ">=3.12"
 # opencv-python 4 and the gate was installing opencv-python 5, so the imaging
 # stack the tracker stands on was a different major version in CI than in
 # production. torchvision's next minor is the breaking unit for a 0.x.
+# The family repos this one runs are named at the tags it was built against
+# rather than left to be whatever checkouts sit beside it. Unpinned, a change
+# landing in one of them reached every consumer the same minute, and one whose
+# other half had not landed turned all of them red at once. Moving to a newer
+# one is this repo's own commit, with its own suite to answer for it.
 dependencies = [
+    "app-support @ git+https://github.com/haglio/app_support@v0.1.140",
+    "shared-ui @ git+https://github.com/haglio/shared_ui@v0.1.123",
     "opencv-python>=4.8,<5",
     "numpy>=1.24,<3",
     "scipy>=1.11,<2",
