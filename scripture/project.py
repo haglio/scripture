@@ -1,10 +1,10 @@
 """The `.scripture` project file: what it holds, and how it reads and writes.
 
-The schema used to live inside the Qt window -- the key names, the `str()`-keyed
-scene indices, the tuple/list coercions, the numpy round trip -- which is the
-least reachable file in the repo for a format another program opens: evolver
-globs the sessions directory, reads the top-level video path and writes the
-file back whole.
+Another program opens this format: evolver globs the sessions directory, reads
+the top-level video path and writes the file back whole.  So the shape -- the
+key names, the `str()`-keyed scene indices, the tuple/list coercions, the numpy
+round trip -- lives here rather than inside the Qt window, which is the least
+reachable file in the repo.
 
 That makes the shape a contract rather than an implementation detail, so it
 says which shape it is.  Evolver rewrites only a version it was written for
