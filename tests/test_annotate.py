@@ -8,7 +8,7 @@ def test_schedule_frames_strides_through_range():
     assert schedule_frames(100, 400, stride=100) == [100, 200, 300, 400]
 
 
-def test_next_scheduled_returns_first_unannotated_after_current():
+def test_the_next_frame_to_label_is_the_first_unlabelled_one_past_here():
     sched = [100, 200, 300, 400]
     assert next_scheduled(sched, annotated={200}, after=150) == 300
 
