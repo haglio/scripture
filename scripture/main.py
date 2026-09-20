@@ -37,10 +37,14 @@ def main():
     _set_windows_app_user_model_id()
     _name_this_process()
 
-    from PyQt6.QtWidgets import QApplication
-    from shared_ui.chrome import family_stylesheet
+    # Local: the window, and the toolkit under it, only when a window is wanted.
+    from PyQt6.QtWidgets import QApplication  # noqa: PLC0415
 
-    from scripture.gui import App
+    # Local: the window, and the toolkit under it, only when a window is wanted.
+    from shared_ui.chrome import family_stylesheet  # noqa: PLC0415
+
+    # Local: the window, and the toolkit under it, only when a window is wanted.
+    from scripture.gui import App  # noqa: PLC0415
 
     app = QApplication.instance() or QApplication(sys.argv)
     # On the application, not the window: the family's tooltip rule reaches a

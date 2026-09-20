@@ -5,7 +5,8 @@ import numpy as np
 
 def a_flat_video(path, frames=30, size=(160, 120)):
     """A short clip of one unchanging textured frame, written to `path`."""
-    import cv2
+    # Local: cv2 is a heavy import, and only a test that writes a video needs it.
+    import cv2  # noqa: PLC0415
 
     writer = cv2.VideoWriter(
         str(path), cv2.VideoWriter_fourcc(*"mp4v"), 30.0, size)

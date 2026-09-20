@@ -32,7 +32,8 @@ def remove_drift(positions: np.ndarray, cutoff_period_frames: int = 300) -> np.n
 def _adaptive_prominence(positions: np.ndarray, fps: float,
                          floor: float = 0.05) -> float:
     """Compute prominence threshold based on local signal variation."""
-    from scipy.ndimage import uniform_filter1d
+    # Local: scipy's filters are only wanted when a prominence has to be adapted.
+    from scipy.ndimage import uniform_filter1d  # noqa: PLC0415
     window = max(3, int(fps * 5))
     # Rolling IQR approximation: use std * 1.35 as IQR proxy
     local_mean = uniform_filter1d(positions.astype(np.float64), size=window, mode="nearest")

@@ -44,7 +44,8 @@ def track_motion(video_path: str, axis: AxisDefinition,
     Returns timestamps (ms), positions (0-1), and per-frame tip/base
     coordinates.
     """
-    from scripture.cotracker_tracking import (
+    # Local, and it has to be: cotracker_tracking imports this module, so a top-level import here would be a cycle.
+    from scripture.cotracker_tracking import (  # noqa: PLC0415
         cotrack_axis,
         find_contact_gradient,
         sample_axis_intensity,

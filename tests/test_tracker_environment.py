@@ -74,7 +74,8 @@ def test_the_tracker_still_pins_every_tensor_to_cuda():
 def test_torch_is_a_cuda_build():
     """The CPU wheel is what a plain ``pip install torch`` installs, and it is
     indistinguishable from the right one until the tracker runs."""
-    import torch
+    # Local: this file is collected on machines with no torch build to check.
+    import torch  # noqa: PLC0415
 
     assert torch.version.cuda is not None, (
         f"torch {torch.__version__} is the CPU build, so tracking will raise "
@@ -87,7 +88,8 @@ def test_torch_can_actually_reach_the_gpu():
     """A CUDA build alone is not enough -- one compiled against a newer CUDA
     than the installed driver supports imports fine and then finds no device,
     which fails in the same place, at the same time, for a different reason."""
-    import torch
+    # Local: this file is collected on machines with no torch build to check.
+    import torch  # noqa: PLC0415
 
     assert torch.cuda.is_available(), (
         f"torch {torch.__version__} is a CUDA build but sees no device -- most "
