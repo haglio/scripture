@@ -122,7 +122,7 @@ class TestWeightedFlow:
         assert dy == pytest.approx(5.0, abs=0.01)
         assert dx == pytest.approx(0.0, abs=0.01)
 
-    def test_no_motion_returns_zero(self):
+    def test_a_still_frame_registers_no_movement(self):
         flow = np.zeros((50, 50, 2), dtype=np.float32)
         dy, dx = weighted_flow(flow)
         assert dy == 0.0 and dx == 0.0
