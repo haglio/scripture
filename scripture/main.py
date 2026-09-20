@@ -7,7 +7,7 @@ from pathlib import Path
 from app_support.process_identity import ProcessNamer
 from app_support.win32 import set_app_user_model_id, stamp_pinned_shortcuts
 
-SCRIPTURE_APP_USER_MODEL_ID = "FunTime.Scripture"
+APP_USER_MODEL_ID = "FunTime.Scripture"
 _ICON = Path(__file__).resolve().parent.parent / "icon.ico"
 
 
@@ -21,8 +21,8 @@ def _set_windows_app_user_model_id() -> None:
     if sys.platform != "win32":
         return
     with contextlib.suppress(OSError):
-        set_app_user_model_id(SCRIPTURE_APP_USER_MODEL_ID)
-    stamp_pinned_shortcuts(SCRIPTURE_APP_USER_MODEL_ID, ["Scripture"])
+        set_app_user_model_id(APP_USER_MODEL_ID)
+    stamp_pinned_shortcuts(APP_USER_MODEL_ID, ["Scripture"])
 
 
 def _name_this_process() -> None:

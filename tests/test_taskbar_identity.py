@@ -16,8 +16,8 @@ def test_the_pin_is_stamped_with_the_identity_the_process_claims(monkeypatch):
 
     main._set_windows_app_user_model_id()
 
-    assert claimed == [main.SCRIPTURE_APP_USER_MODEL_ID]
-    assert stamped == [(main.SCRIPTURE_APP_USER_MODEL_ID, ("Scripture",))]
+    assert claimed == [main.APP_USER_MODEL_ID]
+    assert stamped == [(main.APP_USER_MODEL_ID, ("Scripture",))]
 
 
 def test_a_process_windows_refuses_an_identity_still_stamps_its_pin(monkeypatch):
@@ -33,4 +33,4 @@ def test_a_process_windows_refuses_an_identity_still_stamps_its_pin(monkeypatch)
 
     main._set_windows_app_user_model_id()
 
-    assert stamped == [main.SCRIPTURE_APP_USER_MODEL_ID]
+    assert stamped == [main.APP_USER_MODEL_ID]
