@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import bisect
 import time
+import traceback
 from pathlib import Path
 
 import cv2
@@ -125,7 +126,6 @@ class ProcessWorker(QThread):
                 actions = extract_cycles(result.positions, result.timestamps_ms, fps=self.fps)
                 self.scene_done.emit(idx, actions, result)
             except Exception as e:
-                import traceback
                 traceback.print_exc()
                 self.error.emit(idx, str(e))
         self.finished.emit()
@@ -147,7 +147,6 @@ class AutoProcessWorker(QThread):
                 self.video_path, on_frame=self.frame_progress.emit)
             self.done.emit(result)
         except Exception as e:
-            import traceback
             traceback.print_exc()
             self.error.emit(str(e))
 
@@ -900,7 +899,8 @@ class App(QMainWindow):
             return None
         # Compute pos from tip/base/contact
         if gt.get("contact") and gt.get("tip") and gt.get("base"):
-            from scripture.cotracker_tracking import compute_pos_from_points
+            # Local: cotracker_tracking brings torch and cv2 with it, which opening this window should not.
+            from scripture.cotracker_tracking import compute_pos_from_points  # noqa: PLC0415
             gt["pos"] = compute_pos_from_points(gt["base"], gt["tip"], gt["contact"])
         else:
             gt["pos"] = "—"
@@ -944,7 +944,8 @@ class App(QMainWindow):
     # ── Label session (sparse GT clicking) ─────────────────────────
 
     def _session_schedule(self):
-        from scripture.annotate import schedule_frames
+        # Local: the labelling helpers, only when a labelling session is run.
+        from scripture.annotate import schedule_frames  # noqa: PLC0415
 
         idx = self._current_scene_idx()
         if not self.scenes:
@@ -967,7 +968,8 @@ class App(QMainWindow):
 
     def _session_goto_next(self, after):
         """Make the next unlabeled scheduled frame past `after` the target."""
-        from scripture.annotate import next_scheduled
+        # Local: the labelling helpers, only when a labelling session is run.
+        from scripture.annotate import next_scheduled  # noqa: PLC0415
 
         if not self.label_session or not self.scenes:
             return

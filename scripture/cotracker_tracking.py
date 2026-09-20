@@ -13,7 +13,8 @@ _cotracker_model = None
 
 def _get_model():
     """Load CoTracker3 (cached after first call)."""
-    import torch
+    # Local: torch is seconds to import plus a GPU handshake.
+    import torch  # noqa: PLC0415
 
     global _cotracker_model
     if _cotracker_model is None:
@@ -31,14 +32,15 @@ def sanitize_positions(positions: np.ndarray, fps: float = 30.0) -> np.ndarray:
     - Enforces a maximum speed (full travel in no less than ~0.25s)
     - Clamps output to [0, 1]
     """
-    from scipy.signal import savgol_filter
+    # Local: scipy is a heavy import, and only this function asks for it.
+    from scipy.ndimage import median_filter  # noqa: PLC0415
+    from scipy.signal import savgol_filter  # noqa: PLC0415
 
     n = len(positions)
     if n < 5:
         return positions.copy()
 
     # 1. Median filter to kill single-frame spikes (non-linear, preserves edges)
-    from scipy.ndimage import median_filter
     cleaned = median_filter(positions, size=5, mode="nearest")
 
     # 2. Light Savitzky-Golay smoothing
@@ -72,7 +74,8 @@ def sample_axis_intensity(
     Returns (t_values, intensities) where t_values is [0, 1] parametric
     and intensities is the mean pixel value across the strip at each t.
     """
-    from scipy.ndimage import uniform_filter1d
+    # Local: scipy is a heavy import, and only this sampler asks for it.
+    from scipy.ndimage import uniform_filter1d  # noqa: PLC0415
 
     t_values = np.linspace(0, 1, n)
     intensities = np.zeros(n)
@@ -172,7 +175,8 @@ def _get_video_geometry(video_path: str, start_frame: int):
 def _read_chunk(video_path: str, start_frame: int, n_frames: int,
                 scaled_size: tuple[int, int]):
     """Read n_frames starting at start_frame, downscale, return GPU tensor."""
-    import torch
+    # Local: torch is seconds to import plus a GPU handshake.
+    import torch  # noqa: PLC0415
 
     new_h, new_w = scaled_size
     cap = cv2.VideoCapture(video_path)
@@ -193,7 +197,8 @@ def _read_chunk(video_path: str, start_frame: int, n_frames: int,
 
 def _track_chunk(model, video_chunk, queries):
     """Run CoTracker3 on a single chunk, return tracks and visibility on CPU."""
-    import torch
+    # Local: torch is seconds to import plus a GPU handshake.
+    import torch  # noqa: PLC0415
 
     with torch.no_grad():
         pred_tracks, pred_visibility = model(
@@ -228,7 +233,8 @@ def cotrack_axis(
 
     For long scenes, processes in chunks of _MAX_CHUNK_FRAMES.
     """
-    import torch
+    # Local: torch is seconds to import plus a GPU handshake.
+    import torch  # noqa: PLC0415
 
     model = _get_model()
     n_frames = end_frame - start_frame

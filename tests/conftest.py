@@ -25,7 +25,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 @pytest.fixture(scope="session")
 def qt_app():
     """The one QApplication a widget test needs, built when one asks for it."""
-    from PyQt6.QtWidgets import QApplication
+    # Local: the toolkit, only for the tests that use one.
+    from PyQt6.QtWidgets import QApplication  # noqa: PLC0415
 
     return QApplication.instance() or QApplication([])
 
@@ -37,7 +38,8 @@ def window(qt_app, tmp_path, monkeypatch):
     Left alone, `App.__init__` finishes by reopening whatever project the
     developer had open last -- reading their video off disk in a unit test.
     """
-    from scripture import gui
+    # Local: the window, and the toolkit under it, only for the tests that use one.
+    from scripture import gui  # noqa: PLC0415
 
     monkeypatch.setattr(gui, "_LAST_PROJECT_FILE", tmp_path / ".last_session")
     app_window = gui.App()

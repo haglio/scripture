@@ -153,7 +153,8 @@ def flow_to_position(
     For rhythmic motion a scaled velocity is itself a cycle wave, just
     phase-shifted, which is why this works.
     """
-    from scipy.ndimage import median_filter
+    # Local: scipy is a heavy import, and only this conversion asks for it.
+    from scipy.ndimage import median_filter  # noqa: PLC0415
 
     smoothed = median_filter(dy.astype(np.float64), size=median_window, mode="nearest")
     return np.clip(50.0 + gain * smoothed, 0.0, 100.0)
@@ -171,7 +172,8 @@ def anti_plateau_normalize(
     stays small instead of being blown up into fake cycles.  Offline we can
     center the window, avoiding the lag FunGen's causal version has.
     """
-    from numpy.lib.stride_tricks import sliding_window_view
+    # Local: numpy's stride tricks are only wanted by this one normalization.
+    from numpy.lib.stride_tricks import sliding_window_view  # noqa: PLC0415
 
     n = len(positions)
     if n < 2:
@@ -281,7 +283,8 @@ def signal_to_actions(
     start_frame: int = 0,
 ) -> list[dict]:
     """Turn the per-frame flow signal into funscript turnaround actions."""
-    from scripture.cycle_extract import extract_cycles
+    # Local: cycle_extract brings scipy with it, which importing this module should not.
+    from scripture.cycle_extract import extract_cycles  # noqa: PLC0415
 
     if not signal.roi_active.any():
         return []
@@ -318,7 +321,8 @@ def track_flow_signal(
     grayscale patches to a dense flow field.  Both are injected so the loop
     is testable without a GPU.
     """
-    import cv2
+    # Local: cv2 is a heavy import, and only a real track reaches here.
+    import cv2  # noqa: PLC0415
 
     dy_list: list[float] = []
     lock_log: list[str] = []
@@ -419,7 +423,8 @@ def track_flow_signal(
 
 def _read_frames(video_path: str, start_frame: int, end_frame: int | None):
     """Yield BGR frames from start_frame up to (exclusive) end_frame."""
-    import cv2
+    # Local: cv2 is a heavy import, and only a real read reaches here.
+    import cv2  # noqa: PLC0415
 
     cap = cv2.VideoCapture(video_path)
     if start_frame:
@@ -438,7 +443,8 @@ def _read_frames(video_path: str, start_frame: int, end_frame: int | None):
 
 def _make_yolo_detector(model_path: str, conf_threshold: float):
     """Wrap an ultralytics model as detect_fn(frame) -> list[Detection]."""
-    from ultralytics import YOLO
+    # Local: ultralytics pulls torch in with it, which is seconds and a GPU handshake.
+    from ultralytics import YOLO  # noqa: PLC0415
 
     model = YOLO(model_path, task="detect")
 
@@ -462,7 +468,8 @@ def _make_yolo_detector(model_path: str, conf_threshold: float):
 
 def _make_dis_flow():
     """Wrap OpenCV DIS optical flow as flow_fn(prev_gray, gray) -> flow."""
-    import cv2
+    # Local: cv2 is a heavy import, and only the flow tracker asks for one.
+    import cv2  # noqa: PLC0415
 
     dis = cv2.DISOpticalFlow.create(cv2.DISOPTICAL_FLOW_PRESET_ULTRAFAST)
 
@@ -495,7 +502,8 @@ def run_pipeline(
     flow_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None,
 ) -> PipelineResult:
     """Run the full pipeline in memory; detect_fn/flow_fn are injectable."""
-    import cv2
+    # Local: cv2 is a heavy import, and a caller that never runs the pipeline pays nothing.
+    import cv2  # noqa: PLC0415
 
     config = config or TrackConfig()
 
@@ -657,7 +665,8 @@ def main(argv: list[str] | None = None) -> int:
             msg += f"  {rate:.0f} fps"
             print(msg, end="", flush=True)
 
-    import cv2
+    # Local: cv2 is a heavy import and only the command line reaches this.
+    import cv2  # noqa: PLC0415
     cap = cv2.VideoCapture(args.video)
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
