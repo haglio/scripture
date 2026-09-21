@@ -16,6 +16,7 @@ from app_support.launcher import assert_launchers_match_their_specs, dry_run
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = REPO_ROOT / "launch_scripture.vbs"
+PREVIEW = REPO_ROOT / ("launch_preview" + "_branch.vbs")
 
 on_windows = pytest.mark.skipif(sys.platform != "win32", reason="the Windows script host")
 
@@ -42,3 +43,21 @@ def test_a_launch_that_dies_importing_leaves_its_traceback_in_the_sessions_folde
     report = dry_run(LAUNCHER)
 
     assert Path(report.value("log")) == REPO_ROOT / "sessions" / "scripture_launcher.log"
+
+
+def test_a_branch_can_be_tried_out_of_its_own_checkout():
+    """What the owner is handed to look at work before it lands -- the whole app,
+    not a slice of it. Without one there is nothing to look at but the diff."""
+    assert PREVIEW.is_file()
+
+
+@on_windows
+def test_the_preview_runs_this_checkout_on_the_primary_s_venv():
+    """A worktree has no venv of its own, and this app's needs the CUDA torch and
+    two editable siblings, so the preview borrows the primary checkout's."""
+    report = dry_run(PREVIEW)
+
+    assert Path(report.value("directory")) == REPO_ROOT
+    assert Path(report.value("interpreter")) == (
+        Path(report.value("primary")) / ".venv" / "Scripts" / "python.exe")
+    assert report.value("arguments") == "-m scripture"
