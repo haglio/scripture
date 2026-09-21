@@ -69,6 +69,7 @@ from scripture.project import (
     state_from_document,
 )
 from scripture.scene import Scene, actions_by_scene, scenes_from_splits
+from scripture.video import VideoSource
 
 # The chrome's own text color rather than a near-white of this app's own.
 _ICON_COLOR = TEXT_PRIMARY.name()
@@ -749,7 +750,7 @@ class App(QMainWindow):
             self.setWindowIcon(QIcon(str(_icon_path)))
 
         self.video_path = None
-        self.cap = None
+        self.video = None
         self.fps = 30.0
         self.total_frames = 0
         self.frame_w = self.frame_h = 0
@@ -1219,32 +1220,36 @@ class App(QMainWindow):
             self, "Open Video", "",
             "Video files (*.mp4 *.mkv *.avi *.webm *.mov);;All files (*)",
         )
-        if not path:
+        if not path or not self._load_video(path):
             return
-        self._load_video(path)
         self._reset_document()
         self.scenes = [Scene(0, self.total_frames)]
         self._mark_dirty()
         self._show_frame(0)
 
     def _load_video(self, path):
+        """Open a video and keep it, or say why not and keep the one in hand."""
+        source = VideoSource.opened(path)
+        if source is None:
+            QMessageBox.critical(self, "Video not found", f"Cannot open: {path}")
+            return False
+        if self.video is not None:
+            self.video.release()
+        self.video = source
         self.video_path = path
-        if self.cap:
-            self.cap.release()
-        self.cap = cv2.VideoCapture(path)
-        self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 30.0
-        self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        self.frame_w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self.frame_h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.fps = source.fps
+        self.total_frames = source.total_frames
+        self.frame_w = source.width
+        self.frame_h = source.height
+        return True
 
     # ── Frame display ──────────────────────────────────────────────
 
     def _show_frame(self, frame_idx):
-        if not self.cap:
+        if self.video is None:
             return
-        self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-        ret, frame = self.cap.read()
-        if not ret:
+        frame = self.video.frame_at(frame_idx)
+        if frame is None:
             return
         self.current_frame_idx = frame_idx
         idx = self._current_scene_idx()
@@ -1721,21 +1726,8 @@ class App(QMainWindow):
 
     def _do_load(self, path):
         document = document_from_state(load_project(path))
-        vp = document.video_path
-        cap = cv2.VideoCapture(vp)
-        if not cap.isOpened():
-            cap.release()
-            QMessageBox.critical(self, "Video not found", f"Cannot open: {vp}")
+        if not self._load_video(document.video_path):
             return
-
-        if self.cap:
-            self.cap.release()
-        self.cap = cap
-        self.video_path = vp
-        self.fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        self.total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        self.frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self.frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
         self._reset_document()
         self.splits = document.splits
