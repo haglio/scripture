@@ -7,6 +7,8 @@ from pathlib import Path
 from app_support.process_identity import ProcessNamer
 from app_support.win32 import set_app_user_model_id, stamp_pinned_shortcuts
 
+from scripture.tracker_environment import complaints
+
 APP_USER_MODEL_ID = "FunTime.Scripture"
 _ICON = Path(__file__).resolve().parent.parent / "icon.ico"
 
@@ -33,9 +35,22 @@ def _name_this_process() -> None:
     ProcessNamer("Scripture", icon=_ICON).name_this_process("Scripture", interpreter="python.exe")
 
 
+def _report_tracker_environment() -> None:
+    """Say on the way up when this machine's torch cannot run the tracker.
+
+    Here rather than in the suite: the merge gate installs the CPU wheel on
+    purpose and has no GPU, so a test of this could only ever skip there, while
+    the machine that tracks is the one that needs telling.  The launcher sends
+    this stream to sessions/scripture_launcher.log.
+    """
+    for said in complaints():
+        print(f"scripture: {said}", file=sys.stderr)
+
+
 def main():
     _set_windows_app_user_model_id()
     _name_this_process()
+    _report_tracker_environment()
 
     # Local: the window, and the toolkit under it, only when a window is wanted.
     from PyQt6.QtWidgets import QApplication  # noqa: PLC0415
