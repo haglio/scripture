@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from scripture import gui
 from scripture.project import save_project
+from scripture.video import VideoSource
 from tests.gui_doubles import Capture, Dialogs
 
 
@@ -22,14 +23,15 @@ def _project_naming(video, path):
 def test_a_project_whose_video_moved_leaves_the_open_one_playing(
         window, tmp_path, monkeypatch):
     playing = Capture()
-    window.cap = playing
+    window.video = VideoSource(playing)
+    kept = window.video
     dialogs = Dialogs()
     monkeypatch.setattr(gui, "QMessageBox", dialogs)
     project = _project_naming(tmp_path / "moved clip.mp4", tmp_path / "one.scripture")
 
     window._do_load(project)
 
-    assert window.cap is playing
+    assert window.video is kept
     assert not playing.released
     assert [title for title, _text in dialogs.shown] == ["Video not found"]
 
@@ -37,14 +39,14 @@ def test_a_project_whose_video_moved_leaves_the_open_one_playing(
 def test_a_project_that_opens_releases_the_capture_it_replaces(
         window, tmp_path, monkeypatch):
     replaced = Capture()
-    window.cap = replaced
+    window.video = VideoSource(replaced)
     opening = Capture()
     monkeypatch.setattr(gui.cv2, "VideoCapture", lambda _path: opening)
     project = _project_naming(tmp_path / "example clip.mp4", tmp_path / "two.scripture")
 
     window._do_load(project)
 
-    assert window.cap is opening
+    assert window.video.frame_at(0) is None  # the stand-in yields no frames
     assert replaced.released
 
 
