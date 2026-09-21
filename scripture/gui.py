@@ -1,7 +1,6 @@
 """PyQt6 GUI for scripture: manual scene splitting, axis annotation, and export."""
 from __future__ import annotations
 
-import bisect
 import time
 import traceback
 from pathlib import Path
@@ -59,6 +58,7 @@ from scripture.auto_funscript import run_pipeline
 from scripture.cycle_extract import extract_cycles
 from scripture.funscript import build_funscript
 from scripture.motion_tracker import AxisDefinition, track_motion
+from scripture.overlay import auto_overlay, tracked_overlay
 from scripture.project import (
     ProjectDocument,
     document_from_state,
@@ -1254,95 +1254,6 @@ class App(QMainWindow):
 
     # ── Frame display ──────────────────────────────────────────────
 
-    def _build_overlay(self, scene_idx, frame_idx):
-        """Build debug overlay dict for a processed scene's frame.
-
-        Uses full per-frame positions when available (just processed), or
-        interpolates from stored actions (loaded session).
-        """
-        axis = self.annotations.axes[scene_idx]
-        scene = self.scenes[scene_idx]
-        frame_ms = frame_idx / self.fps * 1000
-        actions = self.annotations.actions.get(scene_idx, [])
-        half_frame_ms = 500 / self.fps
-
-        local_idx = frame_idx - scene.start_frame
-        result = self.annotations.tracking.get(scene_idx)
-        if result is not None:
-            if local_idx < 0 or local_idx >= len(result.positions):
-                return None
-            pos_frac = float(result.positions[local_idx])
-            pos_100 = int(round(pos_frac * 100))
-            ts = result.timestamps_ms[local_idx]
-            is_action = any(abs(a["at"] - ts) < half_frame_ms for a in actions)
-            if is_action:
-                for a in actions:
-                    if abs(a["at"] - ts) < half_frame_ms:
-                        pos_100 = a["pos"]
-                        break
-        elif actions:
-            # Interpolate from action list only
-            pos_100, is_action = self._interpolate_actions(actions, frame_ms, half_frame_ms)
-            pos_frac = pos_100 / 100.0
-        else:
-            return None
-
-        # Use per-frame tracked coordinates when available
-        if (result is not None
-                and result.tip_coords is not None
-                and result.base_coords is not None
-                and 0 <= local_idx < len(result.tip_coords)):
-            tip = result.tip_coords[local_idx]
-            base = result.base_coords[local_idx]
-        else:
-            tip = np.array(axis.tip, dtype=np.float64)
-            base = np.array(axis.base, dtype=np.float64)
-
-        # Contact point: lerp between base (pos=0) and tip (pos=1)
-        contact = base + pos_frac * (tip - base)
-        contact_pt = (int(round(contact[0])), int(round(contact[1])))
-
-        frame_axis = AxisDefinition(
-            tip=(int(round(tip[0])), int(round(tip[1]))),
-            base=(int(round(base[0])), int(round(base[1]))),
-            frame=axis.frame,
-        )
-        # Compute direction of motion: +1 = moving toward tip, -1 = toward base, 0 = still
-        direction = 0
-        if result is not None and 0 < local_idx < len(result.positions):
-            delta = result.positions[local_idx] - result.positions[local_idx - 1]
-            if abs(delta) > 0.001:
-                direction = 1 if delta > 0 else -1
-
-        return {
-            "axis": frame_axis,
-            "contact_pt": contact_pt,
-            "pos": pos_100,
-            "is_action": is_action,
-            "direction": direction,
-        }
-
-    @staticmethod
-    def _interpolate_actions(actions, frame_ms, half_frame_ms):
-        """Interpolate pos from action list for a given timestamp."""
-        for a in actions:
-            if abs(a["at"] - frame_ms) < half_frame_ms:
-                return a["pos"], True
-        # Before first action
-        if frame_ms <= actions[0]["at"]:
-            return actions[0]["pos"], False
-        # After last action
-        if frame_ms >= actions[-1]["at"]:
-            return actions[-1]["pos"], False
-        # Between two actions — linear interpolation
-        for i in range(len(actions) - 1):
-            a0, a1 = actions[i], actions[i + 1]
-            if a0["at"] <= frame_ms <= a1["at"]:
-                t = (frame_ms - a0["at"]) / (a1["at"] - a0["at"])
-                pos = a0["pos"] + t * (a1["pos"] - a0["pos"])
-                return int(round(pos)), False
-        return 50, False
-
     def _show_frame(self, frame_idx):
         if not self.cap:
             return
@@ -1364,14 +1275,21 @@ class App(QMainWindow):
 
         # Auto-tracking overlay takes precedence when the auto pipeline ran
         if self.auto_result is not None:
-            self.canvas.set_auto_overlay(self._build_auto_overlay(frame_idx))
+            self.canvas.set_auto_overlay(auto_overlay(
+                result=self.auto_result, frame_idx=frame_idx, fps=self.fps,
+                actions=self.annotations.actions.get(idx, []),
+                detection_frames=self._auto_det_frames,
+                last_anchor=self._auto_last_anchor))
         else:
             self.canvas.set_auto_overlay(None)
 
         # Debug overlay for processed scenes (works with full positions or just actions)
         if axis is not None and (idx in self.annotations.tracking
                                  or idx in self.annotations.actions):
-            self.canvas.set_overlay(self._build_overlay(idx, frame_idx))
+            self.canvas.set_overlay(tracked_overlay(
+                axis=axis, scene=self.scenes[idx], frame_idx=frame_idx, fps=self.fps,
+                actions=self.annotations.actions.get(idx, []),
+                result=self.annotations.tracking.get(idx)))
         else:
             self.canvas.set_overlay(None)
 
@@ -1732,47 +1650,6 @@ class App(QMainWindow):
             self._set_status(
                 f"Auto done \u2014 {len(self.auto_result.actions)} actions "
                 f"in {self._fmt_duration(el)}.")
-
-    def _build_auto_overlay(self, frame_idx):
-        """Overlay dict showing what the auto tracker saw at this frame."""
-        r = self.auto_result
-        local = frame_idx - r.start_frame
-        if local < 0 or local >= len(r.positions):
-            return None
-
-        # Most recent detection result within a couple of detection cycles
-        detections = None
-        if self._auto_det_frames:
-            i = bisect.bisect_right(self._auto_det_frames, local) - 1
-            if i >= 0 and local - self._auto_det_frames[i] <= 6:
-                detections = r.signal.detections[self._auto_det_frames[i]]
-
-        frame_ms = frame_idx / self.fps * 1000
-        half_frame_ms = 500 / self.fps
-        idx = self._current_scene_idx()
-        actions = self.annotations.actions.get(idx, [])
-        is_action = any(abs(a["at"] - frame_ms) < half_frame_ms for a in actions)
-
-        lock = r.signal.lock[local]
-        beliefs = r.signal.beliefs
-        belief = (beliefs[local] if local < len(beliefs)
-                  and lock in ("contact", "coast") else None)
-        belief_age_s = None
-        if belief is not None and self._auto_last_anchor is not None:
-            last = self._auto_last_anchor[local]
-            if last >= 0:
-                belief_age_s = (local - last) / self.fps
-        return {
-            "roi": r.signal.rois[local],
-            "detections": detections,
-            "pos": int(round(r.positions[local])),
-            "active": lock != "none",
-            "lock": lock,
-            # Show the remembered anchor whenever it isn't directly seen
-            "belief": belief,
-            "belief_age_s": belief_age_s,
-            "is_action": is_action,
-        }
 
     def _is_processing(self):
         return self._worker is not None and self._worker.isRunning()
