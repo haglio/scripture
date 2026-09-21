@@ -57,6 +57,7 @@ from scripture.annotations import SceneAnnotations
 from scripture.auto_funscript import run_pipeline
 from scripture.cycle_extract import extract_cycles
 from scripture.funscript import build_funscript
+from scripture.label_session import LabelSession, schedule_frames
 from scripture.motion_tracker import AxisDefinition, track_motion
 from scripture.overlay import auto_overlay, tracked_overlay
 from scripture.project import (
@@ -760,9 +761,7 @@ class App(QMainWindow):
         self._auto_det_frames = []  # sorted detection frame indices (cache)
         self.current_frame_idx = 0
         self.placing = None
-        self.label_session = False
-        self._session_target = None   # frame currently being decided
-        self._session_undo = []       # [(scene_idx, frame_idx), ...] this session
+        self.session = LabelSession()
         self.pending_tip = self.pending_base = None
 
         self._worker = None
@@ -916,7 +915,7 @@ class App(QMainWindow):
         entry = self._ensure_gt_frame()
         if entry is None:
             return
-        if self.label_session:
+        if self.session.active:
             entry["contact"] = None
             self._mark_dirty()
             self._session_after_label(self.current_frame_idx)
@@ -940,9 +939,6 @@ class App(QMainWindow):
     # ── Label session (sparse GT clicking) ─────────────────────────
 
     def _session_schedule(self):
-        # Local: the labelling helpers, only when a labelling session is run.
-        from scripture.annotate import schedule_frames  # noqa: PLC0415
-
         idx = self._current_scene_idx()
         if not self.scenes:
             return []
@@ -955,32 +951,26 @@ class App(QMainWindow):
         return set(self.annotations.labels_of(idx))
 
     def _toggle_label_session(self):
-        self.label_session = self.btn_label_session.isChecked()
-        if self.label_session:
+        self.session.active = self.btn_label_session.isChecked()
+        if self.session.active:
             self._session_goto_next(after=self.current_frame_idx)
         else:
-            self._session_target = None
+            self.session.stop()
             self._set_status("Label session paused — progress saves with the project.")
 
     def _session_goto_next(self, after):
         """Make the next unlabeled scheduled frame past `after` the target."""
-        # Local: the labelling helpers, only when a labelling session is run.
-        from scripture.annotate import next_scheduled  # noqa: PLC0415
-
-        if not self.label_session or not self.scenes:
+        if not self.session.active or not self.scenes:
             return
         schedule = self._session_schedule()
         annotated = self._session_annotated()
-        nxt = next_scheduled(schedule, annotated, after)
-        done, total = len(annotated & set(schedule)), len(schedule)
+        done, total = LabelSession.progress(schedule, annotated)
+        nxt = self.session.advance(schedule, annotated, after)
         if nxt is None:
             self.btn_label_session.setChecked(False)
-            self.label_session = False
-            self._session_target = None
             self._set_status(f"Label session complete: {done}/{total} frames. "
                              "Save the project to keep them.")
             return
-        self._session_target = nxt
         self._show_frame(nxt)
         self._set_status(f"Label {done}/{total} · click = contact · N = none · "
                          "G = skip · U = undo · arrows = scrub · Home = back")
@@ -988,36 +978,34 @@ class App(QMainWindow):
     def _session_after_label(self, labeled_frame):
         """Record for undo, then target the next frame — never skipping a
         still-unlabeled target the user labeled around."""
-        self._session_undo.append((self._current_scene_idx(), labeled_frame))
-        anchor = self._session_target if self._session_target is not None else labeled_frame
-        self._session_goto_next(after=anchor - 1)
+        self._session_goto_next(
+            after=self.session.after_label(self._current_scene_idx(), labeled_frame))
 
     def _session_skip(self):
         """G: give up on the current target and move to the next one."""
-        if not self.label_session:
+        if not self.session.active:
             return
-        anchor = self._session_target if self._session_target is not None \
-            else self.current_frame_idx
-        self._session_goto_next(after=anchor)
+        self._session_goto_next(after=self.session.anchor(self.current_frame_idx))
 
     def _session_home(self):
         """Home: return to the frame being decided after scrubbing around."""
-        if self.label_session and self._session_target is not None:
-            self._show_frame(self._session_target)
+        if self.session.active and self.session.target is not None:
+            self._show_frame(self.session.target)
 
     def _session_undo_last(self):
         """U: delete the most recent label and go back to that frame."""
-        if not self.label_session or not self._session_undo:
+        undone = self.session.undo_last() if self.session.active else None
+        if undone is None:
             return
-        scene_idx, frame = self._session_undo.pop()
+        scene_idx, frame = undone
         self.annotations.drop_label(scene_idx, frame)
         self._mark_dirty()
-        self._session_target = frame
+        self.session.target = frame
         self._show_frame(frame)
-        schedule = self._session_schedule()
-        done = len(self._session_annotated() & set(schedule))
+        done, total = LabelSession.progress(self._session_schedule(),
+                                            self._session_annotated())
         self._set_status(f"Undid label at frame {frame} — decide it again "
-                         f"({done}/{len(schedule)} done)")
+                         f"({done}/{total} done)")
 
     def _reset_scene_labels(self):
         """Clear every label in the current scene (button, with confirm)."""
@@ -1034,10 +1022,10 @@ class App(QMainWindow):
         if reply != QMessageBox.StandardButton.Yes:
             return
         self.annotations.drop_labels(idx)
-        self._session_undo = [u for u in self._session_undo if u[0] != idx]
+        self.session.forget_scene(idx)
         self._mark_dirty()
         self._show_frame(self.current_frame_idx)
-        if self.label_session:
+        if self.session.active:
             self._session_goto_next(after=self.current_frame_idx)
         self._set_status(f"Cleared {n} labels in scene {idx}. "
                          "Save the project to make it permanent.")
@@ -1182,8 +1170,7 @@ class App(QMainWindow):
     def _rebuild_scenes(self):
         self.scenes = scenes_from_splits(self.splits, self.total_frames)
         self.annotations.reindex(self._scene_index_for_frame)
-        self._session_undo = [(self._scene_index_for_frame(frame), frame)
-                              for _old_idx, frame in self._session_undo]
+        self.session.reindex(self._scene_index_for_frame)
         # Auto actions are global; re-bucket them into the new scene layout
         if self.auto_result is not None:
             self.annotations.replace_actions(actions_by_scene(
@@ -1221,9 +1208,7 @@ class App(QMainWindow):
         self.splits = []
         self.scenes = []
         self.annotations.clear()
-        self._session_undo.clear()
-        self._session_target = None
-        self.label_session = False
+        self.session.clear()
         self.btn_label_session.setChecked(False)
         self._set_auto_result(None)
         self.current_frame_idx = 0
@@ -1460,7 +1445,7 @@ class App(QMainWindow):
     def _on_canvas_click(self, fx, fy):
         if not self.scenes:
             return
-        if self.label_session and not self.placing:
+        if self.session.active and not self.placing:
             entry = self._ensure_gt_frame()
             if entry is not None:
                 entry["contact"] = (fx, fy)

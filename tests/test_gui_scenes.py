@@ -51,8 +51,8 @@ def test_undo_after_a_split_deletes_the_label_it_was_recorded_for(window):
     """The undo stack names scenes too, so it has to move with the labels."""
     _with_one_scene(window)
     window.annotations.set_label(0, 800, _label((40, 90)))
-    window._session_undo = [(0, 800)]
-    window.label_session = True
+    window.session.after_label(0, 800)
+    window.session.active = True
     window.current_frame_idx = 800
 
     window._do_split_at(400)
