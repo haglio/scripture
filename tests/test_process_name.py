@@ -21,7 +21,8 @@ PROJECT_DIR = Path(__file__).resolve().parent.parent
 APP_NAME = "Scripture"
 ROLE = "Scripture"
 
-(LAUNCHER,) = launchers(PROJECT_DIR)
+LAUNCHER = next(spec for spec in launchers(PROJECT_DIR)
+                if spec.file == "launch_scripture.vbs")
 
 
 def test_the_launcher_prefers_the_copy_named_for_this_app():

@@ -74,6 +74,15 @@ run = "-m scripture"
 named-interpreter = "Scripture-Scripture.exe"
 log = 'sessions\scripture_launcher.log'
 
+# What the owner clicks to try a branch before it lands: the whole app, out of
+# this checkout, on the primary checkout's venv -- so it carries the CUDA torch
+# the tracker needs and the editable siblings without a venv per worktree.
+[tool.haglio.launchers."launch_preview_branch.vbs"]
+app = "Scripture (branch preview)"
+run = "-m scripture"
+venv = "primary"
+log = 'sessions\scripture_launcher.log'
+
 [tool.setuptools.packages.find]
 include = ["scripture*"]
 namespaces = false

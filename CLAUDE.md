@@ -95,6 +95,11 @@ This repo is public at `github.com/haglio/scripture` with a merge-queue ruleset 
   `git pull --ff-only origin main`; the running app self-updates the same way.
   The primary is only ever fast-forwarded — never reset or merged-into.
 - **A red required check** (`.github/workflows/merge-gate.yml`) can't land.
+- **The demo is `launch_preview_branch.vbs`,** tracked in every checkout and
+  rendered from its spec in `pyproject.toml`. It runs the whole app out of your
+  worktree on the primary checkout's venv, so a worktree needs no venv and still
+  gets the CUDA torch and the editable siblings. Hand the owner a `file:///` link
+  to your worktree's copy; the visible launch is his, never yours.
 
 Everything else in the global CLAUDE.md — work in a worktree, green tests before
 you push, clean handoff — still applies.
