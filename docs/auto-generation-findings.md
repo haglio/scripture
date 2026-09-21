@@ -5,7 +5,7 @@ long-form effort was paused (2026-08). Every claim below was measured, most of
 them several times. Anyone resuming this work should read this before trying
 anything, because the graveyard section has already consumed weeks.
 
-Vocabulary note: class names follow the committed `content.example.json`
+Vocabulary note: class names follow the committed `scripture/content.example.json`
 placeholders ("anchor" = the anatomy the ROI centers on, "contact classes" =
 what touches it). Real names live in the git-ignored overlay. Truth data below
 means the operator's hand-made funscripts.

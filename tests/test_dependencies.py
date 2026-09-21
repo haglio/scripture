@@ -20,13 +20,16 @@ from app_support.dependencies import (
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-TREES = [ROOT / "scripture", ROOT / "tests", ROOT / "tools", ROOT / "content.py",
+TREES = [ROOT / "scripture", ROOT / "tests", ROOT / "tools",
          ROOT / "vulture_whitelist.py"]
 
 
 def test_every_third_party_import_is_declared():
+    """`local` naming the package alone is also what holds the package to it:
+    a module put back beside the package and imported from inside it reads as an
+    undeclared third-party dependency here, which is what it is once installed."""
     assert_every_import_is_declared(
-        ROOT, [ROOT / "scripture"], ROOT / "pyproject.toml", local=("scripture", "content",))
+        ROOT, [ROOT / "scripture"], ROOT / "pyproject.toml", local=("scripture",))
 
 
 def test_every_requirement_has_an_upper_bound():
