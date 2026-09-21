@@ -30,15 +30,15 @@ def _populated(window, video_path):
     window.total_frames = 1000
     window.splits = [400]
     window._rebuild_scenes()
-    window.scene_axes[0] = AxisDefinition(tip=(40, 30), base=(40, 150), frame=5)
-    window.scene_actions[0] = [{"at": 0, "pos": 50}, {"at": 120, "pos": 90}]
-    window.scene_positions[0] = TrackingResult(
+    window.annotations.set_axis(0, AxisDefinition(tip=(40, 30), base=(40, 150), frame=5))
+    window.annotations.set_result(0, [{"at": 0, "pos": 50}, {"at": 120, "pos": 90}],
+                                  TrackingResult(
         timestamps_ms=np.array([0.0, 33.0]),
         positions=np.array([0.5, 0.9]),
         tip_coords=np.array([[40.0, 30.0], [41.0, 31.0]]),
         base_coords=np.array([[40.0, 150.0], [40.0, 151.0]]),
-    )
-    window.ground_truth[1] = {800: dict(_LABEL)}
+    ))
+    window.annotations.set_label(1, 800, dict(_LABEL))
     window.current_frame_idx = 800
     return window
 

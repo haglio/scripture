@@ -17,8 +17,8 @@ def _labeled(window, frame):
     window.total_frames = 1000
     window.splits = []
     window._rebuild_scenes()
-    window.ground_truth = {0: {frame: {
-        "tip": (40, 30), "base": (40, 150), "contact": (40, 90), "is_action": True}}}
+    window.annotations.set_label(0, frame, {
+        "tip": (40, 30), "base": (40, 150), "contact": (40, 90), "is_action": True})
     window._session_undo = [(0, frame)]
 
 

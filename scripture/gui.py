@@ -54,6 +54,7 @@ from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
 from shared_ui.spacing import BUTTON_ICON, GAP_MEDIUM, MARGIN_STANDARD
 
 from content import LOCAL_CONTENT, load_content
+from scripture.annotations import SceneAnnotations
 from scripture.auto_funscript import run_pipeline
 from scripture.cycle_extract import extract_cycles
 from scripture.funscript import build_funscript
@@ -754,10 +755,7 @@ class App(QMainWindow):
 
         self.splits = []
         self.scenes = []
-        self.scene_axes = {}
-        self.scene_actions = {}
-        self.scene_positions = {}  # idx -> TrackingResult (for debug overlay)
-        self.ground_truth = {}    # idx -> {frame_idx: {tip, base, contact, is_action}}
+        self.annotations = SceneAnnotations()
         self.auto_result = None   # PipelineResult from the YOLO+flow pipeline
         self._auto_det_frames = []  # sorted detection frame indices (cache)
         self.current_frame_idx = 0
@@ -809,7 +807,7 @@ class App(QMainWindow):
     def _get_points_of_interest(self):
         """All scene breaks and representative frames, sorted."""
         pois = set(self.splits)
-        for axis in self.scene_axes.values():
+        for axis in self.annotations.axes.values():
             pois.add(axis.frame)
         return sorted(pois)
 
@@ -836,7 +834,7 @@ class App(QMainWindow):
     def _action_frames_for_current_scene(self):
         """Return sorted list of frame indices for actions in the current scene."""
         idx = self._current_scene_idx()
-        actions = self.scene_actions.get(idx, [])
+        actions = self.annotations.actions.get(idx, [])
         if not actions:
             return []
         return sorted(int(round(a["at"] / 1000 * self.fps)) for a in actions)
@@ -867,28 +865,26 @@ class App(QMainWindow):
         """Ensure the current frame has a GT entry, inheriting from nearest."""
         idx = self._current_scene_idx()
         frame = self.current_frame_idx
-        if idx not in self.ground_truth:
-            self.ground_truth[idx] = {}
-        gt_scene = self.ground_truth[idx]
-        if frame in gt_scene:
-            return gt_scene[frame]
-        # Inherit from nearest annotated frame
-        if gt_scene:
-            nearest = min(gt_scene.keys(), key=lambda f: abs(f - frame))
-            entry = dict(gt_scene[nearest])  # shallow copy
-        elif idx in self.scene_axes:
-            axis = self.scene_axes[idx]
+        here = self.annotations.label_at(idx, frame)
+        if here is not None:
+            return here
+        labeled = self.annotations.labels_of(idx)
+        axis = self.annotations.axis_of(idx)
+        if labeled:
+            nearest = min(labeled, key=lambda f: abs(f - frame))
+            entry = dict(labeled[nearest])  # shallow copy
+        elif axis is not None:
             entry = {"tip": axis.tip, "base": axis.base, "contact": None, "is_action": False}
         else:
             # Contact-only label (auto sessions have no manual axis; the
             # trainer derives the axis from the automated anchor track)
             entry = {"tip": None, "base": None, "contact": None, "is_action": False}
-        gt_scene[frame] = entry
+        self.annotations.set_label(idx, frame, entry)
         return entry
 
     def _get_gt_for_frame(self, scene_idx, frame_idx):
         """Get GT data for display (read-only, does not create entries)."""
-        gt_scene = self.ground_truth.get(scene_idx, {})
+        gt_scene = self.annotations.labels_of(scene_idx)
         if frame_idx in gt_scene:
             gt = dict(gt_scene[frame_idx])
         elif gt_scene:
@@ -956,7 +952,7 @@ class App(QMainWindow):
 
     def _session_annotated(self):
         idx = self._current_scene_idx()
-        return set(self.ground_truth.get(idx, {}).keys())
+        return set(self.annotations.labels_of(idx))
 
     def _toggle_label_session(self):
         self.label_session = self.btn_label_session.isChecked()
@@ -1014,7 +1010,7 @@ class App(QMainWindow):
         if not self.label_session or not self._session_undo:
             return
         scene_idx, frame = self._session_undo.pop()
-        self.ground_truth.get(scene_idx, {}).pop(frame, None)
+        self.annotations.drop_label(scene_idx, frame)
         self._mark_dirty()
         self._session_target = frame
         self._show_frame(frame)
@@ -1026,7 +1022,7 @@ class App(QMainWindow):
     def _reset_scene_labels(self):
         """Clear every label in the current scene (button, with confirm)."""
         idx = self._current_scene_idx()
-        n = len(self.ground_truth.get(idx, {}))
+        n = len(self.annotations.labels_of(idx))
         if not n:
             self._set_status("No labels in this scene to reset.")
             return
@@ -1037,7 +1033,7 @@ class App(QMainWindow):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        self.ground_truth.pop(idx, None)
+        self.annotations.drop_labels(idx)
         self._session_undo = [u for u in self._session_undo if u[0] != idx]
         self._mark_dirty()
         self._show_frame(self.current_frame_idx)
@@ -1183,41 +1179,21 @@ class App(QMainWindow):
     def _current_scene_idx(self):
         return self._scene_index_for_frame(self.current_frame_idx)
 
-    def _remap_labels(self):
-        labels = self.ground_truth
-        self.ground_truth = {}
-        for frames in labels.values():
-            for frame, entry in frames.items():
-                self.ground_truth.setdefault(
-                    self._scene_index_for_frame(frame), {})[frame] = entry
+    def _rebuild_scenes(self):
+        self.scenes = scenes_from_splits(self.splits, self.total_frames)
+        self.annotations.reindex(self._scene_index_for_frame)
         self._session_undo = [(self._scene_index_for_frame(frame), frame)
                               for _old_idx, frame in self._session_undo]
-
-    def _rebuild_scenes(self):
-        old_axes, old_actions = dict(self.scene_axes), dict(self.scene_actions)
-        old_positions = dict(self.scene_positions)
-        self.scenes = scenes_from_splits(self.splits, self.total_frames)
-        self.scene_axes.clear()
-        self.scene_actions.clear()
-        self.scene_positions.clear()
-        for oi, axis in old_axes.items():
-            ni = self._scene_index_for_frame(axis.frame)
-            self.scene_axes[ni] = axis
-            if oi in old_actions:
-                self.scene_actions[ni] = old_actions[oi]
-            if oi in old_positions:
-                self.scene_positions[ni] = old_positions[oi]
-        self._remap_labels()
         # Auto actions are global; re-bucket them into the new scene layout
         if self.auto_result is not None:
-            self.scene_actions = actions_by_scene(
-                self.auto_result.actions, self.scenes, self.fps)
+            self.annotations.replace_actions(actions_by_scene(
+                self.auto_result.actions, self.scenes, self.fps))
 
     def _update_timeline(self):
         self.timeline.set_state(
-            self.scenes, self.scene_axes, self.scene_actions,
+            self.scenes, self.annotations.axes, self.annotations.actions,
             self.splits, self.total_frames, self.current_frame_idx,
-            self.ground_truth, self.fps,
+            self.annotations.labels, self.fps,
         )
 
     def _update_info(self):
@@ -1244,10 +1220,7 @@ class App(QMainWindow):
     def _reset_document(self):
         self.splits = []
         self.scenes = []
-        self.scene_axes.clear()
-        self.scene_actions.clear()
-        self.scene_positions.clear()
-        self.ground_truth.clear()
+        self.annotations.clear()
         self._session_undo.clear()
         self._session_target = None
         self.label_session = False
@@ -1287,14 +1260,14 @@ class App(QMainWindow):
         Uses full per-frame positions when available (just processed), or
         interpolates from stored actions (loaded session).
         """
-        axis = self.scene_axes[scene_idx]
+        axis = self.annotations.axes[scene_idx]
         scene = self.scenes[scene_idx]
         frame_ms = frame_idx / self.fps * 1000
-        actions = self.scene_actions.get(scene_idx, [])
+        actions = self.annotations.actions.get(scene_idx, [])
         half_frame_ms = 500 / self.fps
 
         local_idx = frame_idx - scene.start_frame
-        result = self.scene_positions.get(scene_idx)
+        result = self.annotations.tracking.get(scene_idx)
         if result is not None:
             if local_idx < 0 or local_idx >= len(result.positions):
                 return None
@@ -1381,8 +1354,9 @@ class App(QMainWindow):
         idx = self._current_scene_idx()
         self.canvas.set_frame(frame)
 
-        if idx in self.scene_axes and self.scene_axes[idx].frame == frame_idx:
-            self.canvas.set_axis(self.scene_axes[idx])
+        axis = self.annotations.axis_of(idx)
+        if axis is not None and axis.frame == frame_idx:
+            self.canvas.set_axis(axis)
         else:
             self.canvas.set_axis(None)
             self.canvas.set_pending_tip(self.pending_tip)
@@ -1395,13 +1369,14 @@ class App(QMainWindow):
             self.canvas.set_auto_overlay(None)
 
         # Debug overlay for processed scenes (works with full positions or just actions)
-        if idx in self.scene_axes and (idx in self.scene_positions or idx in self.scene_actions):
+        if axis is not None and (idx in self.annotations.tracking
+                                 or idx in self.annotations.actions):
             self.canvas.set_overlay(self._build_overlay(idx, frame_idx))
         else:
             self.canvas.set_overlay(None)
 
         # Ground truth annotation layer
-        if idx in self.ground_truth:
+        if self.annotations.labels_of(idx):
             self.canvas.set_gt(self._get_gt_for_frame(idx, frame_idx))
         else:
             self.canvas.set_gt(None)
@@ -1432,7 +1407,8 @@ class App(QMainWindow):
         idx = self._current_scene_idx()
         left_idx = idx - 1 if idx > 0 and self.scenes[idx].start_frame == frame else idx
         right_idx = left_idx + 1
-        if left_idx in self.scene_axes and right_idx < len(self.scenes) and right_idx in self.scene_axes:
+        axes = self.annotations.axes
+        if left_idx in axes and right_idx < len(self.scenes) and right_idx in axes:
             QMessageBox.warning(self, "Cannot unsplit", "Both adjacent scenes have axes. Delete one axis first.")
             return
         self.splits.remove(frame)
@@ -1448,7 +1424,7 @@ class App(QMainWindow):
         if not self.scenes:
             return
         idx = self._current_scene_idx()
-        has_axis = idx in self.scene_axes
+        has_axis = self.annotations.axis_of(idx) is not None
         menu = QMenu(self)
 
         if has_axis or self.pending_tip:
@@ -1477,8 +1453,8 @@ class App(QMainWindow):
             menu.addAction("Split Here", lambda: self._do_split_at(frame))
 
         menu.addSeparator()
-        if idx in self.scene_axes:
-            if idx in self.scene_actions:
+        if self.annotations.axis_of(idx) is not None:
+            if idx in self.annotations.actions:
                 menu.addAction("Discard Scene Actions", lambda: self._discard_scene(idx))
             elif not self._is_processing():
                 menu.addAction("Process Scene Actions", lambda: self._process_scene(idx))
@@ -1501,6 +1477,28 @@ class App(QMainWindow):
         self.placing = None
         self.pending_tip = self.pending_base = None
 
+    def _may_move_the_axis(self, idx):
+        """Ask before an already-drawn axis moves to the frame on screen."""
+        axis = self.annotations.axis_of(idx)
+        if axis is None or axis.frame == self.current_frame_idx:
+            return True
+        reply = QMessageBox.question(
+            self, "Change representative frame?",
+            "Move axis to this frame?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
+    def _form_axis_if_both_placed(self, idx):
+        """Draw the axis once both ends are down, then redraw the frame."""
+        if self.pending_tip and self.pending_base:
+            self.annotations.set_axis(idx, AxisDefinition(
+                tip=self.pending_tip, base=self.pending_base, frame=self.current_frame_idx,
+            ))
+            self.pending_tip = self.pending_base = None
+        self._mark_dirty()
+        self._show_frame(self.current_frame_idx)
+
     def _place_point(self, which):
         """Enter placement mode for tip or base."""
         self.placing = which
@@ -1510,49 +1508,30 @@ class App(QMainWindow):
         idx = self._current_scene_idx()
 
         # If there's an existing axis on a different frame, confirm change
-        if idx in self.scene_axes and self.scene_axes[idx].frame != self.current_frame_idx:
-            reply = QMessageBox.question(
-                self, "Change representative frame?",
-                "Move axis to this frame?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-            old = self.scene_axes.pop(idx)
+        if not self._may_move_the_axis(idx):
+            return
+        old = self.annotations.drop_axis(idx)
+        if old is not None:
             if which == "tip":
                 self.pending_base = old.base
             else:
                 self.pending_tip = old.tip
-            if idx in self.scene_actions:
-                del self.scene_actions[idx]
-                self.scene_positions.pop(idx, None)
 
         if which == "tip":
             self.pending_tip = (fx, fy)
         else:
             self.pending_base = (fx, fy)
 
-        # If both placed, form axis
-        if self.pending_tip and self.pending_base:
-            self.scene_axes[idx] = AxisDefinition(
-                tip=self.pending_tip, base=self.pending_base, frame=self.current_frame_idx,
-            )
-            self.pending_tip = self.pending_base = None
-
-        self._mark_dirty()
-        self._show_frame(self.current_frame_idx)
+        self._form_axis_if_both_placed(idx)
 
     def _delete_point(self, which):
         idx = self._current_scene_idx()
-        if idx in self.scene_axes:
-            old = self.scene_axes.pop(idx)
+        old = self.annotations.drop_axis(idx)
+        if old is not None:
             if which == "tip":
                 self.pending_base = old.base
             else:
                 self.pending_tip = old.tip
-            if idx in self.scene_actions:
-                del self.scene_actions[idx]
-                self.scene_positions.pop(idx, None)
         if which == "tip":
             self.pending_tip = None
         else:
@@ -1584,56 +1563,36 @@ class App(QMainWindow):
             self._set_status("Contact point placed.")
             return
 
-        # Changing representative frame?
-        if idx in self.scene_axes and self.scene_axes[idx].frame != self.current_frame_idx:
-            reply = QMessageBox.question(
-                self, "Change representative frame?",
-                "Move axis to this frame?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-            old = self.scene_axes.pop(idx)
+        if not self._may_move_the_axis(idx):
+            return
+        old = self.annotations.drop_axis(idx)
+        if old is not None:
             if self.placing == "tip":
                 self.pending_base = old.base
             else:
                 self.pending_tip = old.tip
-            if idx in self.scene_actions:
-                del self.scene_actions[idx]
-                self.scene_positions.pop(idx, None)
 
         if self.placing == "tip":
             self.pending_tip = (fx, fy)
         elif self.placing == "base":
             self.pending_base = (fx, fy)
         self.placing = None
-
-        if self.pending_tip and self.pending_base:
-            self.scene_axes[idx] = AxisDefinition(
-                tip=self.pending_tip, base=self.pending_base, frame=self.current_frame_idx,
-            )
-            self.pending_tip = self.pending_base = None
-
-        self._mark_dirty()
-        self._show_frame(self.current_frame_idx)
+        self._form_axis_if_both_placed(idx)
 
     def _on_point_dragged(self, which, fx, fy):
         idx = self._current_scene_idx()
         # GT point drag (contact, or tip/base while GT is active)
-        if which in ("contact", "tip", "base") and idx in self.ground_truth:
+        if which in ("contact", "tip", "base") and self.annotations.labels_of(idx):
             self._on_gt_point_dragged(which, fx, fy)
             return
-        if idx in self.scene_axes:
-            old = self.scene_axes[idx]
-            if which == "tip":
-                self.scene_axes[idx] = AxisDefinition(tip=(fx, fy), base=old.base, frame=old.frame)
-            else:
-                self.scene_axes[idx] = AxisDefinition(tip=old.tip, base=(fx, fy), frame=old.frame)
-            if idx in self.scene_actions:
-                del self.scene_actions[idx]
-                self.scene_positions.pop(idx, None)
+        old = self.annotations.axis_of(idx)
+        if old is not None:
+            moved = (AxisDefinition(tip=(fx, fy), base=old.base, frame=old.frame)
+                     if which == "tip"
+                     else AxisDefinition(tip=old.tip, base=(fx, fy), frame=old.frame))
+            self.annotations.set_axis(idx, moved)
             self._mark_dirty()
-            self.canvas.set_axis(self.scene_axes[idx])
+            self.canvas.set_axis(moved)
             self._update_timeline()
         elif which == "tip" and self.pending_tip:
             self.pending_tip = (fx, fy)
@@ -1645,7 +1604,8 @@ class App(QMainWindow):
     # ── Processing ─────────────────────────────────────────────────
 
     def _build_jobs(self, indices):
-        return [(i, self.scenes[i], self.scene_axes[i]) for i in indices]
+        axes = self.annotations.axes
+        return [(i, self.scenes[i], axes[i]) for i in indices]
 
     @staticmethod
     def _fmt_duration(seconds):
@@ -1697,8 +1657,7 @@ class App(QMainWindow):
         self.progress_bar.setValue(done)
 
     def _on_scene_done(self, idx, actions, tracking_result):
-        self.scene_actions[idx] = actions
-        self.scene_positions[idx] = tracking_result
+        self.annotations.set_result(idx, actions, tracking_result)
         self._mark_dirty()
         self._update_timeline()
 
@@ -1710,7 +1669,7 @@ class App(QMainWindow):
         el = time.monotonic() - self._process_start_time
         self._hide_progress_ui()
         self._worker = None
-        total = sum(len(a) for a in self.scene_actions.values())
+        total = sum(len(a) for a in self.annotations.actions.values())
         self._set_status(f"Done \u2014 {total} actions in {self._fmt_duration(el)}.")
 
     def _abort_processing(self):
@@ -1743,8 +1702,9 @@ class App(QMainWindow):
         self._auto_det_frames = sorted(result.signal.detections.keys()) if result else []
         self._auto_last_anchor = None
         if result is not None:
-            self.scene_actions = actions_by_scene(result.actions, self.scenes, self.fps)
-            self.scene_positions.clear()
+            self.annotations.replace_actions(
+                actions_by_scene(result.actions, self.scenes, self.fps))
+            self.annotations.clear_tracking()
             # For each frame, the most recent frame with a direct sighting
             last_anchor = np.full(len(result.signal.lock), -1, dtype=np.int64)
             last = -1
@@ -1790,7 +1750,7 @@ class App(QMainWindow):
         frame_ms = frame_idx / self.fps * 1000
         half_frame_ms = 500 / self.fps
         idx = self._current_scene_idx()
-        actions = self.scene_actions.get(idx, [])
+        actions = self.annotations.actions.get(idx, [])
         is_action = any(abs(a["at"] - frame_ms) < half_frame_ms for a in actions)
 
         lock = r.signal.lock[local]
@@ -1821,7 +1781,7 @@ class App(QMainWindow):
         if self._is_processing():
             self._set_status("Already processing \u2014 wait for it to finish.")
             return
-        if idx not in self.scene_axes:
+        if self.annotations.axis_of(idx) is None:
             return
         self._start_processing(self._build_jobs([idx]))
 
@@ -1829,16 +1789,16 @@ class App(QMainWindow):
         if self._is_processing():
             self._set_status("Already processing \u2014 wait for it to finish.")
             return
-        annotated = [i for i in range(len(self.scenes)) if i in self.scene_axes]
+        axes = self.annotations.axes
+        annotated = [i for i in range(len(self.scenes)) if i in axes]
         if not annotated:
             QMessageBox.warning(self, "No axes", "Annotate tip/base on at least one scene first.")
             return
         self._start_processing(self._build_jobs(annotated))
 
     def _discard_scene(self, idx):
-        if idx in self.scene_actions:
-            del self.scene_actions[idx]
-            self.scene_positions.pop(idx, None)
+        if idx in self.annotations.actions:
+            self.annotations.discard_result(idx)
             self._mark_dirty()
             self._update_timeline()
             self._set_status(f"Discarded actions for scene {idx+1}.")
@@ -1849,10 +1809,10 @@ class App(QMainWindow):
         return ProjectDocument(
             video_path=self.video_path,
             splits=self.splits,
-            axes=self.scene_axes,
-            actions=self.scene_actions,
-            tracking=self.scene_positions,
-            labels=self.ground_truth,
+            axes=self.annotations.axes,
+            actions=self.annotations.actions,
+            tracking=self.annotations.tracking,
+            labels=self.annotations.labels,
             auto=self.auto_result,
             current_frame=self.current_frame_idx,
         )
@@ -1918,10 +1878,8 @@ class App(QMainWindow):
         self._reset_document()
         self.splits = document.splits
         self._rebuild_scenes()
-        self.scene_axes.update(document.axes)
-        self.scene_actions.update(document.actions)
-        self.scene_positions.update(document.tracking)
-        self.ground_truth.update(document.labels)
+        self.annotations.load(axes=document.axes, actions=document.actions,
+                              tracking=document.tracking, labels=document.labels)
         self._set_auto_result(document.auto)
 
         self._project_path = path
@@ -1950,11 +1908,11 @@ class App(QMainWindow):
     # ── Export ──────────────────────────────────────────────────────
 
     def _export(self):
-        if not self.scene_actions:
+        if not self.annotations.actions:
             QMessageBox.warning(self, "No data", "Process at least one scene first.")
             return
         all_a = []
-        for a in self.scene_actions.values():
+        for a in self.annotations.actions.values():
             all_a.extend(a)
         fs = build_funscript(all_a, int(self.total_frames / self.fps),
                              provenance=provenance_of_actions(self._document()))

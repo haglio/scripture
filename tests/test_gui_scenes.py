@@ -24,7 +24,7 @@ def _with_one_scene(window, total_frames=1000):
 
 def test_a_split_before_a_labeled_frame_carries_the_label_across(window):
     _with_one_scene(window)
-    window.ground_truth = {0: {800: _label((40, 90))}}
+    window.annotations.set_label(0, 800, _label((40, 90)))
     window.current_frame_idx = 800
 
     window._do_split_at(400)
@@ -37,19 +37,20 @@ def test_unsplitting_gathers_both_scenes_labels_into_the_merged_one(window):
     _with_one_scene(window)
     window.splits = [400]
     window._rebuild_scenes()
-    window.ground_truth = {0: {100: _label((40, 60))}, 1: {800: _label((40, 90))}}
+    window.annotations.set_label(0, 100, _label((40, 60)))
+    window.annotations.set_label(1, 800, _label((40, 90)))
     window.current_frame_idx = 400
 
     window._do_unsplit(400)
 
-    assert sorted(window.ground_truth) == [0]
-    assert sorted(window.ground_truth[0]) == [100, 800]
+    assert sorted(window.annotations.labels) == [0]
+    assert sorted(window.annotations.labels[0]) == [100, 800]
 
 
 def test_undo_after_a_split_deletes_the_label_it_was_recorded_for(window):
     """The undo stack names scenes too, so it has to move with the labels."""
     _with_one_scene(window)
-    window.ground_truth = {0: {800: _label((40, 90))}}
+    window.annotations.set_label(0, 800, _label((40, 90)))
     window._session_undo = [(0, 800)]
     window.label_session = True
     window.current_frame_idx = 800
@@ -62,14 +63,13 @@ def test_undo_after_a_split_deletes_the_label_it_was_recorded_for(window):
 
 def test_discarding_a_scene_drops_its_actions_and_its_tracking(window):
     _with_one_scene(window)
-    window.scene_actions[0] = [{"at": 0, "pos": 50}]
-    window.scene_positions[0] = object()
+    window.annotations.set_result(0, [{"at": 0, "pos": 50}], object())
     window._mark_clean()
 
     window._discard_scene(0)
 
-    assert 0 not in window.scene_actions
-    assert 0 not in window.scene_positions
+    assert 0 not in window.annotations.actions
+    assert 0 not in window.annotations.tracking
     assert window._dirty
 
 
