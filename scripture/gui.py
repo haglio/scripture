@@ -52,9 +52,9 @@ from shared_ui.colors import (
 from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
 from shared_ui.spacing import BUTTON_ICON, GAP_MEDIUM, MARGIN_STANDARD
 
-from content import LOCAL_CONTENT, load_content
 from scripture.annotations import SceneAnnotations
 from scripture.auto_funscript import run_pipeline
+from scripture.content import LOCAL_CONTENT, load_content
 from scripture.cycle_extract import extract_cycles
 from scripture.funscript import build_funscript
 from scripture.label_session import LabelSession, schedule_frames

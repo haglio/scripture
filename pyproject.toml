@@ -77,3 +77,8 @@ log = 'sessions\scripture_launcher.log'
 [tool.setuptools.packages.find]
 include = ["scripture*"]
 namespaces = false
+
+# The example overlay is read at import time, so a distribution without it has a
+# console script that cannot start.
+[tool.setuptools.package-data]
+scripture = ["content.example.json"]

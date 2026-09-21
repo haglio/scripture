@@ -23,7 +23,7 @@ import numpy as np
 from app_support.funscript import write as write_funscript
 from app_support.overlay import overlay_value
 
-from content import LOCAL_CONTENT, load_content
+from scripture.content import LOCAL_CONTENT, load_content
 from scripture.funscript import build_funscript, made_by
 
 RECIPE = "roi_flow"
@@ -32,7 +32,7 @@ RECIPE_VERSION = "1"
 _CONTENT = load_content()
 
 # The detector's weights and class vocabulary are private; they reach the code
-# through the content overlay (content.example.json documents the shape).
+# through the content overlay (scripture/content.example.json documents the shape).
 DEFAULT_MODEL_PATH = overlay_value(_CONTENT, "model_path", path=LOCAL_CONTENT)
 
 # The classes the ROI can anchor on, most-preferred first: the model often

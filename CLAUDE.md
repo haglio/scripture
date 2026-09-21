@@ -52,7 +52,8 @@ new performer name it has never seen passes every check and lands. The guard is 
 backstop for names already known; it cannot see the next one.
 
 So fabricate fully. Use `Jane Doe`, `Example Studio`, `scene one`, the
-`alpha`/`beta`/`gamma` act placeholders the committed `content.example.json`
+`alpha`/`beta`/`gamma` act placeholders the committed
+`scripture/content.example.json`
 already uses. The near miss that still counts: taking a real filename and
 changing a character or two — it is still that clip, still that performer. Make
 it up from scratch, don't lightly edit a real one.

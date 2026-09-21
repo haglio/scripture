@@ -48,13 +48,13 @@ def test_the_detection_colors_are_whatever_the_loaded_overlay_says(tmp_path):
     a test may name.
     """
     overlay = json.loads(
-        (REPO_ROOT / "content.example.json").read_text(encoding="utf-8"))
+        (REPO_ROOT / "scripture" / "content.example.json").read_text(encoding="utf-8"))
     overlay["class_colors"] = {"widget": [1, 2, 3], "sprocket": [4, 5, 6]}
     overlay_path = tmp_path / "content.local.json"
     overlay_path.write_text(json.dumps(overlay), encoding="utf-8")
 
     result = _fresh_interpreter(
-        "import content; from pathlib import Path;"
+        "from scripture import content; from pathlib import Path;"
         f"content.LOCAL_CONTENT = Path({str(overlay_path)!r});"
         "import scripture.gui as m;"
         "print(sorted(m._DET_COLORS), m._DET_COLORS['widget'].getRgb()[:3])"

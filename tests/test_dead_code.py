@@ -15,7 +15,7 @@ from app_support.dead_code import (
 
 ROOT = Path(__file__).resolve().parent.parent
 PACKAGES = (ROOT / "scripture",)
-SCANNED = (*PACKAGES, ROOT / "content.py", ROOT / "tools")
+SCANNED = (*PACKAGES, ROOT / "tools")
 WHITELIST = ROOT / "vulture_whitelist.py"
 
 

@@ -91,7 +91,7 @@ def _run_the_launchs_way(statements: list[str]) -> subprocess.CompletedProcess:
             # Before anything that reads content at import time: a public
             # checkout has only the committed example, so that is what the
             # launch has to come up on.
-            "import content as _content",
+            "from scripture import content as _content",
             "_content.LOCAL_CONTENT = _content.EXAMPLE_CONTENT",
             *statements,
         ]
