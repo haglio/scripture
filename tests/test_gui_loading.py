@@ -52,8 +52,8 @@ def test_a_loaded_project_starts_its_own_labeling_session(
         window, tmp_path, monkeypatch):
     window.annotations.set_label(0, 800, {
         "tip": None, "base": None, "contact": (40, 90), "is_action": True})
-    window._session_undo = [(0, 800)]
-    window.label_session = True
+    window.session.after_label(0, 800)
+    window.session.active = True
     window.btn_label_session.setChecked(True)
     monkeypatch.setattr(gui.cv2, "VideoCapture", lambda _path: Capture())
     project = _project_naming(tmp_path / "example clip.mp4", tmp_path / "three.scripture")
@@ -61,6 +61,6 @@ def test_a_loaded_project_starts_its_own_labeling_session(
     window._do_load(project)
 
     assert window.annotations.labels == {}
-    assert window._session_undo == []
-    assert not window.label_session
+    assert window.session.undo_last() is None
+    assert not window.session.active
     assert not window.btn_label_session.isChecked()
