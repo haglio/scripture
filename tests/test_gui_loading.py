@@ -50,8 +50,8 @@ def test_a_project_that_opens_releases_the_capture_it_replaces(
 
 def test_a_loaded_project_starts_its_own_labeling_session(
         window, tmp_path, monkeypatch):
-    window.ground_truth = {0: {800: {
-        "tip": None, "base": None, "contact": (40, 90), "is_action": True}}}
+    window.annotations.set_label(0, 800, {
+        "tip": None, "base": None, "contact": (40, 90), "is_action": True})
     window._session_undo = [(0, 800)]
     window.label_session = True
     window.btn_label_session.setChecked(True)
@@ -60,7 +60,7 @@ def test_a_loaded_project_starts_its_own_labeling_session(
 
     window._do_load(project)
 
-    assert window.ground_truth == {}
+    assert window.annotations.labels == {}
     assert window._session_undo == []
     assert not window.label_session
     assert not window.btn_label_session.isChecked()
