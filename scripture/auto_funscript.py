@@ -1,7 +1,7 @@
 """Fully automatic funscript generation: YOLO detection + ROI optical flow.
 
 Offline port of the only pipeline that has produced a usable funscript on
-2D POV footage (FunGen's LIVE_YOLO_ROI tracker): YOLO finds the anchor object
+first-person 2D footage (FunGen's LIVE_YOLO_ROI tracker): YOLO finds the anchor object
 and whatever is interacting with it, their union defines a region of interest,
 and dense optical flow inside that ROI drives the position signal.
 
