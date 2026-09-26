@@ -1055,8 +1055,6 @@ class App(QMainWindow):
         tb.setMovable(False)
         tb.setFloatable(False)
         tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        # The family's icon size, so a mark here is the size a mark in any
-        # other app's row of buttons is.
         tb.setIconSize(QSize(BUTTON_ICON, BUTTON_ICON))
         self.addToolBar(tb)
 
