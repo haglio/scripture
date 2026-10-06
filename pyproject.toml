@@ -83,6 +83,15 @@ run = "-m scripture"
 venv = "primary"
 log = 'sessions\scripture_launcher.log'
 
+# What Scripture relies on Windows to keep: the shortcut it is pinned from.
+# `python -m app_support.windows_settings --write` makes this machine match
+# every checkout's list.
+[tool.haglio.shortcuts."Scripture"]
+launcher = "launch_scripture.vbs"
+icon = "icon.ico"
+app-id = "FunTime.Scripture"
+places = ["taskbar", "checkout"]
+
 [tool.setuptools.packages.find]
 include = ["scripture*"]
 namespaces = false
