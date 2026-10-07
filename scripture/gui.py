@@ -16,7 +16,6 @@ from PyQt6.QtGui import (
     QBrush,
     QColor,
     QCursor,
-    QIcon,
     QImage,
     QKeySequence,
     QPainter,
@@ -50,6 +49,8 @@ from shared_ui.colors import (
     TEXT_PRIMARY,
 )
 from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
+from shared_ui.preview import Preview, window_title
+from shared_ui.preview_icon import app_icon
 from shared_ui.spacing import BUTTON_ICON, GAP_MEDIUM, MARGIN_STANDARD
 
 from scripture.annotations import SceneAnnotations
@@ -741,13 +742,13 @@ class FrameCanvas(QWidget):
 
 class App(QMainWindow):
 
-    def __init__(self):
+    def __init__(self, *, preview: Preview | None = None):
         super().__init__()
-        self.setWindowTitle("Scripture")
+        self.setWindowTitle(window_title("Scripture", preview))
         self.resize(1200, 800)
         _icon_path = Path(__file__).resolve().parent.parent / "icon.ico"
         if _icon_path.exists():
-            self.setWindowIcon(QIcon(str(_icon_path)))
+            self.setWindowIcon(app_icon(_icon_path, preview))
 
         self.video_path = None
         self.video = None

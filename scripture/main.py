@@ -6,14 +6,16 @@ from pathlib import Path
 
 from app_support.process_identity import ProcessNamer
 from app_support.win32 import set_app_user_model_id, stamp_pinned_shortcuts
+from shared_ui.preview import Preview, preview_of, taskbar_identity
 
 from scripture.tracker_environment import complaints
 
 APP_USER_MODEL_ID = "FunTime.Scripture"
-_ICON = Path(__file__).resolve().parent.parent / "icon.ico"
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+_ICON = PROJECT_DIR / "icon.ico"
 
 
-def _set_windows_app_user_model_id() -> None:
+def _set_windows_app_user_model_id(preview: Preview | None) -> None:
     """Claim the identity the pinned shortcut carries, and stamp the pin with it,
     before any window exists.
 
@@ -23,7 +25,7 @@ def _set_windows_app_user_model_id() -> None:
     if sys.platform != "win32":
         return
     with contextlib.suppress(OSError):
-        set_app_user_model_id(APP_USER_MODEL_ID)
+        set_app_user_model_id(taskbar_identity(APP_USER_MODEL_ID, preview))
     stamp_pinned_shortcuts(APP_USER_MODEL_ID, ["Scripture"])
 
 
@@ -48,7 +50,8 @@ def _report_tracker_environment() -> None:
 
 
 def main():
-    _set_windows_app_user_model_id()
+    preview = preview_of(PROJECT_DIR)
+    _set_windows_app_user_model_id(preview)
     _name_this_process()
     _report_tracker_environment()
 
@@ -65,7 +68,7 @@ def main():
     # On the application, not the window: the family's tooltip rule reaches a
     # top-level popup only from here.
     app.setStyleSheet(family_stylesheet())
-    window = App()
+    window = App(preview=preview)
     window.show()
     sys.exit(app.exec())
 
