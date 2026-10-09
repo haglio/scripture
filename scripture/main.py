@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import sys
 from pathlib import Path
 
+from app_support.logging_utils import install_exception_logging
 from app_support.process_identity import ProcessNamer
 from app_support.win32 import set_app_user_model_id, stamp_pinned_shortcuts
 from shared_ui.preview import Preview, preview_of, taskbar_identity
@@ -49,7 +51,12 @@ def _report_tracker_environment() -> None:
         print(f"scripture: {said}", file=sys.stderr)
 
 
+def _log_errors_and_keep_running() -> None:
+    install_exception_logging(logging.getLogger("scripture"))
+
+
 def main():
+    _log_errors_and_keep_running()
     preview = preview_of(PROJECT_DIR)
     _set_windows_app_user_model_id(preview)
     _name_this_process()
