@@ -24,8 +24,8 @@ requires-python = ">=3.14"
 # other half had not landed turned all of them red at once. Moving to a newer
 # one is this repo's own commit, with its own suite to answer for it.
 dependencies = [
-    "app-support @ git+https://github.com/haglio/app_support@v0.1.174",
-    "shared-ui @ git+https://github.com/haglio/shared_ui@v0.1.154",
+    "app-support @ git+https://github.com/haglio/app_support@v0.1.182",
+    "shared-ui @ git+https://github.com/haglio/shared_ui@v0.1.161",
     "opencv-python>=4.8,<5",
     "numpy>=1.24,<3",
     "scipy>=1.11,<2",

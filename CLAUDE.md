@@ -28,9 +28,11 @@ on an interpreter the suite never runs and the repo never declares. CI installs
 the CPU wheel and stays green: no test loads a model, and the suite drives the
 numpy/OpenCV logic with synthetic data.
 
-`shared_ui` is a sibling checkout, not a PyPI package, and the launcher exports
-no `PYTHONPATH` — the venv resolves it through the editable install, so a fresh
-venv also needs `pip install -e ../shared_ui`.
+`shared_ui` and `app_support` are sibling repos, not PyPI packages:
+`pyproject.toml` names each at the tag this repo was built against, and
+`pip install -e .` fetches those tags from GitHub. The launcher exports no
+`PYTHONPATH`, so the venv's copies are the ones Scripture runs, and moving a pin
+means installing the new tag into the venv too.
 
 ## Test fixtures must be fabricated, never copied from the real library
 

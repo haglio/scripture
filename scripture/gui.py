@@ -38,6 +38,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shared_ui.chrome import toolbar_rules
 from shared_ui.colors import (
     BG_PRIMARY,
     BG_SECONDARY,
@@ -1057,6 +1058,7 @@ class App(QMainWindow):
         tb.setFloatable(False)
         tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         tb.setIconSize(QSize(BUTTON_ICON, BUTTON_ICON))
+        tb.setStyleSheet(toolbar_rules())
         self.addToolBar(tb)
 
         # Left pad to match central widget margin
