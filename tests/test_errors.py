@@ -45,4 +45,4 @@ def test_the_launch_does_so_before_the_window_exists():
             name = ast.unparse(node.func)
             first_call[name] = min(node.lineno, first_call.get(name, node.lineno))
 
-    assert first_call["_log_errors_and_keep_running"] < first_call["App"]
+    assert first_call["_log_errors_and_keep_running"] < first_call["open_scripture"]
