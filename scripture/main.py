@@ -37,8 +37,12 @@ def _set_windows_app_user_model_id(preview: Preview | None) -> None:
     if sys.platform != "win32":
         return
     with contextlib.suppress(OSError):
-        set_app_user_model_id(taskbar_identity(APP_USER_MODEL_ID, preview))
+        set_app_user_model_id(_its_taskbar_identity(preview))
     stamp_pinned_shortcuts(APP_USER_MODEL_ID, ["Scripture"])
+
+
+def _its_taskbar_identity(preview: Preview | None) -> str:
+    return taskbar_identity(APP_USER_MODEL_ID, preview)
 
 
 def _name_this_process() -> None:
@@ -79,6 +83,16 @@ def open_scripture(loading, *, preview: Preview | None, dress):
     return App(preview=preview)
 
 
+def open_the_loading_screen(preview: Preview | None):
+    from shared_ui.loading_process import LoadingProcess  # noqa: PLC0415
+
+    return LoadingProcess.open(
+        caption=LOADING_CAPTION, wordmark="Scripture", icon=_ICON, preview=preview,
+        steps=STEPS, cancel_hint=CANCEL_HINT,
+        app_id=_its_taskbar_identity(preview) if sys.platform == "win32" else None,
+    )
+
+
 def main():
     _log_errors_and_keep_running()
     preview = preview_of(PROJECT_DIR)
@@ -88,15 +102,10 @@ def main():
     # Local: the toolkit, only when a window is wanted.
     from PyQt6.QtWidgets import QApplication  # noqa: PLC0415
     from shared_ui.chrome import family_stylesheet  # noqa: PLC0415
-    from shared_ui.loading_window import Loading, LoadingCanceled, LoadingWindow  # noqa: PLC0415
+    from shared_ui.loading_window import Loading, LoadingCanceled  # noqa: PLC0415
 
     app = QApplication.instance() or QApplication(sys.argv)
-    screen = LoadingWindow(
-        caption=LOADING_CAPTION, wordmark="Scripture", icon=_ICON, preview=preview,
-        steps=STEPS, cancel_hint=CANCEL_HINT,
-    )
-    screen.show()
-    loading = Loading(app, logging.getLogger("scripture"), screen)
+    loading = Loading(app, logging.getLogger("scripture"), open_the_loading_screen(preview))
     try:
         # On the application, not the window: the family's tooltip rule reaches a
         # top-level popup only from here.

@@ -28,6 +28,28 @@ def test_the_launch_says_each_step_before_it_takes_it():
     assert window is window_class.return_value
 
 
+def test_the_loading_screen_runs_in_a_process_of_its_own_wearing_scriptures_taskbar_button(
+        monkeypatch):
+    monkeypatch.setattr(main.sys, "platform", "win32")
+
+    with patch("shared_ui.loading_process.LoadingProcess.open") as opened:
+        main.open_the_loading_screen(None)
+
+    opened.assert_called_once_with(
+        caption=main.LOADING_CAPTION, wordmark="Scripture", icon=main.PROJECT_DIR / "icon.ico",
+        preview=None, steps=main.STEPS, cancel_hint=main.CANCEL_HINT,
+        app_id=main.APP_USER_MODEL_ID)
+
+
+def test_off_windows_the_loading_screen_wears_no_taskbar_identity(monkeypatch):
+    monkeypatch.setattr(main.sys, "platform", "linux")
+
+    with patch("shared_ui.loading_process.LoadingProcess.open") as opened:
+        main.open_the_loading_screen(None)
+
+    assert opened.call_args.kwargs["app_id"] is None
+
+
 def test_the_tracker_check_is_the_long_step_so_the_bar_spends_most_of_its_time_there():
     (first, weight), *rest = main.STEPS
 
