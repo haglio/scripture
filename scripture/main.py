@@ -16,6 +16,16 @@ APP_USER_MODEL_ID = "FunTime.Scripture"
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 _ICON = PROJECT_DIR / "icon.ico"
 
+# What the loading screen says, in order, each weighted by its share of the
+# wait: the tracker check imports torch, which is most of it.
+STEPS = (
+    ("Checking the tracker...", 5.0),
+    ("Loading Scripture...", 1.0),
+    ("Opening the window...", 0.2),
+)
+LOADING_CAPTION = "Scripture Loading"
+CANCEL_HINT = "Press Esc to cancel opening Scripture"
+
 
 def _set_windows_app_user_model_id(preview: Preview | None) -> None:
     """Claim the identity the pinned shortcut carries, and stamp the pin with it,
@@ -55,27 +65,46 @@ def _log_errors_and_keep_running() -> None:
     install_exception_logging(logging.getLogger("scripture"))
 
 
+def open_scripture(loading, *, preview: Preview | None, dress):
+    """The launch, step by step, each step said before it is taken."""
+    checking, loading_scripture, opening = (step for step, _weight in STEPS)
+    loading.say(checking)
+    _report_tracker_environment()
+    loading.say(loading_scripture)
+    # Local: the window, and the toolkit under it, only when a window is wanted.
+    from scripture.gui import App  # noqa: PLC0415
+
+    dress()
+    loading.say(opening)
+    return App(preview=preview)
+
+
 def main():
     _log_errors_and_keep_running()
     preview = preview_of(PROJECT_DIR)
     _set_windows_app_user_model_id(preview)
     _name_this_process()
-    _report_tracker_environment()
 
-    # Local: the window, and the toolkit under it, only when a window is wanted.
+    # Local: the toolkit, only when a window is wanted.
     from PyQt6.QtWidgets import QApplication  # noqa: PLC0415
-
-    # Local: the window, and the toolkit under it, only when a window is wanted.
     from shared_ui.chrome import family_stylesheet  # noqa: PLC0415
-
-    # Local: the window, and the toolkit under it, only when a window is wanted.
-    from scripture.gui import App  # noqa: PLC0415
+    from shared_ui.loading_window import Loading, LoadingCanceled, LoadingWindow  # noqa: PLC0415
 
     app = QApplication.instance() or QApplication(sys.argv)
-    # On the application, not the window: the family's tooltip rule reaches a
-    # top-level popup only from here.
-    app.setStyleSheet(family_stylesheet())
-    window = App(preview=preview)
+    screen = LoadingWindow(
+        caption=LOADING_CAPTION, wordmark="Scripture", icon=_ICON, preview=preview,
+        steps=STEPS, cancel_hint=CANCEL_HINT,
+    )
+    screen.show()
+    loading = Loading(app, logging.getLogger("scripture"), screen)
+    try:
+        # On the application, not the window: the family's tooltip rule reaches a
+        # top-level popup only from here.
+        window = open_scripture(
+            loading, preview=preview, dress=lambda: app.setStyleSheet(family_stylesheet()))
+    except LoadingCanceled:
+        return
+    loading.done()
     window.show()
     sys.exit(app.exec())
 
