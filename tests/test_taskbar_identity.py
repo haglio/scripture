@@ -54,14 +54,17 @@ def test_a_preview_claims_a_taskbar_button_of_its_own_and_leaves_the_pin_to_the_
     assert stamped == [main.APP_USER_MODEL_ID]
 
 
-def _calls_in_main() -> set[str]:
+def _calls_in_the_launch() -> set[str]:
     tree = ast.parse(Path(main.__file__).read_text(encoding="utf-8"))
-    body, = (node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "main")
-    return {ast.unparse(node) for node in ast.walk(body) if isinstance(node, ast.Call)}
+    launch = [node for node in tree.body
+              if isinstance(node, ast.FunctionDef) and node.name in ("main", "open_scripture")]
+    assert len(launch) == 2
+    return {ast.unparse(node) for body in launch for node in ast.walk(body)
+            if isinstance(node, ast.Call)}
 
 
 def test_the_launch_hands_this_checkouts_preview_to_the_taskbar_and_the_window():
-    calls = _calls_in_main()
+    calls = _calls_in_the_launch()
 
     assert {"preview_of(PROJECT_DIR)", "_set_windows_app_user_model_id(preview)",
             "App(preview=preview)"} <= calls
