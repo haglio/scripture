@@ -92,10 +92,13 @@ This repo is public at `github.com/haglio/scripture` with a merge-queue ruleset 
   `main`, runs the required check, and merges it when green. Don't ff-merge into
   the primary checkout, don't push `main` directly, and never force-push `main`.
 - **The `.git/agent-merge.lock` is retired here** — the GitHub queue serializes.
-- **Sync local checkouts by pulling.** `main` advances only on origin (via the
-  queue), so the primary checkout and worktrees update with
-  `git pull --ff-only origin main`; the running app self-updates the same way.
-  The primary is only ever fast-forwarded — never reset or merged-into.
+- **The production updater moves the primary checkout; never pull it or install
+  into its venv yourself.** `main` advances only on origin (via the queue), and
+  app_support's production updater brings the primary checkout and its venv up
+  to it, the libraries it pins first, as soon as nothing of his runs from it;
+  every launcher here does the same just before it starts Scripture. So a change
+  reaches him the next time he opens Scripture, and worktrees update with
+  `git rebase origin/main`.
 - **A red required check** (`.github/workflows/merge-gate.yml`) can't land.
 - **The demo is `launch_preview_branch.vbs`,** tracked in every checkout and
   rendered from its spec in `pyproject.toml`. It runs the whole app out of your
