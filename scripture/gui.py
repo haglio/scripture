@@ -7,7 +7,6 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import qtawesome as qta
 from app_support.funscript import write as write_funscript
 from app_support.overlay import overlay_value
 from PyQt6.QtCore import QPointF, QSize, Qt, QThread, pyqtSignal
@@ -38,18 +37,26 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shared_ui import palette
 from shared_ui.chrome import toolbar_rules
 from shared_ui.colors import (
+    AMBER,
+    BG_BUTTON,
+    BG_BUTTON_ACTIVE,
     BG_PRIMARY,
     BG_SECONDARY,
     BG_TERTIARY,
     BLUE,
+    BORDER_DEFAULT,
     BORDER_SUBTLE,
+    GREEN,
     RED,
     TEXT_MUTED,
     TEXT_PRIMARY,
+    WHITE,
 )
 from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
+from shared_ui.icons import glyph_icon
 from shared_ui.preview import Preview, window_title
 from shared_ui.preview_icon import app_icon
 from shared_ui.spacing import BUTTON_ICON, GAP_MEDIUM, MARGIN_STANDARD
@@ -73,8 +80,7 @@ from scripture.project import (
 from scripture.scene import Scene, actions_by_scene, scenes_from_splits
 from scripture.video import VideoSource
 
-# The chrome's own text color rather than a near-white of this app's own.
-_ICON_COLOR = TEXT_PRIMARY.name()
+_ICON_COLOR = TEXT_PRIMARY
 _LAST_PROJECT_FILE = Path(__file__).resolve().parent.parent / "sessions" / ".last_session"
 
 _PROGRESS_STYLE = f"""
@@ -92,15 +98,15 @@ _PROGRESS_STYLE = f"""
     }}
 """
 
-_SCENE_EMPTY = QColor(35, 35, 35)
-_SCENE_ANNOTATED = QColor(55, 65, 80)
-_SCENE_PROCESSED = QColor(70, 100, 70)
-_SCENE_BORDER = QColor(100, 100, 100)
-_REP_FRAME_COLOR = QColor(255, 220, 80)
+_SCENE_EMPTY = BG_SECONDARY
+_SCENE_ANNOTATED = BG_BUTTON
+_SCENE_PROCESSED = BG_BUTTON_ACTIVE
+_SCENE_BORDER = BORDER_SUBTLE
+_REP_FRAME_COLOR = AMBER
 _HANDLE_HEIGHT = 8
-_TIP_COLOR = QColor(255, 80, 80)
-_BASE_COLOR = QColor(80, 140, 255)
-_AXIS_COLOR = QColor(255, 220, 80)
+_TIP_COLOR = RED
+_BASE_COLOR = BLUE
+_AXIS_COLOR = AMBER
 
 
 class ProcessWorker(QThread):
@@ -156,20 +162,21 @@ class AutoProcessWorker(QThread):
             self.error.emit(str(e))
 
 
-_ACTION_DOT_COLOR = QColor(80, 255, 80, 180)
+_ACTION_DOT_COLOR = QColor(*palette.GREEN, 180)
 
 # Detection rect colors by class (drawn in the auto-tracking overlay).  The class
 # names are private, so the map comes from the content overlay.
 _DET_COLORS = {
-    name: QColor(*rgb) for name, rgb in overlay_value(load_content(), "class_colors", path=LOCAL_CONTENT).items()
+    name: QColor(*palette.nearest(rgb))
+    for name, rgb in overlay_value(load_content(), "class_colors", path=LOCAL_CONTENT).items()
 }
-_DET_DEFAULT_COLOR = QColor(200, 200, 200)
+_DET_DEFAULT_COLOR = BORDER_DEFAULT
 
 # ROI border color by lock state: how the tracker justified this ROI
 _LOCK_COLORS = {
-    "anchor": QColor(80, 255, 80),     # an anchor class detected
-    "contact": QColor(255, 215, 60),   # contact object over last anchor spot
-    "coast": QColor(255, 140, 40),     # nothing relevant; persistence window
+    "anchor": GREEN,     # an anchor class detected
+    "contact": AMBER,    # contact object over last anchor spot
+    "coast": RED,        # nothing relevant; persistence window
 }
 _LOCK_LABELS = {
     "anchor": "lock: anchor",
@@ -286,7 +293,7 @@ class TimelineWidget(QWidget):
                 self._draw_handle(p, rx, _REP_FRAME_COLOR)
 
         cx = self._frame_to_x(self.current_frame)
-        p.setPen(QPen(Qt.GlobalColor.white, 2))
+        p.setPen(QPen(WHITE, 2))
         p.drawLine(cx, bar_y, cx, bar_y + bar_h)
 
         p.setBrush(Qt.BrushStyle.NoBrush)
@@ -508,7 +515,7 @@ class FrameCanvas(QWidget):
 
     def _draw_point(self, p, pt, color, label):
         cx, cy = self._frame_to_canvas(*pt)
-        p.setPen(QPen(Qt.GlobalColor.white, 1))
+        p.setPen(QPen(WHITE, 1))
         p.setBrush(QBrush(color))
         p.drawEllipse(cx - 5, cy - 5, 10, 10)
         p.setPen(QPen(color))
@@ -547,7 +554,7 @@ class FrameCanvas(QWidget):
 
         ct = ov["contact_pt"]
         ccx, ccy = self._frame_to_canvas(*ct)
-        contact_color = QColor(80, 255, 80)
+        contact_color = GREEN
 
         if ov["is_action"]:
             # Action frame: bold circle, no fill
@@ -556,7 +563,7 @@ class FrameCanvas(QWidget):
             p.drawEllipse(ccx - 7, ccy - 7, 14, 14)
         else:
             # Non-action: small dot with direction arrow along the axis
-            p.setPen(QPen(Qt.GlobalColor.white, 1))
+            p.setPen(QPen(WHITE, 1))
             p.setBrush(QBrush(contact_color))
             p.drawEllipse(ccx - 3, ccy - 3, 6, 6)
 
@@ -609,7 +616,7 @@ class FrameCanvas(QWidget):
             x, y, w, h = belief
             cx1, cy1 = self._frame_to_canvas(x, y)
             cx2, cy2 = self._frame_to_canvas(x + w, y + h)
-            memory_color = QColor(60, 200, 120)
+            memory_color = GREEN
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(memory_color, 2, Qt.PenStyle.DashLine))
             p.drawRect(cx1, cy1, cx2 - cx1, cy2 - cy1)
@@ -642,7 +649,7 @@ class FrameCanvas(QWidget):
         if ov.get("active"):
             pos = ov.get("pos", 50)
             marker_y = gauge_top + int((100 - pos) / 100 * gauge_h)
-            color = QColor(80, 255, 80)
+            color = GREEN
             if ov.get("is_action"):
                 p.setPen(QPen(color, 3))
                 p.setBrush(Qt.BrushStyle.NoBrush)
@@ -654,7 +661,7 @@ class FrameCanvas(QWidget):
             p.setFont(make_font(size=SIZE_SMALL, bold=ov.get("is_action", False)))
             p.drawText(gauge_x - 24, marker_y + 4, f"{ov.get('pos', 50):3d}")
         else:
-            p.setPen(QPen(QColor(255, 150, 50)))
+            p.setPen(QPen(AMBER))
             p.setFont(make_font(size=SIZE_SMALL, bold=True))
             p.drawText(gauge_x - 60, gauge_top + 14, "no target")
 
@@ -668,14 +675,14 @@ class FrameCanvas(QWidget):
             p.setPen(QPen(_AXIS_COLOR, 2, Qt.PenStyle.DashLine))
             p.drawLine(tx, ty, bx, by)
             # Tip marker
-            p.setPen(QPen(Qt.GlobalColor.white, 1))
+            p.setPen(QPen(WHITE, 1))
             p.setBrush(QBrush(_TIP_COLOR))
             p.drawEllipse(tx - 5, ty - 5, 10, 10)
             p.setPen(QPen(_TIP_COLOR))
             p.setFont(make_font(size=SIZE_SMALL))
             p.drawText(tx + 10, ty + 4, "T")
             # Base marker
-            p.setPen(QPen(Qt.GlobalColor.white, 1))
+            p.setPen(QPen(WHITE, 1))
             p.setBrush(QBrush(_BASE_COLOR))
             p.drawEllipse(bx - 5, by - 5, 10, 10)
             p.setPen(QPen(_BASE_COLOR))
@@ -684,7 +691,7 @@ class FrameCanvas(QWidget):
 
         # Contact marker
         contact = gt.get("contact")
-        contact_color = QColor(80, 255, 80)
+        contact_color = GREEN
         if contact is not None:
             ccx, ccy = self._frame_to_canvas(*contact)
             if gt.get("is_action"):
@@ -692,7 +699,7 @@ class FrameCanvas(QWidget):
                 p.setBrush(QBrush(Qt.GlobalColor.transparent))
                 p.drawEllipse(ccx - 8, ccy - 8, 16, 16)
             else:
-                p.setPen(QPen(Qt.GlobalColor.white, 1))
+                p.setPen(QPen(WHITE, 1))
                 p.setBrush(QBrush(contact_color))
                 p.drawEllipse(ccx - 5, ccy - 5, 10, 10)
             # Pos label
@@ -704,7 +711,7 @@ class FrameCanvas(QWidget):
         elif gt.get("tip") and gt.get("base"):
             mx = (tx + bx) // 2
             my = (ty + by) // 2
-            p.setPen(QPen(QColor(255, 150, 50)))
+            p.setPen(QPen(AMBER))
             p.setFont(make_font(size=SIZE_BODY, bold=True))
             p.drawText(mx + 10, my + 5, "no contact")
 
@@ -1080,7 +1087,7 @@ class App(QMainWindow):
         self.progress_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._progress_action = tb.addWidget(self.progress_bar)
         self._progress_action.setVisible(False)
-        self._abort_action = QAction(qta.icon("fa5s.stop", color=RED.name()), "Abort", self)
+        self._abort_action = QAction(glyph_icon("stop", color=RED), "Abort", self)
         self._abort_action.triggered.connect(self._abort_processing)
         self._abort_action.setVisible(False)
         tb.addAction(self._abort_action)
@@ -1089,16 +1096,16 @@ class App(QMainWindow):
         # own -- the spacer above is what pushes them there.  They were flush
         # left, which left the two apps' top bars reading as different chrome.
         for icon, label, handler in [
-            ("fa5s.folder-open", "New", self._open_video),
-            ("fa5s.save", "Save", self._save_project),
-            ("fa5s.copy", "Save As", self._save_project_as),
-            ("fa5s.folder", "Load", self._load_project),
+            ("plus", "New", self._open_video),
+            ("save", "Save", self._save_project),
+            ("copy", "Save As", self._save_project_as),
+            ("folder", "Load", self._load_project),
         ]:
-            act = QAction(qta.icon(icon, color=_ICON_COLOR), label, self)
+            act = QAction(glyph_icon(icon, color=_ICON_COLOR), label, self)
             act.triggered.connect(handler)
             tb.addAction(act)
         tb.addSeparator()
-        act = QAction(qta.icon("fa5s.file-export", color=_ICON_COLOR), "Export", self)
+        act = QAction(glyph_icon("export", color=_ICON_COLOR), "Export", self)
         act.triggered.connect(self._export)
         tb.addAction(act)
 
@@ -1337,12 +1344,12 @@ class App(QMainWindow):
         menu = QMenu(self)
 
         if has_axis or self.pending_tip:
-            menu.addAction("\u2717 Remove Tip", lambda: self._delete_point("tip"))
+            menu.addAction(glyph_icon("cross"), "Remove Tip", lambda: self._delete_point("tip"))
         else:
             menu.addAction("Place Tip Here", lambda: self._place_point_at("tip", fx, fy))
 
         if has_axis or self.pending_base:
-            menu.addAction("\u2717 Remove Base", lambda: self._delete_point("base"))
+            menu.addAction(glyph_icon("cross"), "Remove Base", lambda: self._delete_point("base"))
         else:
             menu.addAction("Place Base Here", lambda: self._place_point_at("base", fx, fy))
 

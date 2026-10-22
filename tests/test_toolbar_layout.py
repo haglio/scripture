@@ -14,9 +14,9 @@ with the row on screen unchanged (audit scripture/all/tests/002).
 from __future__ import annotations
 
 import pytest
-import qtawesome as qta
-from PyQt6.QtWidgets import QSizePolicy, QToolBar
+from PyQt6.QtWidgets import QMenu, QSizePolicy, QToolBar
 from shared_ui.colors import RED, TEXT_PRIMARY
+from shared_ui.icons import glyph_icon
 from shared_ui.spacing import MARGIN_STANDARD
 
 from scripture import gui
@@ -71,14 +71,36 @@ def _drawn(icon) -> bytes:
 def test_the_file_action_marks_are_drawn_in_the_family_ink(toolbar):
     (export,) = [a for a in toolbar.actions() if a.text() == "Export"]
 
-    assert _drawn(export.icon()) == _drawn(
-        qta.icon("fa5s.file-export", color=TEXT_PRIMARY.name()))
+    assert _drawn(export.icon()) == _drawn(glyph_icon("export", color=TEXT_PRIMARY))
 
 
 def test_the_abort_mark_is_drawn_in_the_family_red(window):
-    assert _drawn(window._abort_action.icon()) == _drawn(
-        qta.icon("fa5s.stop", color=RED.name()))
+    assert _drawn(window._abort_action.icon()) == _drawn(glyph_icon("stop", color=RED))
 
 
 def test_the_icon_color_is_the_palette_s_and_not_this_app_s_own():
-    assert TEXT_PRIMARY.name() == gui._ICON_COLOR
+    assert gui._ICON_COLOR == TEXT_PRIMARY
+
+
+@pytest.mark.parametrize(("label", "mark"), [
+    ("New", "plus"), ("Save", "save"), ("Save As", "copy"), ("Load", "folder"),
+])
+def test_each_file_action_wears_the_familys_mark_for_it(toolbar, label, mark):
+    (action,) = [a for a in toolbar.actions() if a.text() == label]
+
+    assert _drawn(action.icon()) == _drawn(glyph_icon(mark, color=TEXT_PRIMARY))
+
+
+def test_the_point_menus_remove_items_wear_the_familys_cross(window, monkeypatch):
+    shown = []
+    monkeypatch.setattr(QMenu, "exec", lambda menu, *_args: shown.append(menu))
+    window.total_frames = 1000
+    window.splits = []
+    window._rebuild_scenes()
+    window.pending_tip = (40, 30)
+
+    window._on_canvas_context_menu(40, 30)
+
+    (menu,) = shown
+    (remove_tip,) = [action for action in menu.actions() if action.text() == "Remove Tip"]
+    assert _drawn(remove_tip.icon()) == _drawn(glyph_icon("cross"))
