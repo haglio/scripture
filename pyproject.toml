@@ -33,7 +33,6 @@ dependencies = [
     "torchvision>=0.15,<0.29",
     "ultralytics>=8.4,<9",
     "PyQt6>=6,<7",
-    "qtawesome>=1,<2",
 ]
 
 [project.scripts]
@@ -47,8 +46,8 @@ dev = ["pytest>=9,<10", "pytest-cov>=7,<8", "pytest-timeout>=2.4,<3", "vulture>=
 # developer machine is the tracked-tree content scan, but it is not the
 # slowest on a runner: it returns early when no blocklist is reachable, and
 # the blocklist is git-ignored, so a fresh checkout has none. What CI does run
-# longest here is a child interpreter importing the GUI -- cv2, numpy,
-# qtawesome and PyQt6 -- at about a second, and four launcher tests that are
+# longest here is a child interpreter importing the GUI -- cv2, numpy
+# and PyQt6 -- at about a second, and four launcher tests that are
 # skipped off Windows and so cannot be timed from this machine at all. 120 s
 # rather than 60 for that blind spot. --timeout-method=thread is the half that
 # pays for itself: it dumps the stack of the test that stopped, which turns a
