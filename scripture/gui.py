@@ -59,7 +59,7 @@ from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
 from shared_ui.icons import glyph_icon
 from shared_ui.preview import Preview, window_title
 from shared_ui.preview_icon import app_icon
-from shared_ui.spacing import BUTTON_ICON, GAP_MEDIUM, MARGIN_STANDARD
+from shared_ui.spacing import BUTTON_ICON, BUTTON_RADIUS_HUD, GAP_MEDIUM, GAP_SMALL, MARGIN_STANDARD
 
 from scripture.annotations import SceneAnnotations
 from scripture.auto_funscript import run_pipeline
@@ -87,14 +87,14 @@ _PROGRESS_STYLE = f"""
     QProgressBar {{
         background: {BG_TERTIARY.name()};
         border: 1px solid {BORDER_SUBTLE.name()};
-        border-radius: 3px;
+        border-radius: {BUTTON_RADIUS_HUD}px;
         text-align: center;
         color: {TEXT_PRIMARY.name()};
         height: 18px;
     }}
     QProgressBar::chunk {{
         background: {BLUE.name()};
-        border-radius: 2px;
+        border-radius: {BUTTON_RADIUS_HUD}px;
     }}
 """
 
@@ -1152,7 +1152,7 @@ class App(QMainWindow):
         self.info_label.setFont(make_font(size=SIZE_SMALL))
         self.info_label.setStyleSheet(
             f"color: {TEXT_MUTED.name()}; background: {BG_SECONDARY.name()}; "
-            f"padding: 3px 6px; border-radius: 2px;"
+            f"padding: {GAP_SMALL}px {GAP_MEDIUM}px; border-radius: {BUTTON_RADIUS_HUD}px;"
         )
         footer.addWidget(self.info_label, stretch=1)
 
