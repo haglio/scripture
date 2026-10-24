@@ -105,6 +105,9 @@ This repo is public at `github.com/haglio/scripture` with a merge-queue ruleset 
   worktree on the primary checkout's venv, so a worktree needs no venv and still
   gets the CUDA torch and the editable siblings. Hand the owner a `file:///` link
   to your worktree's copy; the visible launch is his, never yours.
+  A branch that needs a sibling version the venv does not hold gets a launcher
+  of its own in the worktree's git-ignored `state/` that also puts checkouts of
+  those versions first on `PYTHONPATH`.
 
 Everything else in the global CLAUDE.md — work in a worktree, green tests before
 you push, clean handoff — still applies.

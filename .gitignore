@@ -35,3 +35,4 @@ funscripts/
 # Private overlay — real values live here and never get published;
 # scripture/content.example.json documents its shape.
 /content.local.json
+/state/
