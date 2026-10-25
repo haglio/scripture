@@ -24,8 +24,8 @@ requires-python = ">=3.14"
 # other half had not landed turned all of them red at once. Moving to a newer
 # one is this repo's own commit, with its own suite to answer for it.
 dependencies = [
-    "app-support @ git+https://github.com/haglio/app_support@v0.1.259",
-    "shared-ui @ git+https://github.com/haglio/shared_ui@v0.1.256",
+    "app-support @ git+https://github.com/haglio/app_support@v0.1.284",
+    "shared-ui @ git+https://github.com/haglio/shared_ui@v0.1.264",
     "opencv-python>=4.8,<5",
     "numpy>=1.24,<3",
     "scipy>=1.11,<2",
@@ -51,9 +51,9 @@ dev = ["pytest>=9,<10", "pytest-cov>=7,<8", "pytest-timeout>=2.4,<3", "vulture>=
 # skipped off Windows and so cannot be timed from this machine at all. 120 s
 # rather than 60 for that blind spot. --timeout-method=thread is the half that
 # pays for itself: it dumps the stack of the test that stopped, which turns a
-# stalled required check into a one-line diagnosis. tests/test_timeouts.py
+# stalled required check into a one-line diagnosis. app_support.clocks
 # holds all three halves of it.
-addopts = "--timeout=120 --timeout-method=thread -p app_support.sanitize.pytest_plugin -p app_support.coverage_gate --cov --cov-report="
+addopts = "--timeout=120 --timeout-method=thread -p app_support.sanitize.pytest_plugin -p app_support.clocks.pytest_plugin -p app_support.coverage_gate --cov --cov-report="
 testpaths = ["tests"]
 
 # The family checkouts this one is installed beside. Both were imported and
