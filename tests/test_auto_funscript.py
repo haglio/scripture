@@ -9,7 +9,7 @@ import pytest
 
 from scripture.auto_funscript import (
     ANCHOR_CLASSES,
-    RECIPE_VERSION,
+    TRACKER_VERSION,
     Detection,
     PipelineResult,
     TrackConfig,
@@ -31,7 +31,7 @@ from scripture.auto_funscript import (
     track_flow_signal,
     weighted_flow,
 )
-from tests.stamps import A_STAMP
+from tests.stamps import A_STAMP, METHOD, METHOD_VERSION
 from tests.videos import a_flat_video
 
 # The class vocabulary is private; take it from whichever overlay is loaded.
@@ -389,8 +389,8 @@ class TestRunPipeline:
         result = run_pipeline(video_path, detect_fn=lambda _frame: [], flow_fn=_flow_of(0.0))
 
         made = result.provenance
-        assert (made["app"], made["recipe"]) == ("scripture", "roi_flow")
-        assert made["recipe_version"] == RECIPE_VERSION
+        assert (made["app"], made[METHOD]) == ("scripture", "roi_flow")
+        assert made[METHOD_VERSION] == TRACKER_VERSION
 
 
 class TestGenerateFunscript:
@@ -419,7 +419,7 @@ class TestGenerateFunscript:
             video_path, str(output_path), detect_fn=lambda _frame: [], flow_fn=_flow_of(0.0))
 
         written = json.loads(output_path.read_text(encoding="utf-8"))
-        assert written["provenance"]["recipe"] == "roi_flow"
+        assert written["provenance"][METHOD] == "roi_flow"
         assert "provenance" not in written["metadata"]
 
 

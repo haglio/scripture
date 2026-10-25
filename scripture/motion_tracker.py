@@ -9,8 +9,8 @@ import numpy as np
 
 from scripture.funscript import made_by
 
-RECIPE = "axis_tracking"
-RECIPE_VERSION = "1"
+TRACKER = "axis_tracking"
+TRACKER_VERSION = "1"
 
 
 @dataclass
@@ -97,5 +97,5 @@ def track_motion(video_path: str, axis: AxisDefinition,
         positions=positions,
         tip_coords=tip_coords,
         base_coords=base_coords,
-        provenance=made_by(RECIPE, RECIPE_VERSION),
+        provenance=made_by(TRACKER, TRACKER_VERSION),
     )
