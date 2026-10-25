@@ -61,3 +61,11 @@ def test_the_preview_runs_this_checkout_on_the_primary_s_venv():
     assert Path(report.value("interpreter")) == (
         Path(report.value("primary")) / ".venv" / "Scripts" / "python.exe")
     assert report.value("arguments") == "-m scripture"
+
+
+@on_windows
+def test_a_new_previews_first_click_shows_the_pictures_an_earlier_preview_left():
+    report = dry_run(PREVIEW)
+
+    assert Path(report.value("pictures")) == (
+        Path(report.value("primary")) / "sessions" / "scripture_launcher.screen" / "preview")

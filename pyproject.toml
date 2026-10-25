@@ -96,6 +96,7 @@ run = "-m scripture"
 venv = "primary"
 log = 'sessions\scripture_launcher.log'
 loading-screen = ["Updating Scripture..."]
+preview = true
 
 # What Scripture relies on Windows to keep: the shortcut it is pinned from.
 # `python -m app_support.windows_settings --write` makes this machine match
