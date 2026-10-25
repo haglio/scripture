@@ -70,6 +70,14 @@ siblings = ["app_support", "shared_ui"]
 # Scripture (app_support.production_update).
 [tool.haglio.production]
 
+# What Scripture will not open without (scripture.content.refuse_an_incomplete_overlay):
+# every key scripture/content.example.json documents, in content.local.json. The
+# production updater reads this at the commit it would move production to, and keeps
+# production where it is while content.local.json lacks one of those keys.
+[tool.haglio.opens-only-with]
+every-key-of = "scripture/content.example.json"
+in = "content.local.json"
+
 # What launch_scripture.vbs, the file the pinned shortcut runs, starts. The
 # launcher is rendered from this by `python -m app_support.launcher --write`.
 [tool.haglio.launchers."launch_scripture.vbs"]

@@ -10,6 +10,7 @@ from app_support.process_identity import ProcessNamer
 from app_support.win32 import set_app_user_model_id, stamp_pinned_shortcuts
 from shared_ui.preview import Preview, preview_of, taskbar_identity
 
+from scripture import content
 from scripture.tracker_environment import complaints
 
 APP_USER_MODEL_ID = "FunTime.Scripture"
@@ -75,6 +76,7 @@ def open_scripture(loading, *, preview: Preview | None, dress):
     loading.say(checking)
     _report_tracker_environment()
     loading.say(loading_scripture)
+    content.refuse_an_incomplete_overlay()
     # Local: the window, and the toolkit under it, only when a window is wanted.
     from scripture.gui import App  # noqa: PLC0415
 

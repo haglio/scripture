@@ -3,9 +3,16 @@ the steps the launch takes, the slow one first."""
 
 from __future__ import annotations
 
-from unittest.mock import patch
+import json
+import sys
+import tomllib
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
-from scripture import main
+import pytest
+from app_support.overlay import MissingOverlayKey
+
+from scripture import content, main
 
 
 class _Loading:
@@ -55,3 +62,28 @@ def test_the_tracker_check_is_the_long_step_so_the_bar_spends_most_of_its_time_t
 
     assert first == "Checking the tracker..."
     assert weight > sum(w for _step, w in rest)
+
+
+def test_a_launch_on_a_settings_file_missing_a_line_its_example_documents_refuses_before_the_window(
+        monkeypatch, tmp_path):
+    lines = json.loads(content.EXAMPLE_CONTENT.read_text(encoding="utf-8"))
+    del lines["class_colors"]
+    short = tmp_path / "content.local.json"
+    short.write_text(json.dumps(lines), encoding="utf-8")
+    monkeypatch.setattr(content, "LOCAL_CONTENT", short)
+    window = MagicMock()
+    monkeypatch.setitem(sys.modules, "scripture.gui", SimpleNamespace(App=window))
+
+    with patch.object(main, "_report_tracker_environment"), \
+         pytest.raises(MissingOverlayKey, match="class_colors"):
+        main.open_scripture(_Loading(), preview=None, dress=lambda: None)
+
+    window.assert_not_called()
+
+
+def test_the_pyproject_says_the_launch_needs_every_key_of_the_example_in_the_local_overlay():
+    declared = tomllib.loads((content.PROJECT_DIR / "pyproject.toml").read_text(encoding="utf-8"))[
+        "tool"]["haglio"]["opens-only-with"]
+
+    assert (content.PROJECT_DIR / declared["every-key-of"], content.PROJECT_DIR / declared["in"]) == (
+        content.EXAMPLE_CONTENT, content.LOCAL_CONTENT)
