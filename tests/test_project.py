@@ -21,7 +21,7 @@ from scripture.project import (
     save_project,
     state_from_document,
 )
-from tests.stamps import A_STAMP
+from tests.stamps import A_STAMP, METHOD
 
 
 def _tracked(provenance):
@@ -197,7 +197,7 @@ class TestWhatMadeTheActions:
         assert provenance_of_actions(document) is None
 
     def test_scenes_the_auto_pass_filled_carry_its_stamp(self):
-        auto_stamp = {**A_STAMP, "recipe": "roi_flow"}
+        auto_stamp = {**A_STAMP, METHOD: "roi_flow"}
         document = ProjectDocument(
             actions={0: [{"at": 0, "pos": 50}], 1: [{"at": 900, "pos": 90}]},
             auto=_auto_pass(auto_stamp))
@@ -208,6 +208,6 @@ class TestWhatMadeTheActions:
         document = ProjectDocument(
             actions={0: [{"at": 0, "pos": 50}]},
             tracking={0: _tracked(A_STAMP)},
-            auto=_auto_pass({**A_STAMP, "recipe": "roi_flow"}))
+            auto=_auto_pass({**A_STAMP, METHOD: "roi_flow"}))
 
-        assert provenance_of_actions(document) == {**A_STAMP, "recipe": None}
+        assert provenance_of_actions(document) == {**A_STAMP, METHOD: None}

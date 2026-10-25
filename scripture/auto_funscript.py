@@ -26,8 +26,8 @@ from app_support.overlay import overlay_value
 from scripture.content import LOCAL_CONTENT, load_content
 from scripture.funscript import build_funscript, made_by
 
-RECIPE = "roi_flow"
-RECIPE_VERSION = "1"
+TRACKER = "roi_flow"
+TRACKER_VERSION = "1"
 
 _CONTENT = load_content()
 
@@ -530,7 +530,7 @@ def run_pipeline(
         fps=fps,
         start_frame=start_frame,
         total_frames=total_frames,
-        provenance=made_by(RECIPE, RECIPE_VERSION),
+        provenance=made_by(TRACKER, TRACKER_VERSION),
     )
 
 

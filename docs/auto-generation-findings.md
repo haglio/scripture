@@ -14,7 +14,7 @@ means the operator's hand-made funscripts.
 
 **The short-clip lane is fully automated.** Every clip in that lane (~300)
 carries a generated script the player loads automatically, device-approved
-("good enough for jazz"). The recipe, end to end:
+("good enough for jazz"). The method, end to end:
 
 1. **Domain fine-tune of the detector from auto-labels.** Seed a video
    segmentation tracker (SAM2) with every detector hit, harvest its per-frame
@@ -80,7 +80,7 @@ information differs by content:
   such content encode rhythm, not per-frame depth.
 
 Long-form videos mix both plus idle/positional segments, which is presumably
-why the clip recipe transferred poorly (rejected on device at r = 0.200
+why the clip method transferred poorly (rejected on device at r = 0.200
 median vs truth). Unresolved.
 
 ## The graveyard (do not retry without new information)
