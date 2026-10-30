@@ -362,7 +362,7 @@ class TestSignalToActions:
             signal, fps=30.0, config=TrackConfig(), start_frame=300)
         assert len(base) == len(shifted)
         # 300 frames at 30fps = 10s offset
-        for a, b in zip(base, shifted):
+        for a, b in zip(base, shifted, strict=True):
             assert b["at"] - a["at"] == 10000
 
 

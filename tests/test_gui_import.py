@@ -31,6 +31,7 @@ def _fresh_interpreter(statement: str) -> subprocess.CompletedProcess:
         text=True,
         cwd=REPO_ROOT,
         env=env,
+        check=False,
     )
 
 

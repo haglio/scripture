@@ -30,7 +30,7 @@ def test_an_error_nothing_catches_is_logged_and_the_app_keeps_running():
     ran = subprocess.run([sys.executable, "-c", child], cwd=REPO_ROOT, timeout=60,
                          env=os.environ | {"QT_QPA_PLATFORM": "offscreen"},
                          capture_output=True, encoding="utf-8", errors="replace",
-                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), check=False)
 
     assert "still running" in ran.stdout, ran.stdout + ran.stderr
     assert "an invented error no handler expects" in ran.stderr
