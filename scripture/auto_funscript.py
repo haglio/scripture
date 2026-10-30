@@ -138,7 +138,7 @@ def smooth_roi(
     """Blend the new ROI toward the previous one; factor is the weight kept."""
     if previous is None:
         return new
-    return tuple(int(p * factor + n * (1 - factor)) for p, n in zip(previous, new))
+    return tuple(int(p * factor + n * (1 - factor)) for p, n in zip(previous, new, strict=True))
 
 
 def flow_to_position(
