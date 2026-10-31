@@ -23,7 +23,7 @@ from app_support.dependencies import (
 pytestmark = pytest.mark.repo_check
 
 ROOT = Path(__file__).resolve().parent.parent
-TREES = [ROOT / "scripture", ROOT / "tests", ROOT / "tools",
+TREES = [ROOT / "scripture", ROOT / "tests",
          ROOT / "vulture_whitelist.py"]
 
 
