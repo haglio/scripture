@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 from PyQt6.QtWidgets import QMenu, QSizePolicy, QToolBar
 from shared_ui.colors import RED, TEXT_PRIMARY
-from shared_ui.icons import glyph_icon
+from shared_ui.icons import qt_icon
 from shared_ui.spacing import MARGIN_STANDARD
 
 from scripture import gui
@@ -71,11 +71,11 @@ def _drawn(icon) -> bytes:
 def test_the_file_action_marks_are_drawn_in_the_family_ink(toolbar):
     (export,) = [a for a in toolbar.actions() if a.text() == "Export"]
 
-    assert _drawn(export.icon()) == _drawn(glyph_icon("export", color=TEXT_PRIMARY))
+    assert _drawn(export.icon()) == _drawn(qt_icon("export", color=TEXT_PRIMARY))
 
 
 def test_the_abort_mark_is_drawn_in_the_family_red(window):
-    assert _drawn(window._abort_action.icon()) == _drawn(glyph_icon("stop", color=RED))
+    assert _drawn(window._abort_action.icon()) == _drawn(qt_icon("stop", color=RED))
 
 
 def test_the_icon_color_is_the_palette_s_and_not_this_app_s_own():
@@ -88,7 +88,7 @@ def test_the_icon_color_is_the_palette_s_and_not_this_app_s_own():
 def test_each_file_action_wears_the_familys_mark_for_it(toolbar, label, mark):
     (action,) = [a for a in toolbar.actions() if a.text() == label]
 
-    assert _drawn(action.icon()) == _drawn(glyph_icon(mark, color=TEXT_PRIMARY))
+    assert _drawn(action.icon()) == _drawn(qt_icon(mark, color=TEXT_PRIMARY))
 
 
 def test_the_point_menus_remove_items_wear_the_familys_cross(window, monkeypatch):
@@ -103,4 +103,4 @@ def test_the_point_menus_remove_items_wear_the_familys_cross(window, monkeypatch
 
     (menu,) = shown
     (remove_tip,) = [action for action in menu.actions() if action.text() == "Remove Tip"]
-    assert _drawn(remove_tip.icon()) == _drawn(glyph_icon("cross"))
+    assert _drawn(remove_tip.icon()) == _drawn(qt_icon("cross"))
