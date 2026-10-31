@@ -97,9 +97,11 @@ class TestCombineRoi:
     def test_minimum_size_enforced(self):
         rects = [(400, 300, 20, 20)]
         x, y, w, h = combine_roi(rects, frame_size=(544, 960), padding=0, min_size=128)
-        assert w == 128 and h == 128
+        assert w == 128
+        assert h == 128
         # Still centered on the small rect and inside the frame
-        assert 0 <= x <= 960 - 128 and 0 <= y <= 544 - 128
+        assert 0 <= x <= 960 - 128
+        assert 0 <= y <= 544 - 128
 
 
 class TestSmoothRoi:
@@ -125,7 +127,8 @@ class TestWeightedFlow:
     def test_a_still_frame_registers_no_movement(self):
         flow = np.zeros((50, 50, 2), dtype=np.float32)
         dy, dx = weighted_flow(flow)
-        assert dy == 0.0 and dx == 0.0
+        assert dy == 0.0
+        assert dx == 0.0
 
 
 class TestFlowToPosition:
@@ -145,7 +148,8 @@ class TestAntiPlateauNormalize:
         t = np.arange(600)
         wave = 50 + 20 * np.sin(2 * np.pi * t / 30)  # 30-70 oscillation
         out = anti_plateau_normalize(wave, window=120, threshold=15.0)
-        assert out.max() > 95 and out.min() < 5
+        assert out.max() > 95
+        assert out.min() < 5
 
     def test_tiny_jitter_is_not_amplified(self):
         rng = np.random.default_rng(42)
@@ -324,7 +328,8 @@ class TestComputePositions:
         pos = compute_positions(signal, TrackConfig())
         assert len(pos) == n
         # Gain + normalization drive the wave to (nearly) full range
-        assert pos.max() > 95 and pos.min() < 5
+        assert pos.max() > 95
+        assert pos.min() < 5
 
 
 class TestSignalToActions:
@@ -340,7 +345,8 @@ class TestSignalToActions:
         assert 12 <= len(actions) <= 28
         pos = np.array([a["pos"] for a in actions])
         # Normalization should spread turnarounds wide
-        assert pos.max() >= 85 and pos.min() <= 15
+        assert pos.max() >= 85
+        assert pos.min() <= 15
         # Timestamps in ms and increasing
         ts = np.array([a["at"] for a in actions])
         assert (np.diff(ts) > 0).all()
@@ -452,11 +458,13 @@ class TestPipelineResultSerialization:
         assert restored.signal.rois == [(10, 20, 130, 140), (12, 22, 130, 140), None]
         assert restored.signal.beliefs == [(10, 20, 30, 40), (11, 21, 30, 40), None]
         det = restored.signal.detections[0][0]
-        assert det.class_name == ANCHOR and det.rect == (10, 20, 30, 40)
+        assert det.class_name == ANCHOR
+        assert det.rect == (10, 20, 30, 40)
         np.testing.assert_allclose(restored.positions, original.positions)
         assert restored.actions == original.actions
         assert restored.fps == pytest.approx(29.97)
-        assert restored.start_frame == 100 and restored.total_frames == 500
+        assert restored.start_frame == 100
+        assert restored.total_frames == 500
 
     def test_what_made_the_result_comes_back_with_it(self):
         original = PipelineResult(
@@ -500,7 +508,8 @@ class TestPipelineResultSerialization:
         restored = pipeline_result_from_state(state)
 
         det = restored.signal.detections[0][0]
-        assert det.class_name == ANCHOR and det.rect == (10, 20, 30, 40)
+        assert det.class_name == ANCHOR
+        assert det.rect == (10, 20, 30, 40)
 
 
 class TestParseArgs:

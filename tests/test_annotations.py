@@ -164,4 +164,5 @@ class TestLoadingADocument:
 
         annotations.clear()
 
-        assert annotations.axes == {} and annotations.labels == {}
+        assert annotations.axes == {}
+        assert annotations.labels == {}

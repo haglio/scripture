@@ -156,8 +156,10 @@ class TestDocumentSchema:
         restored = document_from_state(
             {"video_path": "C:/videos/example clip.mp4", "splits": []})
 
-        assert restored.axes == {} and restored.labels == {}
-        assert restored.auto is None and restored.current_frame == 0
+        assert restored.axes == {}
+        assert restored.labels == {}
+        assert restored.auto is None
+        assert restored.current_frame == 0
 
 
 class TestTheShapeAnotherAppRewrites:
