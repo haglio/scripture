@@ -40,7 +40,6 @@ from PyQt6.QtWidgets import (
 from shared_ui import palette
 from shared_ui.chrome import toolbar_rules
 from shared_ui.colors import (
-    AMBER,
     BG_BUTTON,
     BG_BUTTON_ACTIVE,
     BG_PRIMARY,
@@ -54,6 +53,7 @@ from shared_ui.colors import (
     TEXT_MUTED,
     TEXT_PRIMARY,
     WHITE,
+    YELLOW,
 )
 from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
 from shared_ui.icons import qt_icon
@@ -102,11 +102,11 @@ _SCENE_EMPTY = BG_SECONDARY
 _SCENE_ANNOTATED = BG_BUTTON
 _SCENE_PROCESSED = BG_BUTTON_ACTIVE
 _SCENE_BORDER = BORDER_SUBTLE
-_REP_FRAME_COLOR = AMBER
+_REP_FRAME_COLOR = YELLOW
 _HANDLE_HEIGHT = 8
 _TIP_COLOR = RED
 _BASE_COLOR = BLUE
-_AXIS_COLOR = AMBER
+_AXIS_COLOR = YELLOW
 
 
 class ProcessWorker(QThread):
@@ -175,7 +175,7 @@ _DET_DEFAULT_COLOR = BORDER_DEFAULT
 # ROI border color by lock state: how the tracker justified this ROI
 _LOCK_COLORS = {
     "anchor": GREEN,     # an anchor class detected
-    "contact": AMBER,    # contact object over last anchor spot
+    "contact": YELLOW,    # contact object over last anchor spot
     "coast": RED,        # nothing relevant; persistence window
 }
 _LOCK_LABELS = {
@@ -661,7 +661,7 @@ class FrameCanvas(QWidget):
             p.setFont(make_font(size=SIZE_SMALL, bold=ov.get("is_action", False)))
             p.drawText(gauge_x - 24, marker_y + 4, f"{ov.get('pos', 50):3d}")
         else:
-            p.setPen(QPen(AMBER))
+            p.setPen(QPen(YELLOW))
             p.setFont(make_font(size=SIZE_SMALL, bold=True))
             p.drawText(gauge_x - 60, gauge_top + 14, "no target")
 
@@ -711,7 +711,7 @@ class FrameCanvas(QWidget):
         elif gt.get("tip") and gt.get("base"):
             mx = (tx + bx) // 2
             my = (ty + by) // 2
-            p.setPen(QPen(AMBER))
+            p.setPen(QPen(YELLOW))
             p.setFont(make_font(size=SIZE_BODY, bold=True))
             p.drawText(mx + 10, my + 5, "no contact")
 
