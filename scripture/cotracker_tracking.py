@@ -2,27 +2,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cache
 
 import cv2
 import numpy as np
 
 from scripture.motion_tracker import AxisDefinition
 
-_cotracker_model = None
 
-
+@cache
 def _get_model():
-    """Load CoTracker3 (cached after first call)."""
     # Local: torch is seconds to import plus a GPU handshake.
     import torch  # noqa: PLC0415
 
-    global _cotracker_model
-    if _cotracker_model is None:
-        _cotracker_model = torch.hub.load(
-            "facebookresearch/co-tracker", "cotracker3_offline",
-        )
-        _cotracker_model = _cotracker_model.to("cuda")
-    return _cotracker_model
+    return torch.hub.load("facebookresearch/co-tracker", "cotracker3_offline").to("cuda")
 
 
 def sanitize_positions(positions: np.ndarray, fps: float = 30.0) -> np.ndarray:
