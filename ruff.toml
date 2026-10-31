@@ -4,9 +4,25 @@ target-version = "py312"
 [lint]
 select = ["F", "E", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PL", "PT", "DTZ", "PIE", "PERF", "FLY", "ISC", "RET", "FURB", "EXE"]
 ignore = ["E501", "BLE001", "S110",
-    # This repo's ratchet: what the family config found here, to be worked off rule by rule.
-    "PLR2004", "RUF046", "B018", "F821", "PT018", "PLR0913", "PLR0917", "PLR0915", "PLR0912", "B007", "RUF005", "PERF401", "RUF003"]
-external = ["ARG", "N", "S", "E501", "BLE001", "S110", "PLR2004", "RUF046", "B018", "F821", "PT018", "PLR0913", "PLR0917", "PLR0915", "PLR0912", "B007", "RUF005", "PERF401", "RUF003"]
+    # This repo's ratchet: each rule the family config still finds here, and its places today.
+    "PLR2004",  # 15
+    "RUF046",  # 12
+    "PT018",  # 12
+    "PLR0913",  # 7
+    "PLR0917",  # 5
+    "PLR0915",  # 4
+    "PLR0912",  # 2
+    "B007",  # 2
+    "RUF005",  # 1
+    "PERF401",  # 1
+    "RUF003",  # 1
+]
+external = ["ARG", "N", "S", "E501", "BLE001", "S110", "PLR2004", "RUF046", "PT018", "PLR0913", "PLR0917", "PLR0915", "PLR0912", "B007", "RUF005", "PERF401", "RUF003"]
+
+[lint.per-file-ignores]
+"**/vulture_whitelist.py" = ["B018", "F821"]
+"**/tests/**" = ["PLR2004"]
+"**/test_*.py" = ["PLR2004"]
 
 [format]
 quote-style = "double"
