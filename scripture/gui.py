@@ -56,7 +56,7 @@ from shared_ui.colors import (
     WHITE,
 )
 from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
-from shared_ui.icons import glyph_icon
+from shared_ui.icons import qt_icon
 from shared_ui.preview import Preview, window_title
 from shared_ui.preview_icon import app_icon
 from shared_ui.spacing import BUTTON_ICON, BUTTON_RADIUS_HUD, GAP_MEDIUM, GAP_SMALL, MARGIN_STANDARD
@@ -1087,7 +1087,7 @@ class App(QMainWindow):
         self.progress_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._progress_action = tb.addWidget(self.progress_bar)
         self._progress_action.setVisible(False)
-        self._abort_action = QAction(glyph_icon("stop", color=RED), "Abort", self)
+        self._abort_action = QAction(qt_icon("stop", color=RED), "Abort", self)
         self._abort_action.triggered.connect(self._abort_processing)
         self._abort_action.setVisible(False)
         tb.addAction(self._abort_action)
@@ -1101,11 +1101,11 @@ class App(QMainWindow):
             ("copy", "Save As", self._save_project_as),
             ("folder", "Load", self._load_project),
         ]:
-            act = QAction(glyph_icon(icon, color=_ICON_COLOR), label, self)
+            act = QAction(qt_icon(icon, color=_ICON_COLOR), label, self)
             act.triggered.connect(handler)
             tb.addAction(act)
         tb.addSeparator()
-        act = QAction(glyph_icon("export", color=_ICON_COLOR), "Export", self)
+        act = QAction(qt_icon("export", color=_ICON_COLOR), "Export", self)
         act.triggered.connect(self._export)
         tb.addAction(act)
 
@@ -1344,12 +1344,12 @@ class App(QMainWindow):
         menu = QMenu(self)
 
         if has_axis or self.pending_tip:
-            menu.addAction(glyph_icon("cross"), "Remove Tip", lambda: self._delete_point("tip"))
+            menu.addAction(qt_icon("cross"), "Remove Tip", lambda: self._delete_point("tip"))
         else:
             menu.addAction("Place Tip Here", lambda: self._place_point_at("tip", fx, fy))
 
         if has_axis or self.pending_base:
-            menu.addAction(glyph_icon("cross"), "Remove Base", lambda: self._delete_point("base"))
+            menu.addAction(qt_icon("cross"), "Remove Base", lambda: self._delete_point("base"))
         else:
             menu.addAction("Place Base Here", lambda: self._place_point_at("base", fx, fy))
 
