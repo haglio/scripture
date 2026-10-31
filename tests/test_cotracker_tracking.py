@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
+from scripture import cotracker_tracking
 from scripture.cotracker_tracking import (
     compute_pos_from_points,
     find_contact_gradient,
@@ -122,3 +126,27 @@ class TestScaleCoords:
         orig = np.array([[1920, 1080]], dtype=np.float64)
         scaled = scale_coords(orig, (1080, 1920), (216, 384))
         np.testing.assert_allclose(scaled, [[384, 216]], atol=1)
+
+
+class TestTheTrackingModel:
+
+    def test_is_loaded_once_and_kept_for_every_later_track(self, monkeypatch):
+        loads = []
+
+        class _Model:
+            def to(self, _device):
+                return self
+
+        def load(repo, name):
+            loads.append((repo, name))
+            return _Model()
+
+        monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(hub=SimpleNamespace(load=load)))
+        cotracker_tracking._get_model.cache_clear()
+        try:
+            first, second = cotracker_tracking._get_model(), cotracker_tracking._get_model()
+        finally:
+            cotracker_tracking._get_model.cache_clear()
+
+        assert first is second
+        assert loads == [("facebookresearch/co-tracker", "cotracker3_offline")]
