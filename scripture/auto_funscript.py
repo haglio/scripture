@@ -176,7 +176,7 @@ def anti_plateau_normalize(
     from numpy.lib.stride_tricks import sliding_window_view  # noqa: PLC0415
 
     n = len(positions)
-    if n < 2:
+    if n <= 1:
         return positions.astype(np.float64).copy()
 
     pad = min(window // 2, n)

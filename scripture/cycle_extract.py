@@ -4,6 +4,8 @@ from __future__ import annotations
 import numpy as np
 from scipy.signal import find_peaks, savgol_filter
 
+_MIDPOINT = 0.5
+
 
 def smooth_signal(positions: np.ndarray, window: int = 15, polyorder: int = 3) -> np.ndarray:
     """Apply Savitzky-Golay filter to smooth the position signal."""
@@ -18,7 +20,7 @@ def remove_drift(positions: np.ndarray, cutoff_period_frames: int = 300) -> np.n
     Subtracts a heavily-smoothed version of the signal (the drift component).
     """
     if len(positions) < cutoff_period_frames:
-        return positions - np.mean(positions) + 0.5
+        return positions - np.mean(positions) + _MIDPOINT
 
     window = cutoff_period_frames if cutoff_period_frames % 2 == 1 else cutoff_period_frames + 1
     window = min(window, len(positions))
@@ -51,15 +53,14 @@ _MIN_CYCLE_DISTANCE_MS = 200.0
 def _enforce_alternating(indices: np.ndarray, values: np.ndarray) -> np.ndarray:
     """Keep only alternating extrema — when two peaks/valleys are consecutive,
     keep the more extreme one."""
-    if len(indices) < 2:
+    if len(indices) <= 1:
         return indices
     result = [indices[0]]
     for i in range(1, len(indices)):
         prev_val = values[result[-1]]
         curr_val = values[indices[i]]
-        # Determine if both are on the same side of the midpoint
-        prev_is_peak = prev_val > 0.5
-        curr_is_peak = curr_val > 0.5
+        prev_is_peak = prev_val > _MIDPOINT
+        curr_is_peak = curr_val > _MIDPOINT
         if prev_is_peak == curr_is_peak:
             # Same type — keep the more extreme one
             if prev_is_peak:

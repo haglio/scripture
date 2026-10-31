@@ -104,6 +104,10 @@ _SCENE_PROCESSED = BG_BUTTON_ACTIVE
 _SCENE_BORDER = BORDER_SUBTLE
 _REP_FRAME_COLOR = YELLOW
 _HANDLE_HEIGHT = 8
+_MARKER_SLACK = 5
+_GRAB_REACH = 10
+_SECONDS_PER_MINUTE = 60
+_MINUTES_PER_HOUR = 60
 _TIP_COLOR = RED
 _BASE_COLOR = BLUE
 _AXIS_COLOR = YELLOW
@@ -278,19 +282,14 @@ class TimelineWidget(QWidget):
                 if 0 <= ax <= w:
                     p.drawEllipse(ax - 2, mid_y - 2, 4, 4)
 
-        for split in self.splits:
-            sx = self._frame_to_x(split)
-            if -5 <= sx <= w + 5:
-                p.setPen(QPen(_SCENE_BORDER, 3))
-                p.drawLine(sx, bar_y, sx, bar_y + bar_h)
-                self._draw_handle(p, sx, _SCENE_BORDER)
-
-        for i, axis in self.scene_axes.items():
-            rx = self._frame_to_x(axis.frame)
-            if -5 <= rx <= w + 5:
-                p.setPen(QPen(_REP_FRAME_COLOR, 2))
-                p.drawLine(rx, bar_y, rx, bar_y + bar_h)
-                self._draw_handle(p, rx, _REP_FRAME_COLOR)
+        markers = [(split, _SCENE_BORDER, 3) for split in self.splits]
+        markers += [(axis.frame, _REP_FRAME_COLOR, 2) for axis in self.scene_axes.values()]
+        for frame, color, width in markers:
+            x = self._frame_to_x(frame)
+            if -_MARKER_SLACK <= x <= w + _MARKER_SLACK:
+                p.setPen(QPen(color, width))
+                p.drawLine(x, bar_y, x, bar_y + bar_h)
+                self._draw_handle(p, x, color)
 
         cx = self._frame_to_x(self.current_frame)
         p.setPen(QPen(WHITE, 2))
@@ -454,20 +453,18 @@ class FrameCanvas(QWidget):
 
     def _hit_point(self, cx, cy):
         """Return 'tip', 'base', 'contact', or None based on which point was hit."""
+        def reaches(pt):
+            px, py = self._frame_to_canvas(*pt)
+            return (cx - px) ** 2 + (cy - py) ** 2 <= _GRAB_REACH ** 2
+
         # Check GT points first (on top visually, so should catch clicks first)
         if self._gt:
             for label in ("contact", "tip", "base"):
                 pt = self._gt.get(label)
-                if pt is None:
-                    continue
-                px, py = self._frame_to_canvas(*pt)
-                if (cx - px) ** 2 + (cy - py) ** 2 <= 100:
+                if pt is not None and reaches(pt):
                     return label
         for label, pt in [("tip", self._get_tip()), ("base", self._get_base())]:
-            if pt is None:
-                continue
-            px, py = self._frame_to_canvas(*pt)
-            if (cx - px) ** 2 + (cy - py) ** 2 <= 100:
+            if pt is not None and reaches(pt):
                 return label
         return None
 
@@ -1163,8 +1160,8 @@ class App(QMainWindow):
 
     def _format_time(self, frame_idx):
         s = frame_idx / self.fps if self.fps else 0
-        m, s = divmod(int(s), 60)
-        h, m = divmod(m, 60)
+        m, s = divmod(int(s), _SECONDS_PER_MINUTE)
+        h, m = divmod(m, _MINUTES_PER_HOUR)
         return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
     def _scene_index_for_frame(self, frame):
@@ -1526,12 +1523,12 @@ class App(QMainWindow):
     @staticmethod
     def _fmt_duration(seconds):
         s = int(seconds)
-        if s < 60:
+        if s < _SECONDS_PER_MINUTE:
             return f"{s}s"
-        m, s = divmod(s, 60)
-        if m < 60:
+        m, s = divmod(s, _SECONDS_PER_MINUTE)
+        if m < _MINUTES_PER_HOUR:
             return f"{m}m {s:02d}s"
-        h, m = divmod(m, 60)
+        h, m = divmod(m, _MINUTES_PER_HOUR)
         return f"{h}h {m:02d}m {s:02d}s"
 
     def _show_progress_ui(self, maximum, fmt):

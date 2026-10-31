@@ -18,6 +18,9 @@ def _get_model():
     return torch.hub.load("facebookresearch/co-tracker", "cotracker3_offline").to("cuda")
 
 
+_FILTER_WIDTH = 5
+
+
 def sanitize_positions(positions: np.ndarray, fps: float = 30.0) -> np.ndarray:
     """Apply temporal smoothing and physical constraints to raw pos signal.
 
@@ -30,19 +33,18 @@ def sanitize_positions(positions: np.ndarray, fps: float = 30.0) -> np.ndarray:
     from scipy.signal import savgol_filter  # noqa: PLC0415
 
     n = len(positions)
-    if n < 5:
+    if n < _FILTER_WIDTH:
         return positions.copy()
 
     # 1. Median filter to kill single-frame spikes (non-linear, preserves edges)
-    cleaned = median_filter(positions, size=5, mode="nearest")
+    cleaned = median_filter(positions, size=_FILTER_WIDTH, mode="nearest")
 
     # 2. Light Savitzky-Golay smoothing
-    window = max(5, min(int(fps * 0.2), n))
+    window = max(_FILTER_WIDTH, min(int(fps * 0.2), n))
     if window % 2 == 0:
         window += 1
     window = min(window, n)
-    if window >= 5:
-        cleaned = savgol_filter(cleaned, window, 3)
+    cleaned = savgol_filter(cleaned, window, 3)
 
     # 3. Enforce max speed: full travel (0→1) takes at least 0.25s
     max_delta_per_frame = 1.0 / (fps * 0.25)
@@ -90,6 +92,7 @@ def sample_axis_intensity(
 # The far end of the axis: t runs 0 (base) to 1 (tip), so the search stops at
 # the tip.
 _SEARCH_MAX = 1.0
+_FAINTEST_EDGE = 1e-6
 
 
 def find_contact_gradient(
@@ -105,9 +108,12 @@ def find_contact_gradient(
     search = (t_values[:-1] >= search_min) & (t_values[:-1] <= _SEARCH_MAX)
     g = gradient.copy()
     g[~search] = 0
-    if g.max() < 1e-6:
+    if g.max() < _FAINTEST_EDGE:
         return (search_min + _SEARCH_MAX) / 2
     return float(t_values[g.argmax()])
+
+
+_NO_LENGTH = 1e-8
 
 
 def compute_pos_from_points(
@@ -121,7 +127,7 @@ def compute_pos_from_points(
     contact_a = np.array(contact, dtype=np.float64)
     axis_vec = tip_a - base_a
     dot_aa = np.dot(axis_vec, axis_vec)
-    if dot_aa < 1e-8:
+    if dot_aa < _NO_LENGTH:
         return 50
     t = np.dot(contact_a - base_a, axis_vec) / dot_aa
     return int(round(max(0.0, min(1.0, t)) * 100))
@@ -149,6 +155,7 @@ def scale_coords(
 _TARGET_LONG_SIDE = 384
 _AXIS_POINTS = 30  # points handed to CoTracker3 along the axis
 _MAX_CHUNK_FRAMES = 300  # CoTracker3 internal attention uses ~50x the video tensor size
+_VISIBLE_ABOVE = 0.5
 
 
 def _get_video_geometry(video_path: str, start_frame: int):
@@ -333,7 +340,7 @@ def cotrack_axis(
     last_contact = axis_points_scaled[-1]
 
     for i in range(n_frames):
-        visible = all_vis[i] > 0.5
+        visible = all_vis[i] > _VISIBLE_ABOVE
         if visible.any():
             vis_indices = np.where(visible)[0]
             last_base = all_tracks[i, vis_indices[0]]
