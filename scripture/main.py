@@ -103,16 +103,16 @@ def main():
 
     # Local: the toolkit, only when a window is wanted.
     from PyQt6.QtWidgets import QApplication  # noqa: PLC0415
-    from shared_ui.chrome import family_stylesheet  # noqa: PLC0415
+    from shared_ui.colors import dress_application  # noqa: PLC0415
     from shared_ui.loading_window import Loading, LoadingCanceled  # noqa: PLC0415
 
     app = QApplication.instance() or QApplication(sys.argv)
     loading = Loading(app, logging.getLogger("scripture"), open_the_loading_screen(preview))
     try:
-        # On the application, not the window: the family's tooltip rule reaches a
-        # top-level popup only from here.
+        # On the application, not the window: the family's palette and chrome,
+        # whose tooltip rule reaches a top-level popup only from here.
         window = open_scripture(
-            loading, preview=preview, dress=lambda: app.setStyleSheet(family_stylesheet()))
+            loading, preview=preview, dress=lambda: dress_application(app))
     except LoadingCanceled:
         return
     loading.done()
