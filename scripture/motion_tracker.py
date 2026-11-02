@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
+from scripture.frames import ms_of_frame
 from scripture.funscript import made_by
 
 TRACKER = "axis_tracking"
@@ -90,7 +91,7 @@ def track_motion(video_path: str, axis: AxisDefinition,
     cap.release()
 
     positions = sanitize_positions(raw_positions, fps=fps)
-    timestamps = np.array([(start_frame + i) / fps * 1000 for i in range(n_frames)])
+    timestamps = ms_of_frame(start_frame + np.arange(n_frames), fps)
 
     return TrackingResult(
         timestamps_ms=timestamps,

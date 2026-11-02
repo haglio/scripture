@@ -24,6 +24,7 @@ from app_support.funscript import write as write_funscript
 from app_support.overlay import overlay_value
 
 from scripture.content import LOCAL_CONTENT, load_content
+from scripture.frames import ms_of_frame
 from scripture.funscript import build_funscript, made_by
 
 TRACKER = "roi_flow"
@@ -290,8 +291,7 @@ def signal_to_actions(
         return []
 
     positions = compute_positions(signal, config)
-    frame_ms = 1000.0 / fps
-    timestamps_ms = (start_frame + np.arange(len(positions))) * frame_ms
+    timestamps_ms = ms_of_frame(start_frame + np.arange(len(positions)), fps)
     return extract_cycles(positions / 100.0, timestamps_ms, fps=fps)
 
 
