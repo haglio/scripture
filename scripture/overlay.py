@@ -12,6 +12,7 @@ from itertools import pairwise
 import numpy as np
 
 from scripture.auto_funscript import PipelineResult
+from scripture.frames import half_frame_ms, ms_of_frame
 from scripture.motion_tracker import AxisDefinition, TrackingResult
 from scripture.scene import Scene
 
@@ -23,10 +24,10 @@ _STILL = 0.001
 
 
 def interpolate_actions(actions: list[dict], frame_ms: float,
-                        half_frame_ms: float) -> tuple[int, bool]:
+                        half_a_frame: float) -> tuple[int, bool]:
     """The position an action list implies at one moment, and whether it is one."""
     for a in actions:
-        if abs(a["at"] - frame_ms) < half_frame_ms:
+        if abs(a["at"] - frame_ms) < half_a_frame:
             return a["pos"], True
     if frame_ms <= actions[0]["at"]:
         return actions[0]["pos"], False
@@ -47,8 +48,8 @@ def tracked_overlay(*, axis: AxisDefinition, scene: Scene, frame_idx: int, fps: 
     Full per-frame positions when a run is in hand, the action list alone once
     only a saved project's actions survive.
     """
-    frame_ms = frame_idx / fps * 1000
-    half_frame_ms = 500 / fps
+    frame_ms = ms_of_frame(frame_idx, fps)
+    half_a_frame = half_frame_ms(fps)
     local_idx = frame_idx - scene.start_frame
 
     if result is not None:
@@ -57,12 +58,12 @@ def tracked_overlay(*, axis: AxisDefinition, scene: Scene, frame_idx: int, fps: 
         pos_frac = float(result.positions[local_idx])
         pos_100 = int(round(pos_frac * 100))
         stamp = result.timestamps_ms[local_idx]
-        on_action = [a for a in actions if abs(a["at"] - stamp) < half_frame_ms]
+        on_action = [a for a in actions if abs(a["at"] - stamp) < half_a_frame]
         is_action = bool(on_action)
         if is_action:
             pos_100 = on_action[0]["pos"]
     elif actions:
-        pos_100, is_action = interpolate_actions(actions, frame_ms, half_frame_ms)
+        pos_100, is_action = interpolate_actions(actions, frame_ms, half_a_frame)
         pos_frac = pos_100 / 100.0
     else:
         return None
@@ -86,8 +87,8 @@ def auto_overlay(*, result: PipelineResult, frame_idx: int, fps: float,
     if local < 0 or local >= len(result.positions):
         return None
 
-    frame_ms = frame_idx / fps * 1000
-    half_frame_ms = 500 / fps
+    frame_ms = ms_of_frame(frame_idx, fps)
+    half_a_frame = half_frame_ms(fps)
     lock = result.signal.lock[local]
     beliefs = result.signal.beliefs
     remembered = (beliefs[local] if local < len(beliefs)
@@ -101,7 +102,7 @@ def auto_overlay(*, result: PipelineResult, frame_idx: int, fps: float,
         # Show the remembered anchor whenever it isn't directly seen
         "belief": remembered,
         "belief_age_s": _age(remembered, last_anchor, local, fps),
-        "is_action": any(abs(a["at"] - frame_ms) < half_frame_ms for a in actions),
+        "is_action": any(abs(a["at"] - frame_ms) < half_a_frame for a in actions),
     }
 
 

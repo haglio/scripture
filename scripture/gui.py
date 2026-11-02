@@ -65,6 +65,7 @@ from scripture.annotations import SceneAnnotations
 from scripture.auto_funscript import run_pipeline
 from scripture.content import LOCAL_CONTENT, load_content
 from scripture.cycle_extract import extract_cycles
+from scripture.frames import frame_of_ms
 from scripture.funscript import build_funscript
 from scripture.label_session import LabelSession, schedule_frames
 from scripture.motion_tracker import AxisDefinition, track_motion
@@ -277,7 +278,7 @@ class TimelineWidget(QWidget):
             if scene_idx in scenes_with_gt:
                 continue  # skip computed dots for annotated scenes
             for a in actions:
-                frame = int(round(a["at"] / 1000 * fps))
+                frame = frame_of_ms(a["at"], fps)
                 ax = self._frame_to_x(frame)
                 if 0 <= ax <= w:
                     p.drawEllipse(ax - 2, mid_y - 2, 4, 4)
@@ -759,7 +760,6 @@ class App(QMainWindow):
         self.video = None
         self.fps = 30.0
         self.total_frames = 0
-        self.frame_w = self.frame_h = 0
 
         self.splits = []
         self.scenes = []
@@ -843,7 +843,7 @@ class App(QMainWindow):
         actions = self.annotations.actions.get(idx, [])
         if not actions:
             return []
-        return sorted(int(round(a["at"] / 1000 * self.fps)) for a in actions)
+        return sorted(frame_of_ms(a["at"], self.fps) for a in actions)
 
     def _next_action_frame(self):
         frames = self._action_frames_for_current_scene()
@@ -1244,8 +1244,6 @@ class App(QMainWindow):
         self.video_path = path
         self.fps = source.fps
         self.total_frames = source.total_frames
-        self.frame_w = source.width
-        self.frame_h = source.height
         return True
 
     # ── Frame display ──────────────────────────────────────────────

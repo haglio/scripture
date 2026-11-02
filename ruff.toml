@@ -5,7 +5,7 @@ target-version = "py312"
 select = ["F", "E", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PL", "PT", "DTZ", "PIE", "PERF", "FLY", "ISC", "RET", "FURB", "EXE"]
 ignore = ["E501", "BLE001", "S110",
     # This repo's ratchet: each rule the family config still finds here, and its places today.
-    "RUF046",  # 12
+    "RUF046",  # 10
     "PLR0913",  # 7
     "PLR0917",  # 5
     "PLR0915",  # 4

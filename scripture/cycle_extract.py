@@ -4,6 +4,8 @@ from __future__ import annotations
 import numpy as np
 from scipy.signal import find_peaks, savgol_filter
 
+from scripture.frames import ms_of_frame
+
 _MIDPOINT = 0.5
 
 
@@ -88,7 +90,7 @@ def extract_cycles(positions: np.ndarray, timestamps_ms: np.ndarray,
         smooth_window += 1
     smoothed = smooth_signal(detrended, window=smooth_window)
 
-    avg_frame_interval_ms = np.mean(np.diff(timestamps_ms)) if len(timestamps_ms) > 1 else 1000 / fps
+    avg_frame_interval_ms = np.mean(np.diff(timestamps_ms)) if len(timestamps_ms) > 1 else ms_of_frame(1, fps)
     min_distance_frames = max(1, int(_MIN_CYCLE_DISTANCE_MS / avg_frame_interval_ms))
 
     prominence = _adaptive_prominence(smoothed, fps)

@@ -1,7 +1,7 @@
 {
   "chain_length": {},
   "class_attributes": {
-    "scripture/gui.py::App": 35
+    "scripture/gui.py::App": 33
   },
   "fan_out": {},
   "library_patches": {
@@ -97,7 +97,7 @@
   },
   "statements": {
     "scripture/auto_funscript.py": 335,
-    "scripture/gui.py": 1339
+    "scripture/gui.py": 1337
   },
   "uncovered_lines": {
     "scripture/__main__.py": 3,

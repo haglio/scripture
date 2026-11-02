@@ -51,3 +51,11 @@ class TestActionsByScene:
         scenes = [Scene(0, 300), Scene(300, 900)]
         buckets = actions_by_scene([{"at": 100, "pos": 5}], scenes, 30.0)
         assert 1 not in buckets
+
+
+def test_an_action_belongs_to_the_scene_of_the_frame_it_falls_on():
+    just_before_the_split = {"at": 3990, "pos": 50}
+
+    assert actions_by_scene([just_before_the_split], [Scene(0, 120), Scene(120, 240)], 30.0) == {
+        1: [just_before_the_split],
+    }

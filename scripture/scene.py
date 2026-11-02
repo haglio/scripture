@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from scripture.frames import frame_of_ms
+
 
 @dataclass
 class Scene:
@@ -28,7 +30,7 @@ def actions_by_scene(
     """
     buckets: dict[int, list[dict]] = {}
     for action in actions:
-        frame = action["at"] / 1000.0 * fps
+        frame = frame_of_ms(action["at"], fps)
         for i, scene in enumerate(scenes):
             if scene.start_frame <= frame < scene.end_frame:
                 buckets.setdefault(i, []).append(action)
