@@ -98,5 +98,17 @@
   "statements": {
     "scripture/auto_funscript.py": 335,
     "scripture/gui.py": 1339
+  },
+  "uncovered_lines": {
+    "scripture/__main__.py": 3,
+    "scripture/annotations.py": 5,
+    "scripture/auto_funscript.py": 41,
+    "scripture/cotracker_tracking.py": 119,
+    "scripture/cycle_extract.py": 1,
+    "scripture/gui.py": 716,
+    "scripture/main.py": 20,
+    "scripture/motion_tracker.py": 3,
+    "scripture/overlay.py": 1,
+    "scripture/tracker_environment.py": 8
   }
 }
