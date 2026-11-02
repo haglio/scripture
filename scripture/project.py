@@ -45,7 +45,7 @@ _DAMAGED_PROJECT_ERRORS = (OSError, ValueError, LookupError, TypeError, Attribut
 
 
 @dataclass
-class ProjectDocument:
+class Project:
     """One video's worth of work: where it was split, and what was marked."""
 
     video_path: str | None = None
@@ -58,28 +58,28 @@ class ProjectDocument:
     current_frame: int = 0
 
 
-def state_from_document(document: ProjectDocument) -> dict:
-    """The document as the plain JSON object that reaches the file."""
+def state_from_project(project: Project) -> dict:
+    """The project as the plain JSON object that reaches the file."""
     return {
         "version": PROJECT_FORMAT_VERSION,
-        VIDEO_PATH_FIELD: document.video_path,
-        "splits": document.splits,
+        VIDEO_PATH_FIELD: project.video_path,
+        "splits": project.splits,
         "axes": {str(i): {"tip": list(a.tip), "base": list(a.base), "frame": a.frame}
-                 for i, a in document.axes.items()},
-        "actions": {str(i): a for i, a in document.actions.items()},
-        "tracking": {str(i): _tracking_state(r) for i, r in document.tracking.items()},
+                 for i, a in project.axes.items()},
+        "actions": {str(i): a for i, a in project.actions.items()},
+        "tracking": {str(i): _tracking_state(r) for i, r in project.tracking.items()},
         "ground_truth": {str(scene): {str(frame): _label_state(label)
                                       for frame, label in frames.items()}
-                         for scene, frames in document.labels.items()},
-        "auto": pipeline_result_to_state(document.auto) if document.auto else None,
-        "current_frame": document.current_frame,
+                         for scene, frames in project.labels.items()},
+        "auto": pipeline_result_to_state(project.auto) if project.auto else None,
+        "current_frame": project.current_frame,
     }
 
 
-def document_from_state(state: dict) -> ProjectDocument:
-    """The document a saved state describes, tolerating what older ones omit."""
+def project_from_state(state: dict) -> Project:
+    """The project a saved state describes, tolerating what older ones omit."""
     auto = state.get("auto")
-    return ProjectDocument(
+    return Project(
         video_path=state[VIDEO_PATH_FIELD],
         splits=state["splits"],
         axes={int(k): AxisDefinition(tip=tuple(v["tip"]), base=tuple(v["base"]),
@@ -96,11 +96,11 @@ def document_from_state(state: dict) -> ProjectDocument:
     )
 
 
-def provenance_of_actions(document: ProjectDocument) -> dict | None:
-    auto = document.auto.provenance if document.auto else None
-    stamps = [document.tracking[scene].provenance if scene in document.tracking else auto
-              for scene in document.actions]
-    if document.auto:
+def provenance_of_actions(project: Project) -> dict | None:
+    auto = project.auto.provenance if project.auto else None
+    stamps = [project.tracking[scene].provenance if scene in project.tracking else auto
+              for scene in project.actions]
+    if project.auto:
         stamps.append(auto)
     if None in stamps:
         return None

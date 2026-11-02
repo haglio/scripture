@@ -25,7 +25,7 @@ _LABEL_ON_DISK = {"tip": [40, 30], "base": [40, 150], "contact": [40, 90],
 
 
 def _populated(window, video_path):
-    """A document with one of everything the schema can hold."""
+    """A project with one of everything the schema can hold."""
     window.video_path = str(video_path)
     window.video = Footage(total_frames=1000)
     window.splits = [400]
