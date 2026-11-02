@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import cv2
@@ -28,6 +29,14 @@ class TrackingResult:
     tip_coords: np.ndarray | None = None   # (N, 2) per-frame [x, y]
     base_coords: np.ndarray | None = None  # (N, 2) per-frame [x, y]
     provenance: dict | None = None
+
+
+@contextmanager
+def _released_after(capture):
+    try:
+        yield capture
+    finally:
+        capture.release()
 
 
 def track_motion(video_path: str, axis: AxisDefinition,
@@ -65,30 +74,29 @@ def track_motion(video_path: str, axis: AxisDefinition,
     n_frames = end_frame - start_frame
     raw_positions = np.full(n_frames, 0.5)
 
-    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    for i in range(n_frames):
-        ret, frame = cap.read()
-        if not ret:
-            break
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    with _released_after(cap):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        for i in range(n_frames):
+            ret, frame = cap.read()
+            if not ret:
+                break
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        base_f = base_coords[i]
-        tip_f = tip_coords[i]
-        axis_vec = tip_f - base_f
-        axis_len = np.linalg.norm(axis_vec)
-        if axis_len < 1:
-            continue
-        perp = np.array([-axis_vec[1], axis_vec[0]]) / axis_len
+            base_f = base_coords[i]
+            tip_f = tip_coords[i]
+            axis_vec = tip_f - base_f
+            axis_len = np.linalg.norm(axis_vec)
+            if axis_len < 1:
+                continue
+            perp = np.array([-axis_vec[1], axis_vec[0]]) / axis_len
 
-        t_vals, intensities = sample_axis_intensity(
-            gray, base_f, axis_vec, perp, n=200, strip_w=20,
-        )
-        raw_positions[i] = find_contact_gradient(t_vals, intensities)
+            t_vals, intensities = sample_axis_intensity(
+                gray, base_f, axis_vec, perp, n=200, strip_w=20,
+            )
+            raw_positions[i] = find_contact_gradient(t_vals, intensities)
 
-        if on_frame is not None:
-            on_frame(i)
-
-    cap.release()
+            if on_frame is not None:
+                on_frame(i)
 
     positions = sanitize_positions(raw_positions, fps=fps)
     timestamps = ms_of_frame(start_frame + np.arange(n_frames), fps)

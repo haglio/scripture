@@ -2,14 +2,13 @@
 from __future__ import annotations
 
 import time
-import traceback
 from pathlib import Path
 
 import cv2
 import numpy as np
 from app_support.funscript import write as write_funscript
 from app_support.overlay import overlay_value
-from PyQt6.QtCore import QPointF, QSize, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QPointF, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QAction,
     QBrush,
@@ -62,13 +61,11 @@ from shared_ui.preview_icon import app_icon
 from shared_ui.spacing import BUTTON_ICON, BUTTON_RADIUS_HUD, GAP_MEDIUM, GAP_SMALL, MARGIN_STANDARD
 
 from scripture.annotations import SceneAnnotations
-from scripture.auto_funscript import run_pipeline
 from scripture.content import LOCAL_CONTENT, load_content
-from scripture.cycle_extract import extract_cycles
 from scripture.frames import frame_of_ms
 from scripture.funscript import build_funscript
 from scripture.label_session import LabelSession, schedule_frames
-from scripture.motion_tracker import AxisDefinition, track_motion
+from scripture.motion_tracker import AxisDefinition
 from scripture.overlay import auto_overlay, tracked_overlay
 from scripture.project import (
     ProjectDocument,
@@ -80,6 +77,7 @@ from scripture.project import (
     state_from_document,
 )
 from scripture.scene import Scene, actions_by_scene, scenes_from_splits
+from scripture.tracking_workers import AutoProcessWorker, ProcessWorker
 from scripture.video import NO_VIDEO, VideoSource
 
 _ICON_COLOR = TEXT_PRIMARY
@@ -113,59 +111,6 @@ _MINUTES_PER_HOUR = 60
 _TIP_COLOR = RED
 _BASE_COLOR = BLUE
 _AXIS_COLOR = YELLOW
-
-
-class ProcessWorker(QThread):
-    frame_progress = pyqtSignal(int)
-    scene_done = pyqtSignal(int, list, object)  # idx, actions, TrackingResult
-    finished = pyqtSignal()
-    error = pyqtSignal(int, str)
-
-    def __init__(self, video_path, jobs, fps):
-        super().__init__()
-        self.video_path = video_path
-        self.jobs = jobs
-        self.fps = fps
-
-    def run(self):
-        offsets = {}
-        cumulative = 0
-        for idx, scene, _ in self.jobs:
-            offsets[idx] = cumulative
-            cumulative += scene.end_frame - scene.start_frame
-        for idx, scene, axis in self.jobs:
-            offset = offsets[idx]
-            try:
-                result = track_motion(
-                    self.video_path, axis, scene.start_frame, scene.end_frame,
-                    on_frame=lambda f, _o=offset: self.frame_progress.emit(_o + f),
-                )
-                actions = extract_cycles(result.positions, result.timestamps_ms, fps=self.fps)
-                self.scene_done.emit(idx, actions, result)
-            except Exception as e:
-                traceback.print_exc()
-                self.error.emit(idx, str(e))
-        self.finished.emit()
-
-
-class AutoProcessWorker(QThread):
-    """Runs the fully automatic YOLO+flow pipeline over the whole video."""
-    frame_progress = pyqtSignal(int)
-    done = pyqtSignal(object)  # PipelineResult
-    error = pyqtSignal(str)
-
-    def __init__(self, video_path):
-        super().__init__()
-        self.video_path = video_path
-
-    def run(self):
-        try:
-            result = run_pipeline(
-                self.video_path, on_frame=self.frame_progress.emit)
-            self.done.emit(result)
-        except Exception as e:
-            traceback.print_exc()
-            self.error.emit(str(e))
 
 
 _ACTION_DOT_COLOR = QColor(*palette.GREEN, 180)
@@ -1582,8 +1527,7 @@ class App(QMainWindow):
 
     def _abort_processing(self):
         if self._worker and self._worker.isRunning():
-            self._worker.terminate()
-            self._worker.wait()
+            self._worker.stop()
             self._worker = None
         self._hide_progress_ui()
         self._set_status("Processing aborted.")
@@ -1782,8 +1726,7 @@ class App(QMainWindow):
             if reply != QMessageBox.StandardButton.Yes:
                 event.ignore()
                 return
-            self._worker.terminate()
-            self._worker.wait()
+            self._worker.stop()
 
         if self._dirty:
             reply = QMessageBox.question(
