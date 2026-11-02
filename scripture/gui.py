@@ -150,7 +150,7 @@ class TimelineWidget(QWidget):
         self.splits = []
         self.total_frames = 0
         self.current_frame = 0
-        self.ground_truth = {}
+        self.labels = {}
         self.fps = 30.0
         self._dragging = False
         self._zoom = 1.0       # 1.0 = fully zoomed out (all frames visible)
@@ -158,14 +158,14 @@ class TimelineWidget(QWidget):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
     def set_state(self, scenes, scene_axes, scene_actions, splits, total_frames,
-                  current_frame, ground_truth, fps):
+                  current_frame, labels, fps):
         self.scenes = scenes
         self.scene_axes = scene_axes
         self.scene_actions = scene_actions
         self.splits = splits
         self.total_frames = total_frames
         self.current_frame = current_frame
-        self.ground_truth = ground_truth
+        self.labels = labels
         self.fps = fps
         self.update()
 
@@ -212,16 +212,16 @@ class TimelineWidget(QWidget):
         fps = self.fps
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(_ACTION_DOT_COLOR))
-        # Show GT action frames if any annotations exist; otherwise computed
-        scenes_with_gt = set(self.ground_truth.keys())
-        for scene_idx, frames in self.ground_truth.items():
+        # Show labeled action frames if any annotations exist; otherwise computed
+        scenes_with_labels = set(self.labels.keys())
+        for scene_idx, frames in self.labels.items():
             for frame_idx, entry in frames.items():
                 if entry.get("is_action"):
                     ax = self._frame_to_x(frame_idx)
                     if 0 <= ax <= w:
                         p.drawEllipse(ax - 2, mid_y - 2, 4, 4)
         for scene_idx, actions in self.scene_actions.items():
-            if scene_idx in scenes_with_gt:
+            if scene_idx in scenes_with_labels:
                 continue  # skip computed dots for annotated scenes
             for a in actions:
                 frame = frame_of_ms(a["at"], fps)
@@ -327,7 +327,7 @@ class FrameCanvas(QWidget):
         self._zoom = 1.0
         self._dragging_point = None  # "tip", "base", "contact", or None
         self._overlay = None  # dict with axis, contact_pt, pos, is_action
-        self._gt = None  # ground truth dict: tip, base, contact, is_action, pos
+        self._label = None  # the label dict: tip, base, contact, is_action, pos
         self._auto_overlay = None  # dict with roi, detections, pos, active, is_action
 
     @property
@@ -367,9 +367,9 @@ class FrameCanvas(QWidget):
         self._overlay = overlay
         self.update()
 
-    def set_gt(self, gt):
-        """Set ground truth annotation for this frame (or None)."""
-        self._gt = gt
+    def set_label(self, label):
+        """Set the label for this frame (or None)."""
+        self._label = label
         self.update()
 
     def set_auto_overlay(self, overlay):
@@ -404,10 +404,10 @@ class FrameCanvas(QWidget):
             px, py = self._frame_to_canvas(*pt)
             return (cx - px) ** 2 + (cy - py) ** 2 <= _GRAB_REACH ** 2
 
-        # Check GT points first (on top visually, so should catch clicks first)
-        if self._gt:
+        # Check the label's points first (on top visually, so should catch clicks first)
+        if self._label:
             for label in ("contact", "tip", "base"):
-                pt = self._gt.get(label)
+                pt = self._label.get(label)
                 if pt is not None and reaches(pt):
                     return label
         for label, pt in [("tip", self._get_tip()), ("base", self._get_base())]:
@@ -443,8 +443,8 @@ class FrameCanvas(QWidget):
 
         if self._auto_overlay:
             self._draw_auto_overlay(p)
-        if self._gt:
-            self._draw_gt(p)
+        if self._label:
+            self._draw_label(p)
         elif not self._auto_overlay:
             if self._overlay:
                 self._draw_overlay(p)
@@ -609,13 +609,13 @@ class FrameCanvas(QWidget):
             p.setFont(make_font(size=SIZE_SMALL, bold=True))
             p.drawText(gauge_x - 60, gauge_top + 14, "no target")
 
-    def _draw_gt(self, p):
-        """Draw ground truth annotation points."""
-        gt = self._gt
+    def _draw_label(self, p):
+        """Draw the label's points."""
+        label = self._label
         # Axis line from base to tip
-        if gt.get("tip") and gt.get("base"):
-            tx, ty = self._frame_to_canvas(*gt["tip"])
-            bx, by = self._frame_to_canvas(*gt["base"])
+        if label.get("tip") and label.get("base"):
+            tx, ty = self._frame_to_canvas(*label["tip"])
+            bx, by = self._frame_to_canvas(*label["base"])
             p.setPen(QPen(_AXIS_COLOR, 2, Qt.PenStyle.DashLine))
             p.drawLine(tx, ty, bx, by)
             # Tip marker
@@ -634,11 +634,11 @@ class FrameCanvas(QWidget):
             p.drawText(bx + 10, by + 4, "B")
 
         # Contact marker
-        contact = gt.get("contact")
+        contact = label.get("contact")
         contact_color = GREEN
         if contact is not None:
             ccx, ccy = self._frame_to_canvas(*contact)
-            if gt.get("is_action"):
+            if label.get("is_action"):
                 p.setPen(QPen(contact_color, 3))
                 p.setBrush(QBrush(Qt.GlobalColor.transparent))
                 p.drawEllipse(ccx - 8, ccy - 8, 16, 16)
@@ -647,12 +647,12 @@ class FrameCanvas(QWidget):
                 p.setBrush(QBrush(contact_color))
                 p.drawEllipse(ccx - 5, ccy - 5, 10, 10)
             # Pos label
-            pos = gt.get("pos", "?")
+            pos = label.get("pos", "?")
             p.setPen(QPen(contact_color))
-            p.setFont(make_font(size=SIZE_BODY, bold=gt.get("is_action", False)))
+            p.setFont(make_font(size=SIZE_BODY, bold=label.get("is_action", False)))
             p.drawText(ccx + 12, ccy + 5, str(pos))
         # No contact indicator — show "—" near the axis midpoint
-        elif gt.get("tip") and gt.get("base"):
+        elif label.get("tip") and label.get("base"):
             mx = (tx + bx) // 2
             my = (ty + by) // 2
             p.setPen(QPen(YELLOW))
@@ -758,9 +758,9 @@ class App(QMainWindow):
         QShortcut(QKeySequence("Shift+Tab"), self, self._prev_poi)
         QShortcut(QKeySequence("]"), self, self._next_action_frame)
         QShortcut(QKeySequence("["), self, self._prev_action_frame)
-        QShortcut(QKeySequence("A"), self, self._toggle_gt_action)
-        QShortcut(QKeySequence("N"), self, self._gt_no_contact)
-        QShortcut(QKeySequence("C"), self, self._place_gt_contact)
+        QShortcut(QKeySequence("A"), self, self._toggle_label_action)
+        QShortcut(QKeySequence("N"), self, self._label_no_contact)
+        QShortcut(QKeySequence("C"), self, self._place_label_contact)
         QShortcut(QKeySequence("G"), self, self._session_skip)
         QShortcut(QKeySequence(Qt.Key.Key_Home), self, self._session_home)
         QShortcut(QKeySequence("U"), self, self._session_undo_last)
@@ -828,10 +828,10 @@ class App(QMainWindow):
                 return
         self._show_frame(frames[-1])  # wrap
 
-    # ── Ground truth annotation ────────────────────────────────────
+    # ── Labels ────────────────────────────────────
 
-    def _ensure_gt_frame(self):
-        """Ensure the current frame has a GT entry, inheriting from nearest."""
+    def _ensure_label_of_frame(self):
+        """Ensure the current frame has a label, inheriting from nearest."""
         idx = self._current_scene_idx()
         frame = self.current_frame_idx
         here = self.annotations.label_at(idx, frame)
@@ -851,38 +851,38 @@ class App(QMainWindow):
         self.annotations.set_label(idx, frame, entry)
         return entry
 
-    def _get_gt_for_frame(self, scene_idx, frame_idx):
-        """Get GT data for display (read-only, does not create entries)."""
-        gt_scene = self.annotations.labels_of(scene_idx)
-        if frame_idx in gt_scene:
-            gt = dict(gt_scene[frame_idx])
-        elif gt_scene:
-            nearest = min(gt_scene.keys(), key=lambda f: abs(f - frame_idx))
-            gt = dict(gt_scene[nearest])
-            gt["is_action"] = False  # inherited frames aren't action frames
+    def _label_of_frame(self, scene_idx, frame_idx):
+        """Get the label for display (read-only, does not create entries)."""
+        labels_of_scene = self.annotations.labels_of(scene_idx)
+        if frame_idx in labels_of_scene:
+            label = dict(labels_of_scene[frame_idx])
+        elif labels_of_scene:
+            nearest = min(labels_of_scene.keys(), key=lambda f: abs(f - frame_idx))
+            label = dict(labels_of_scene[nearest])
+            label["is_action"] = False  # inherited frames aren't action frames
         else:
             return None
         # Compute pos from tip/base/contact
-        if gt.get("contact") and gt.get("tip") and gt.get("base"):
+        if label.get("contact") and label.get("tip") and label.get("base"):
             # Local: cotracker_tracking brings torch and cv2 with it, which opening this window should not.
             from scripture.cotracker_tracking import compute_pos_from_points  # noqa: PLC0415
-            gt["pos"] = compute_pos_from_points(gt["base"], gt["tip"], gt["contact"])
+            label["pos"] = compute_pos_from_points(label["base"], label["tip"], label["contact"])
         else:
-            gt["pos"] = "—"
-        return gt
+            label["pos"] = "—"
+        return label
 
-    def _toggle_gt_action(self):
-        entry = self._ensure_gt_frame()
+    def _toggle_label_action(self):
+        entry = self._ensure_label_of_frame()
         if entry is None:
             return
         entry["is_action"] = not entry["is_action"]
         self._mark_dirty()
         self._show_frame(self.current_frame_idx)
 
-    def _gt_no_contact(self):
+    def _label_no_contact(self):
         """N: in a label session, record an explicit no-contact and advance;
         otherwise toggle no-contact on the current frame."""
-        entry = self._ensure_gt_frame()
+        entry = self._ensure_label_of_frame()
         if entry is None:
             return
         if self.session.active:
@@ -901,12 +901,12 @@ class App(QMainWindow):
         self._mark_dirty()
         self._show_frame(self.current_frame_idx)
 
-    def _place_gt_contact(self):
+    def _place_label_contact(self):
         """Enter contact placement mode — next click sets the contact point."""
         self.placing = "contact"
         self._set_status("Click to place CONTACT point (or press C again to cancel)")
 
-    # ── Label session (sparse GT clicking) ─────────────────────────
+    # ── Label session (sparse clicking) ─────────────────────────
 
     def _session_schedule(self):
         idx = self._current_scene_idx()
@@ -1000,17 +1000,17 @@ class App(QMainWindow):
         self._set_status(f"Cleared {n} labels in scene {idx}. "
                          "Save the project to make it permanent.")
 
-    def _on_gt_point_dragged(self, which, fx, fy):
-        """Handle dragging of a GT point (tip, base, or contact)."""
+    def _on_label_point_dragged(self, which, fx, fy):
+        """Handle dragging of a label's point (tip, base, or contact)."""
         idx = self._current_scene_idx()
-        entry = self._ensure_gt_frame()
+        entry = self._ensure_label_of_frame()
         if entry is None:
             return
         entry[which] = (fx, fy)
         self._mark_dirty()
         # Update display without re-reading the frame
-        gt = self._get_gt_for_frame(idx, self.current_frame_idx)
-        self.canvas.set_gt(gt)
+        label = self._label_of_frame(idx, self.current_frame_idx)
+        self.canvas.set_label(label)
 
     def _build_ui(self):
         central = QWidget()
@@ -1244,11 +1244,11 @@ class App(QMainWindow):
         else:
             self.canvas.set_overlay(None)
 
-        # Ground truth annotation layer
+        # The label's layer
         if self.annotations.labels_of(idx):
-            self.canvas.set_gt(self._get_gt_for_frame(idx, frame_idx))
+            self.canvas.set_label(self._label_of_frame(idx, frame_idx))
         else:
-            self.canvas.set_gt(None)
+            self.canvas.set_label(None)
 
         self._update_info()
         self._update_timeline()
@@ -1409,7 +1409,7 @@ class App(QMainWindow):
         if not self.scenes:
             return
         if self.session.active and not self.placing:
-            entry = self._ensure_gt_frame()
+            entry = self._ensure_label_of_frame()
             if entry is not None:
                 entry["contact"] = (fx, fy)
                 self._mark_dirty()
@@ -1420,7 +1420,7 @@ class App(QMainWindow):
         idx = self._current_scene_idx()
 
         if self.placing == "contact":
-            entry = self._ensure_gt_frame()
+            entry = self._ensure_label_of_frame()
             if entry is not None:
                 entry["contact"] = (fx, fy)
                 self._mark_dirty()
@@ -1447,9 +1447,9 @@ class App(QMainWindow):
 
     def _on_point_dragged(self, which, fx, fy):
         idx = self._current_scene_idx()
-        # GT point drag (contact, or tip/base while GT is active)
+        # A label's point dragged (contact, or tip/base while a label is showing)
         if which in ("contact", "tip", "base") and self.annotations.labels_of(idx):
-            self._on_gt_point_dragged(which, fx, fy)
+            self._on_label_point_dragged(which, fx, fy)
             return
         old = self.annotations.axis_of(idx)
         if old is not None:

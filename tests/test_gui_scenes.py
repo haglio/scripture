@@ -1,7 +1,7 @@
 """A split renumbers the scenes, and the hand-labeled frames must follow.
 
 `_rebuild_scenes` remapped the axis, the actions and the tracking positions
-from old scene index to new and left the ground truth on its old key. Every
+from old scene index to new and left the labels on their old key. Every
 label past the split point then belonged to the scene before it: the canvas
 read the wrong bucket, the label session counted the wrong frames done, and
 "Delete all N labeled frames in this scene?" deleted another scene's work.
@@ -32,7 +32,7 @@ def test_a_split_before_a_labeled_frame_carries_the_label_across(window):
     window._do_split_at(400)
 
     assert window._current_scene_idx() == 1
-    assert window._get_gt_for_frame(1, 800) is not None
+    assert window._label_of_frame(1, 800) is not None
 
 
 def test_unsplitting_gathers_both_scenes_labels_into_the_merged_one(window):
@@ -60,7 +60,7 @@ def test_undo_after_a_split_deletes_the_label_it_was_recorded_for(window):
     window._do_split_at(400)
     window._session_undo_last()
 
-    assert window._get_gt_for_frame(1, 800) is None
+    assert window._label_of_frame(1, 800) is None
 
 
 def test_discarding_a_scene_drops_its_actions_and_its_tracking(window):

@@ -1,4 +1,4 @@
-"""Sparse ground-truth labeling: which frames to decide, and where you are.
+"""Sparse labeling: which frames to decide, and where you are.
 
 The operator walks an evenly-strided schedule over one scene deciding each frame
 in turn, and may scrub away and come back, skip, or undo.  All of that is state

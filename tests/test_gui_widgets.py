@@ -64,7 +64,7 @@ def test_the_timeline_paints_a_scene_with_labels_and_actions(qt_app):
         splits=[400],
         total_frames=800,
         current_frame=200,
-        ground_truth={1: {600: {"tip": None, "base": None,
+        labels={1: {600: {"tip": None, "base": None,
                                 "contact": (40, 90), "is_action": True}}},
         fps=30.0,
     )
