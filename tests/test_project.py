@@ -6,8 +6,11 @@ Qt window, so nothing could round-trip it without standing a window up.
 from __future__ import annotations
 
 import json
+import logging
+from pathlib import Path
 
 import numpy as np
+import pytest
 
 from scripture.auto_funscript import PipelineResult, TrackSignal
 from scripture.motion_tracker import AxisDefinition, TrackingResult
@@ -18,6 +21,7 @@ from scripture.project import (
     document_from_state,
     load_project,
     provenance_of_actions,
+    reopen_last_project,
     save_project,
     state_from_document,
 )
@@ -213,3 +217,49 @@ class TestWhatMadeTheActions:
             auto=_auto_pass({**A_STAMP, METHOD: "roi_flow"}))
 
         assert provenance_of_actions(document) == {**A_STAMP, METHOD: None}
+
+
+def _pointing_at(project: Path, tmp_path: Path) -> Path:
+    pointer = tmp_path / ".last_session"
+    pointer.write_text(str(project), encoding="utf-8")
+    return pointer
+
+
+def test_the_last_project_is_reopened(tmp_path):
+    project = tmp_path / "one.scripture"
+    project.write_text("{}", encoding="utf-8")
+    opened = []
+
+    reopen_last_project(_pointing_at(project, tmp_path), opened.append)
+
+    assert opened == [str(project)]
+
+
+def test_no_last_project_opens_nothing(tmp_path):
+    opened = []
+
+    reopen_last_project(tmp_path / ".last_session", opened.append)
+    reopen_last_project(_pointing_at(tmp_path / "gone.scripture", tmp_path), opened.append)
+
+    assert opened == []
+
+
+def test_a_damaged_last_project_is_logged_by_name_and_opens_nothing(tmp_path, caplog):
+    damaged = tmp_path / "damaged.scripture"
+    damaged.write_text("{ not a project", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger="scripture"):
+        reopen_last_project(_pointing_at(damaged, tmp_path), load_project)
+
+    assert str(damaged) in caplog.text
+
+
+def test_a_bug_while_reopening_is_not_taken_for_a_damaged_file(tmp_path):
+    project = tmp_path / "fine.scripture"
+    project.write_text("{}", encoding="utf-8")
+
+    def a_bug(_path):
+        raise RuntimeError("an invented bug")
+
+    with pytest.raises(RuntimeError):
+        reopen_last_project(_pointing_at(project, tmp_path), a_bug)
