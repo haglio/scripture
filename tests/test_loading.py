@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from app_support.overlay import MissingOverlayKey
+from shared_ui.testing import loading_process_opened
 
 from scripture import content, main
 
@@ -39,7 +40,7 @@ def test_the_loading_screen_runs_in_a_process_of_its_own_wearing_scriptures_task
         monkeypatch):
     monkeypatch.setattr(main.sys, "platform", "win32")
 
-    with patch("shared_ui.loading_process.LoadingProcess.open") as opened:
+    with loading_process_opened() as opened:
         main.open_the_loading_screen(None)
 
     opened.assert_called_once_with(
@@ -51,7 +52,7 @@ def test_the_loading_screen_runs_in_a_process_of_its_own_wearing_scriptures_task
 def test_off_windows_the_loading_screen_wears_no_taskbar_identity(monkeypatch):
     monkeypatch.setattr(main.sys, "platform", "linux")
 
-    with patch("shared_ui.loading_process.LoadingProcess.open") as opened:
+    with loading_process_opened() as opened:
         main.open_the_loading_screen(None)
 
     assert opened.call_args.kwargs["app_id"] is None
