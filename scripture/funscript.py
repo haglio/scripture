@@ -22,4 +22,4 @@ def build_funscript(actions: list[dict], duration_seconds: int, *, provenance: d
 
 
 def made_by(tracker: str, tracker_version: str) -> dict:
-    return provenance.stamp(CREATOR, anchor=__file__, recipe=tracker, recipe_version=tracker_version)
+    return provenance.stamp(CREATOR, anchor=__file__, method=tracker, method_version=tracker_version)
