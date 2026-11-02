@@ -310,7 +310,7 @@ class TimelineWidget(QWidget):
         self.update()
 
 
-class FrameCanvas(QWidget):
+class Viewport(QWidget):
     clicked = pyqtSignal(int, int)
     point_dragged = pyqtSignal(str, int, int)  # "tip" or "base", frame_x, frame_y
     context_menu_requested = pyqtSignal(int, int)  # frame_x, frame_y
@@ -386,13 +386,13 @@ class FrameCanvas(QWidget):
             return 1.0
         return min(self.width() / self._frame_w, self.height() / self._frame_h) * self._zoom
 
-    def _frame_to_canvas(self, fx, fy):
+    def _frame_to_viewport(self, fx, fy):
         s = self._display_scale()
         dw, dh = int(self._frame_w * s), int(self._frame_h * s)
         ox, oy = (self.width() - dw) // 2, (self.height() - dh) // 2
         return int(fx * s) + ox, int(fy * s) + oy
 
-    def _canvas_to_frame(self, cx, cy):
+    def _viewport_to_frame(self, cx, cy):
         s = self._display_scale()
         dw, dh = int(self._frame_w * s), int(self._frame_h * s)
         ox, oy = (self.width() - dw) // 2, (self.height() - dh) // 2
@@ -401,7 +401,7 @@ class FrameCanvas(QWidget):
     def _hit_point(self, cx, cy):
         """Return 'tip', 'base', 'contact', or None based on which point was hit."""
         def reaches(pt):
-            px, py = self._frame_to_canvas(*pt)
+            px, py = self._frame_to_viewport(*pt)
             return (cx - px) ** 2 + (cy - py) ** 2 <= _GRAB_REACH ** 2
 
         # Check the label's points first (on top visually, so should catch clicks first)
@@ -458,7 +458,7 @@ class FrameCanvas(QWidget):
         p.end()
 
     def _draw_point(self, p, pt, color, label):
-        cx, cy = self._frame_to_canvas(*pt)
+        cx, cy = self._frame_to_viewport(*pt)
         p.setPen(QPen(WHITE, 1))
         p.setBrush(QBrush(color))
         p.drawEllipse(cx - 5, cy - 5, 10, 10)
@@ -467,8 +467,8 @@ class FrameCanvas(QWidget):
         p.drawText(cx + 10, cy + 4, label)
 
     def _draw_axis(self, p, axis):
-        tx, ty = self._frame_to_canvas(*axis.tip)
-        bx, by = self._frame_to_canvas(*axis.base)
+        tx, ty = self._frame_to_viewport(*axis.tip)
+        bx, by = self._frame_to_viewport(*axis.base)
         p.setPen(QPen(_AXIS_COLOR, 2, Qt.PenStyle.DashLine))
         p.drawLine(tx, ty, bx, by)
         self._draw_point(p, axis.tip, _TIP_COLOR, "TIP")
@@ -478,8 +478,8 @@ class FrameCanvas(QWidget):
         """Draw debug overlay: axis, tip/base, contact with direction arrow."""
         ov = self._overlay
         axis = ov["axis"]
-        tx, ty = self._frame_to_canvas(*axis.tip)
-        bx, by = self._frame_to_canvas(*axis.base)
+        tx, ty = self._frame_to_viewport(*axis.tip)
+        bx, by = self._frame_to_viewport(*axis.base)
 
         # Faint axis line
         faint_axis = QColor(_AXIS_COLOR)
@@ -489,7 +489,7 @@ class FrameCanvas(QWidget):
 
         # Small semi-transparent tip/base dots (no labels)
         for pt, color in [(axis.tip, _TIP_COLOR), (axis.base, _BASE_COLOR)]:
-            cx, cy = self._frame_to_canvas(*pt)
+            cx, cy = self._frame_to_viewport(*pt)
             faint = QColor(color)
             faint.setAlpha(100)
             p.setPen(QPen(Qt.GlobalColor.transparent))
@@ -497,7 +497,7 @@ class FrameCanvas(QWidget):
             p.drawEllipse(cx - 3, cy - 3, 6, 6)
 
         ct = ov["contact_pt"]
-        ccx, ccy = self._frame_to_canvas(*ct)
+        ccx, ccy = self._frame_to_viewport(*ct)
         contact_color = GREEN
 
         if ov["is_action"]:
@@ -546,8 +546,8 @@ class FrameCanvas(QWidget):
         for det in ov.get("detections") or []:
             x, y, w, h = det.rect
             color = _DET_COLORS.get(det.class_name, _DET_DEFAULT_COLOR)
-            cx1, cy1 = self._frame_to_canvas(x, y)
-            cx2, cy2 = self._frame_to_canvas(x + w, y + h)
+            cx1, cy1 = self._frame_to_viewport(x, y)
+            cx2, cy2 = self._frame_to_viewport(x + w, y + h)
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(color, 1, Qt.PenStyle.DotLine))
             p.drawRect(cx1, cy1, cx2 - cx1, cy2 - cy1)
@@ -558,8 +558,8 @@ class FrameCanvas(QWidget):
         belief = ov.get("belief")
         if belief is not None:
             x, y, w, h = belief
-            cx1, cy1 = self._frame_to_canvas(x, y)
-            cx2, cy2 = self._frame_to_canvas(x + w, y + h)
+            cx1, cy1 = self._frame_to_viewport(x, y)
+            cx2, cy2 = self._frame_to_viewport(x + w, y + h)
             memory_color = GREEN
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(memory_color, 2, Qt.PenStyle.DashLine))
@@ -574,8 +574,8 @@ class FrameCanvas(QWidget):
         roi = ov.get("roi")
         if roi is not None:
             x, y, w, h = roi
-            cx1, cy1 = self._frame_to_canvas(x, y)
-            cx2, cy2 = self._frame_to_canvas(x + w, y + h)
+            cx1, cy1 = self._frame_to_viewport(x, y)
+            cx2, cy2 = self._frame_to_viewport(x + w, y + h)
             roi_color = _LOCK_COLORS.get(lock, _DET_DEFAULT_COLOR)
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(roi_color, 2))
@@ -584,7 +584,7 @@ class FrameCanvas(QWidget):
             p.setFont(make_font(size=SIZE_SMALL, bold=True))
             p.drawText(cx1 + 3, cy2 - 5, _LOCK_LABELS.get(lock, ""))
 
-        # Position gauge along the right edge of the canvas
+        # Position gauge along the right edge of the viewport
         gauge_x = self.width() - 26
         gauge_top, gauge_h = 20, max(60, self.height() - 60)
         p.setPen(QPen(BORDER_SUBTLE))
@@ -614,8 +614,8 @@ class FrameCanvas(QWidget):
         label = self._label
         # Axis line from base to tip
         if label.get("tip") and label.get("base"):
-            tx, ty = self._frame_to_canvas(*label["tip"])
-            bx, by = self._frame_to_canvas(*label["base"])
+            tx, ty = self._frame_to_viewport(*label["tip"])
+            bx, by = self._frame_to_viewport(*label["base"])
             p.setPen(QPen(_AXIS_COLOR, 2, Qt.PenStyle.DashLine))
             p.drawLine(tx, ty, bx, by)
             # Tip marker
@@ -637,7 +637,7 @@ class FrameCanvas(QWidget):
         contact = label.get("contact")
         contact_color = GREEN
         if contact is not None:
-            ccx, ccy = self._frame_to_canvas(*contact)
+            ccx, ccy = self._frame_to_viewport(*contact)
             if label.get("is_action"):
                 p.setPen(QPen(contact_color, 3))
                 p.setBrush(QBrush(Qt.GlobalColor.transparent))
@@ -668,17 +668,17 @@ class FrameCanvas(QWidget):
             if hit:
                 self._dragging_point = hit
             else:
-                fx, fy = self._canvas_to_frame(cx, cy)
+                fx, fy = self._viewport_to_frame(cx, cy)
                 self.clicked.emit(fx, fy)
         elif event.button() == Qt.MouseButton.RightButton:
             cx, cy = int(event.position().x()), int(event.position().y())
-            fx, fy = self._canvas_to_frame(cx, cy)
+            fx, fy = self._viewport_to_frame(cx, cy)
             self.context_menu_requested.emit(fx, fy)
 
     def mouseMoveEvent(self, event):
         if self._dragging_point:
             cx, cy = int(event.position().x()), int(event.position().y())
-            fx, fy = self._canvas_to_frame(cx, cy)
+            fx, fy = self._viewport_to_frame(cx, cy)
             self.point_dragged.emit(self._dragging_point, fx, fy)
 
     def mouseReleaseEvent(self, event):
@@ -1010,7 +1010,7 @@ class App(QMainWindow):
         self._mark_dirty()
         # Update display without re-reading the frame
         label = self._label_of_frame(idx, self.current_frame_idx)
-        self.canvas.set_label(label)
+        self.viewport.set_label(label)
 
     def _build_ui(self):
         central = QWidget()
@@ -1074,12 +1074,12 @@ class App(QMainWindow):
         right_pad.setFixedWidth(MARGIN_STANDARD)
         tb.addWidget(right_pad)
 
-        # --- Frame canvas ---
-        self.canvas = FrameCanvas()
-        self.canvas.clicked.connect(self._on_canvas_click)
-        self.canvas.point_dragged.connect(self._on_point_dragged)
-        self.canvas.context_menu_requested.connect(self._on_canvas_context_menu)
-        root.addWidget(self.canvas, stretch=1)
+        # --- Viewport ---
+        self.viewport = Viewport()
+        self.viewport.clicked.connect(self._on_viewport_click)
+        self.viewport.point_dragged.connect(self._on_point_dragged)
+        self.viewport.context_menu_requested.connect(self._on_viewport_context_menu)
+        root.addWidget(self.viewport, stretch=1)
 
         # --- Timeline ---
         self.timeline = TimelineWidget()
@@ -1214,41 +1214,41 @@ class App(QMainWindow):
             return
         self.current_frame_idx = frame_idx
         idx = self._current_scene_idx()
-        self.canvas.set_frame(frame)
+        self.viewport.set_frame(frame)
 
         axis = self.annotations.axis_of(idx)
         if axis is not None and axis.frame == frame_idx:
-            self.canvas.set_axis(axis)
+            self.viewport.set_axis(axis)
         else:
-            self.canvas.set_axis(None)
-            self.canvas.set_pending_tip(self.pending_tip)
-            self.canvas.set_pending_base(self.pending_base)
+            self.viewport.set_axis(None)
+            self.viewport.set_pending_tip(self.pending_tip)
+            self.viewport.set_pending_base(self.pending_base)
 
         # Auto-tracking overlay takes precedence when the auto pipeline ran
         if self.auto_result is not None:
-            self.canvas.set_auto_overlay(auto_overlay(
+            self.viewport.set_auto_overlay(auto_overlay(
                 result=self.auto_result, frame_idx=frame_idx, fps=self.fps,
                 actions=self.annotations.actions.get(idx, []),
                 detection_frames=self._auto_det_frames,
                 last_anchor=self._auto_last_anchor))
         else:
-            self.canvas.set_auto_overlay(None)
+            self.viewport.set_auto_overlay(None)
 
         # Debug overlay for processed scenes (works with full positions or just actions)
         if axis is not None and (idx in self.annotations.tracking
                                  or idx in self.annotations.actions):
-            self.canvas.set_overlay(tracked_overlay(
+            self.viewport.set_overlay(tracked_overlay(
                 axis=axis, scene=self.scenes[idx], frame_idx=frame_idx, fps=self.fps,
                 actions=self.annotations.actions.get(idx, []),
                 result=self.annotations.tracking.get(idx)))
         else:
-            self.canvas.set_overlay(None)
+            self.viewport.set_overlay(None)
 
         # The label's layer
         if self.annotations.labels_of(idx):
-            self.canvas.set_label(self._label_of_frame(idx, frame_idx))
+            self.viewport.set_label(self._label_of_frame(idx, frame_idx))
         else:
-            self.canvas.set_label(None)
+            self.viewport.set_label(None)
 
         self._update_info()
         self._update_timeline()
@@ -1286,7 +1286,7 @@ class App(QMainWindow):
 
     # ── Context menus ──────────────────────────────────────────────
 
-    def _on_canvas_context_menu(self, fx, fy):
+    def _on_viewport_context_menu(self, fx, fy):
         if not self.scenes:
             return
         idx = self._current_scene_idx()
@@ -1405,7 +1405,7 @@ class App(QMainWindow):
         self._mark_dirty()
         self._show_frame(self.current_frame_idx)
 
-    def _on_canvas_click(self, fx, fy):
+    def _on_viewport_click(self, fx, fy):
         if not self.scenes:
             return
         if self.session.active and not self.placing:
@@ -1458,14 +1458,14 @@ class App(QMainWindow):
                      else AxisDefinition(tip=old.tip, base=(fx, fy), frame=old.frame))
             self.annotations.set_axis(idx, moved)
             self._mark_dirty()
-            self.canvas.set_axis(moved)
+            self.viewport.set_axis(moved)
             self._update_timeline()
         elif which == "tip" and self.pending_tip:
             self.pending_tip = (fx, fy)
-            self.canvas.set_pending_tip(self.pending_tip)
+            self.viewport.set_pending_tip(self.pending_tip)
         elif which == "base" and self.pending_base:
             self.pending_base = (fx, fy)
-            self.canvas.set_pending_base(self.pending_base)
+            self.viewport.set_pending_base(self.pending_base)
 
     # ── Processing ─────────────────────────────────────────────────
 

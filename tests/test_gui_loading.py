@@ -3,7 +3,7 @@
 `_do_load` released the open capture and only then tried the project's video.
 When that video had moved, the "Video not found" dialog left `self.cap` pointing
 at a released capture -- still truthy, so `_show_frame`'s only guard passed and
-every frame read after it came back empty. The canvas simply stopped updating,
+every frame read after it came back empty. The viewport simply stopped updating,
 with nothing said after that one dialog.
 """
 
