@@ -1,7 +1,7 @@
 """The launch smoke test: everything the launcher's command imports, imported.
 
-``tests/test_launcher_contract.py`` proves the launcher resolves a command and
-stops there -- it never runs the command. ``tests/test_gui_import.py`` runs one
+The family's launcher gate proves the launcher resolves a command and stops
+there -- it never runs the command. ``tests/test_gui_import.py`` runs one
 import, ``scripture.gui``. Neither covers the launch as a whole, which is where
 an app that will not open lives: ``main()`` reaches Qt and the GUI through
 imports *inside* the function, and every other test here runs under
@@ -132,10 +132,3 @@ def test_a_launch_import_that_cannot_resolve_fails_here():
     assertion above would pass vacuously and the guard would be decorative."""
     assert_an_unresolvable_import_is_caught(
         _run_the_launchs_way, _launch_imports(), "scripture.gui")
-
-
-@runs_the_launcher
-def test_the_launcher_starts_the_app_in_this_checkout():
-    """The working directory is what makes the top-level ``content`` module
-    importable, and what keeps a sibling checkout from answering for this one."""
-    assert Path(dry_run(LAUNCHER).value("directory")) == REPO_ROOT

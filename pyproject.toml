@@ -24,7 +24,7 @@ requires-python = ">=3.14"
 # other half had not landed turned all of them red at once. Moving to a newer
 # one is this repo's own commit, with its own suite to answer for it.
 dependencies = [
-    "app-support @ git+https://github.com/haglio/app_support@v0.1.384",
+    "app-support @ git+https://github.com/haglio/app_support@v0.1.388",
     "shared-ui @ git+https://github.com/haglio/shared_ui@v0.1.310",
     "opencv-python>=4.8,<5",
     "numpy>=1.24,<3",
@@ -47,7 +47,7 @@ dev = ["pytest>=9,<10", "pytest-cov>=7,<8", "pytest-timeout>=2.4,<3", "vulture>=
 # slowest on a runner: it returns early when no blocklist is reachable, and
 # the blocklist is git-ignored, so a fresh checkout has none. What CI does run
 # longest here is a child interpreter importing the GUI -- cv2, numpy
-# and PyQt6 -- at about a second, and four launcher tests that are
+# and PyQt6 -- at about a second, and the launcher tests that are
 # skipped off Windows and so cannot be timed from this machine at all. 120 s
 # rather than 60 for that blind spot. --timeout-method=thread is the half that
 # pays for itself: it dumps the stack of the test that stopped, which turns a
