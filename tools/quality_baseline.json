@@ -97,7 +97,7 @@
   },
   "statements": {
     "scripture/auto_funscript.py": 332,
-    "scripture/gui.py": 1330
+    "scripture/gui.py": 1325
   },
   "uncovered_lines": {
     "scripture/__main__.py": 3,
@@ -105,7 +105,7 @@
     "scripture/auto_funscript.py": 41,
     "scripture/cotracker_tracking.py": 119,
     "scripture/cycle_extract.py": 1,
-    "scripture/gui.py": 713,
+    "scripture/gui.py": 708,
     "scripture/main.py": 20,
     "scripture/motion_tracker.py": 3,
     "scripture/overlay.py": 1,

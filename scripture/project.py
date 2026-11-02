@@ -16,7 +16,10 @@ the version and the field name against this module.
 from __future__ import annotations
 
 import json
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
@@ -36,6 +39,9 @@ PROJECT_FORMAT_VERSION = 1
 #: Where the video this project was cut against is recorded.  Evolver moves
 #: videos and repoints this in place, so the name is a contract with it.
 VIDEO_PATH_FIELD = "video_path"
+
+_log = logging.getLogger("scripture")
+_DAMAGED_PROJECT_ERRORS = (OSError, ValueError, LookupError, TypeError, AttributeError, StopIteration)
 
 
 @dataclass
@@ -152,3 +158,14 @@ def save_project(path: str, state: dict) -> None:
 def load_project(path: str) -> dict:
     with open(path) as f:
         return json.load(f)
+
+
+def reopen_last_project(pointer: Path, open_project: Callable[[str], None]) -> None:
+    path = pointer
+    try:
+        if pointer.exists():
+            path = pointer.read_text().strip()
+            if path and Path(path).exists():
+                open_project(path)
+    except _DAMAGED_PROJECT_ERRORS:
+        _log.warning("Could not reopen the last project: %s", path, exc_info=True)

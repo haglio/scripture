@@ -75,6 +75,7 @@ from scripture.project import (
     document_from_state,
     load_project,
     provenance_of_actions,
+    reopen_last_project,
     save_project,
     state_from_document,
 )
@@ -1750,13 +1751,7 @@ class App(QMainWindow):
             pass
 
     def _try_load_last_project(self):
-        try:
-            if _LAST_PROJECT_FILE.exists():
-                path = _LAST_PROJECT_FILE.read_text().strip()
-                if path and Path(path).exists():
-                    self._do_load(path)
-        except Exception:
-            pass
+        reopen_last_project(_LAST_PROJECT_FILE, self._do_load)
 
     # ── Export ──────────────────────────────────────────────────────
 
