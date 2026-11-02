@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from scripture import cotracker_tracking
 from scripture.cotracker_tracking import CoTrackResult
-from scripture.motion_tracker import TRACKER_VERSION, AxisDefinition, track_motion
+from scripture.motion_tracker import TRACKER_VERSION, AxisDefinition, _released_after, track_motion
 from tests.stamps import METHOD, METHOD_VERSION
 from tests.videos import a_flat_video
 
@@ -19,3 +20,16 @@ def test_a_tracked_result_says_which_tracker_made_it_and_at_which_version(tmp_pa
     made = result.provenance
     assert (made["app"], made[METHOD]) == ("scripture", "axis_tracking")
     assert made[METHOD_VERSION] == TRACKER_VERSION
+
+
+def test_a_stopped_run_still_lets_the_video_go():
+    released = []
+
+    class Capture:
+        def release(self):
+            released.append(True)
+
+    with pytest.raises(RuntimeError), _released_after(Capture()):
+        raise RuntimeError("an invented stop")
+
+    assert released == [True]

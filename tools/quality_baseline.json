@@ -41,7 +41,7 @@
     "scripture/cotracker_tracking.py": 65,
     "scripture/cycle_extract.py": 21,
     "scripture/funscript.py": 9,
-    "scripture/gui.py": 95,
+    "scripture/gui.py": 94,
     "scripture/label_session.py": 20,
     "scripture/main.py": 22,
     "scripture/motion_tracker.py": 13,
@@ -87,7 +87,7 @@
   },
   "reach_chains": {
     "scripture/annotations.py": 16,
-    "scripture/gui.py": 194,
+    "scripture/gui.py": 185,
     "scripture/label_session.py": 3,
     "scripture/video.py": 3
   },
@@ -97,7 +97,7 @@
   },
   "statements": {
     "scripture/auto_funscript.py": 332,
-    "scripture/gui.py": 1325
+    "scripture/gui.py": 1282
   },
   "uncovered_lines": {
     "scripture/__main__.py": 3,
@@ -105,7 +105,7 @@
     "scripture/auto_funscript.py": 41,
     "scripture/cotracker_tracking.py": 119,
     "scripture/cycle_extract.py": 1,
-    "scripture/gui.py": 708,
+    "scripture/gui.py": 679,
     "scripture/main.py": 20,
     "scripture/motion_tracker.py": 3,
     "scripture/overlay.py": 1,
