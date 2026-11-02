@@ -13,14 +13,13 @@ import numpy as np
 
 from scripture import gui
 from scripture.motion_tracker import TrackingResult
-from tests.gui_doubles import Dialogs, FileDialog
+from tests.gui_doubles import Dialogs, FileDialog, Footage
 from tests.stamps import A_STAMP
 
 
 def _ready_to_export(window, tmp_path):
     window.video_path = str(tmp_path / "example clip.mp4")
-    window.total_frames = 600
-    window.fps = 30.0
+    window.video = Footage(total_frames=600, fps=30.0)
     window.annotations.replace_actions({
         0: [{"at": 0, "pos": 50}, {"at": 1000, "pos": 90}],
         1: [{"at": 2000, "pos": 10}],

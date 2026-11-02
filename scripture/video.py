@@ -1,7 +1,7 @@
 """The video being annotated: opened once, asked for a frame at a time.
 
 Everything OpenCV about reading footage lives here, so the window holds a video
-rather than a capture plus four numbers it read off one.  It also puts the
+rather than a capture plus the numbers it read off one.  It also puts the
 "a capture that would not open is not a video" rule in one place: the window
 checked it where a project named a missing file and not where a file was chosen,
 which is how a released capture stayed installed and every later frame came back
@@ -16,14 +16,12 @@ _ASSUMED_FPS = 30.0
 
 
 class VideoSource:
-    """One open video file: its shape, and the frame at an index."""
+    """One open video file: its length, its frame rate and the frame at an index."""
 
     def __init__(self, capture: cv2.VideoCapture) -> None:
         self._capture = capture
         self.fps = capture.get(cv2.CAP_PROP_FPS) or _ASSUMED_FPS
         self.total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-        self.width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self.height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     @classmethod
     def opened(cls, path: str) -> VideoSource | None:
@@ -43,3 +41,17 @@ class VideoSource:
 
     def release(self) -> None:
         self._capture.release()
+
+
+class _NoVideo:
+    fps = _ASSUMED_FPS
+    total_frames = 0
+
+    def frame_at(self, _index: int) -> None:
+        return None
+
+    def release(self) -> None:
+        pass
+
+
+NO_VIDEO = _NoVideo()

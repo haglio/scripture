@@ -11,6 +11,18 @@ from __future__ import annotations
 from PyQt6.QtWidgets import QMessageBox
 
 
+class Footage:
+    def __init__(self, total_frames, fps=30.0):
+        self.total_frames = total_frames
+        self.fps = fps
+
+    def frame_at(self, _index):
+        return None
+
+    def release(self):
+        pass
+
+
 class CloseEvent:
     """The QCloseEvent Qt hands to `closeEvent`."""
 

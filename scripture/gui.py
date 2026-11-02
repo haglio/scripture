@@ -79,7 +79,7 @@ from scripture.project import (
     state_from_document,
 )
 from scripture.scene import Scene, actions_by_scene, scenes_from_splits
-from scripture.video import VideoSource
+from scripture.video import NO_VIDEO, VideoSource
 
 _ICON_COLOR = TEXT_PRIMARY
 _LAST_PROJECT_FILE = Path(__file__).resolve().parent.parent / "sessions" / ".last_session"
@@ -746,6 +746,17 @@ class FrameCanvas(QWidget):
             self.zoom /= 1.15
 
 
+def _fmt_duration(seconds):
+    s = int(seconds)
+    if s < _SECONDS_PER_MINUTE:
+        return f"{s}s"
+    m, s = divmod(s, _SECONDS_PER_MINUTE)
+    if m < _MINUTES_PER_HOUR:
+        return f"{m}m {s:02d}s"
+    h, m = divmod(m, _MINUTES_PER_HOUR)
+    return f"{h}h {m:02d}m {s:02d}s"
+
+
 class App(QMainWindow):
 
     def __init__(self, *, preview: Preview | None = None):
@@ -757,9 +768,7 @@ class App(QMainWindow):
             self.setWindowIcon(app_icon(_icon_path, preview))
 
         self.video_path = None
-        self.video = None
-        self.fps = 30.0
-        self.total_frames = 0
+        self.video = NO_VIDEO
 
         self.splits = []
         self.scenes = []
@@ -778,6 +787,14 @@ class App(QMainWindow):
         self._build_ui()
         self._build_shortcuts()
         self._try_load_last_project()
+
+    @property
+    def fps(self) -> float:
+        return self.video.fps
+
+    @property
+    def total_frames(self) -> int:
+        return self.video.total_frames
 
     def _mark_dirty(self):
         self._dirty = True
@@ -950,7 +967,7 @@ class App(QMainWindow):
         if not self.scenes:
             return []
         scene = self.scenes[idx]
-        stride = max(1, int(2 * self.fps)) if self.fps else 60
+        stride = max(1, int(2 * self.fps))
         return schedule_frames(scene.start_frame, scene.end_frame - 1, stride)
 
     def _session_annotated(self):
@@ -1120,7 +1137,7 @@ class App(QMainWindow):
 
         # --- Timeline ---
         self.timeline = TimelineWidget()
-        self.timeline.frame_changed.connect(self._on_timeline_frame)
+        self.timeline.frame_changed.connect(self._show_frame)
         self.timeline.context_menu_requested.connect(self._on_timeline_context_menu)
         root.addWidget(self.timeline)
 
@@ -1159,7 +1176,7 @@ class App(QMainWindow):
         self.info_label.setText(text)
 
     def _format_time(self, frame_idx):
-        s = frame_idx / self.fps if self.fps else 0
+        s = frame_idx / self.fps
         m, s = divmod(int(s), _SECONDS_PER_MINUTE)
         h, m = divmod(m, _MINUTES_PER_HOUR)
         return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
@@ -1238,19 +1255,14 @@ class App(QMainWindow):
         if source is None:
             QMessageBox.critical(self, "Video not found", f"Cannot open: {path}")
             return False
-        if self.video is not None:
-            self.video.release()
+        self.video.release()
         self.video = source
         self.video_path = path
-        self.fps = source.fps
-        self.total_frames = source.total_frames
         return True
 
     # ── Frame display ──────────────────────────────────────────────
 
     def _show_frame(self, frame_idx):
-        if self.video is None:
-            return
         frame = self.video.frame_at(frame_idx)
         if frame is None:
             return
@@ -1294,9 +1306,6 @@ class App(QMainWindow):
 
         self._update_info()
         self._update_timeline()
-
-    def _on_timeline_frame(self, frame):
-        self._show_frame(frame)
 
     # ── Scene splitting ────────────────────────────────────────────
 
@@ -1518,22 +1527,10 @@ class App(QMainWindow):
         axes = self.annotations.axes
         return [(i, self.scenes[i], axes[i]) for i in indices]
 
-    @staticmethod
-    def _fmt_duration(seconds):
-        s = int(seconds)
-        if s < _SECONDS_PER_MINUTE:
-            return f"{s}s"
-        m, s = divmod(s, _SECONDS_PER_MINUTE)
-        if m < _MINUTES_PER_HOUR:
-            return f"{m}m {s:02d}s"
-        h, m = divmod(m, _MINUTES_PER_HOUR)
-        return f"{h}h {m:02d}m {s:02d}s"
-
     def _show_progress_ui(self, maximum, fmt):
         self._spacer_action.setVisible(False)
-        self._progress_sep.setVisible(True)
-        self._progress_action.setVisible(True)
-        self._abort_action.setVisible(True)
+        for action in (self._progress_sep, self._progress_action, self._abort_action):
+            action.setVisible(True)
         self.progress_bar.setMaximum(maximum)
         self.progress_bar.setValue(0)
         self.progress_bar.setFormat(fmt)
@@ -1543,9 +1540,8 @@ class App(QMainWindow):
 
     def _hide_progress_ui(self):
         self._spacer_action.setVisible(True)
-        self._progress_sep.setVisible(False)
-        self._progress_action.setVisible(False)
-        self._abort_action.setVisible(False)
+        for action in (self._progress_sep, self._progress_action, self._abort_action):
+            action.setVisible(False)
         self.btn_process_all.setEnabled(True)
         self.btn_auto_process.setEnabled(True)
 
@@ -1581,7 +1577,7 @@ class App(QMainWindow):
         self._hide_progress_ui()
         self._worker = None
         total = sum(len(a) for a in self.annotations.actions.values())
-        self._set_status(f"Done \u2014 {total} actions in {self._fmt_duration(el)}.")
+        self._set_status(f"Done \u2014 {total} actions in {_fmt_duration(el)}.")
 
     def _abort_processing(self):
         if self._worker and self._worker.isRunning():
@@ -1642,7 +1638,7 @@ class App(QMainWindow):
         if self.auto_result is not None:
             self._set_status(
                 f"Auto done \u2014 {len(self.auto_result.actions)} actions "
-                f"in {self._fmt_duration(el)}.")
+                f"in {_fmt_duration(el)}.")
 
     def _is_processing(self):
         return self._worker is not None and self._worker.isRunning()

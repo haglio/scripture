@@ -1,7 +1,7 @@
 {
   "chain_length": {},
   "class_attributes": {
-    "scripture/gui.py::App": 33
+    "scripture/gui.py::App": 31
   },
   "fan_out": {},
   "library_patches": {
@@ -87,7 +87,7 @@
   },
   "reach_chains": {
     "scripture/annotations.py": 16,
-    "scripture/gui.py": 198,
+    "scripture/gui.py": 194,
     "scripture/label_session.py": 3,
     "scripture/video.py": 3
   },
@@ -97,7 +97,7 @@
   },
   "statements": {
     "scripture/auto_funscript.py": 335,
-    "scripture/gui.py": 1337
+    "scripture/gui.py": 1330
   },
   "uncovered_lines": {
     "scripture/__main__.py": 3,
@@ -105,7 +105,7 @@
     "scripture/auto_funscript.py": 41,
     "scripture/cotracker_tracking.py": 119,
     "scripture/cycle_extract.py": 1,
-    "scripture/gui.py": 716,
+    "scripture/gui.py": 713,
     "scripture/main.py": 20,
     "scripture/motion_tracker.py": 3,
     "scripture/overlay.py": 1,

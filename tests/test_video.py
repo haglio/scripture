@@ -10,19 +10,17 @@ from __future__ import annotations
 import numpy as np
 
 from scripture import video
-from scripture.video import VideoSource
+from scripture.video import NO_VIDEO, VideoSource
 
 
 class FakeCapture:
     """A cv2 capture over a fixed number of frames."""
 
-    def __init__(self, opened=True, frames=3, fps=30.0, width=640, height=480):
+    def __init__(self, opened=True, frames=3, fps=30.0):
         self._opened = opened
         self._frames = frames
         self._props = {video.cv2.CAP_PROP_FPS: fps,
-                       video.cv2.CAP_PROP_FRAME_COUNT: frames,
-                       video.cv2.CAP_PROP_FRAME_WIDTH: width,
-                       video.cv2.CAP_PROP_FRAME_HEIGHT: height}
+                       video.cv2.CAP_PROP_FRAME_COUNT: frames}
         self.sought = None
         self.released = False
 
@@ -52,12 +50,10 @@ def _source(monkeypatch, capture):
 
 class TestOpening:
 
-    def test_a_video_that_opens_reports_its_shape(self, monkeypatch):
-        source = _source(monkeypatch, FakeCapture(frames=900, fps=25.0,
-                                                  width=1920, height=1080))
+    def test_a_video_that_opens_reports_its_length_and_frame_rate(self, monkeypatch):
+        source = _source(monkeypatch, FakeCapture(frames=900, fps=25.0))
 
         assert (source.fps, source.total_frames) == (25.0, 900)
-        assert (source.width, source.height) == (1920, 1080)
 
     def test_a_video_that_will_not_open_is_no_source_and_is_let_go(self, monkeypatch):
         refusing = FakeCapture(opened=False)
@@ -89,3 +85,9 @@ class TestLettingGo:
         source.release()
 
         assert capture.released
+
+
+def test_with_no_video_there_are_no_frames_to_show_and_nothing_to_let_go():
+    assert NO_VIDEO.total_frames == 0
+    assert NO_VIDEO.frame_at(0) is None
+    NO_VIDEO.release()

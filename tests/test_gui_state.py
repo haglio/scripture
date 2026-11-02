@@ -17,7 +17,7 @@ import numpy as np
 from scripture import gui
 from scripture.motion_tracker import AxisDefinition, TrackingResult
 from scripture.project import PROJECT_FORMAT_VERSION, save_project
-from tests.gui_doubles import Capture
+from tests.gui_doubles import Capture, Footage
 
 _LABEL = {"tip": (40, 30), "base": (40, 150), "contact": (40, 90), "is_action": True}
 _LABEL_ON_DISK = {"tip": [40, 30], "base": [40, 150], "contact": [40, 90],
@@ -27,7 +27,7 @@ _LABEL_ON_DISK = {"tip": [40, 30], "base": [40, 150], "contact": [40, 90],
 def _populated(window, video_path):
     """A document with one of everything the schema can hold."""
     window.video_path = str(video_path)
-    window.total_frames = 1000
+    window.video = Footage(total_frames=1000)
     window.splits = [400]
     window._rebuild_scenes()
     window.annotations.set_axis(0, AxisDefinition(tip=(40, 30), base=(40, 150), frame=5))
