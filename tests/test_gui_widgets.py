@@ -12,7 +12,7 @@ import pytest
 from PyQt6.QtCore import QEvent, QPointF, Qt
 from PyQt6.QtGui import QMouseEvent, QPixmap
 
-from scripture.gui import FrameCanvas, TimelineWidget
+from scripture.gui import TimelineWidget, Viewport
 from scripture.motion_tracker import AxisDefinition
 from scripture.scene import Scene
 
@@ -41,15 +41,15 @@ def test_the_timeline_asks_for_a_menu_at_the_frame_under_the_click(qt_app, emitt
     assert emitted == [timeline._x_to_frame(200)]
 
 
-def test_the_canvas_asks_for_a_menu_at_the_video_point_under_the_click(qt_app, emitted):
-    canvas = FrameCanvas()
-    canvas.resize(320, 240)
-    canvas._frame_w, canvas._frame_h = 320, 240
-    canvas.context_menu_requested.connect(lambda fx, fy: emitted.append((fx, fy)))
+def test_the_viewport_asks_for_a_menu_at_the_video_point_under_the_click(qt_app, emitted):
+    viewport = Viewport()
+    viewport.resize(320, 240)
+    viewport._frame_w, viewport._frame_h = 320, 240
+    viewport.context_menu_requested.connect(lambda fx, fy: emitted.append((fx, fy)))
 
-    canvas.mousePressEvent(_right_click_at(160, 120))
+    viewport.mousePressEvent(_right_click_at(160, 120))
 
-    assert emitted == [canvas._canvas_to_frame(160, 120)]
+    assert emitted == [viewport._viewport_to_frame(160, 120)]
 
 
 def test_the_timeline_paints_a_scene_with_labels_and_actions(qt_app):

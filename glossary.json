@@ -83,14 +83,18 @@
     },
     {
       "screen": null,
-      "his_word": null,
-      "code_word": null,
-      "id": "frame_picture",
+      "his_word": "viewport (2026-11-02)",
+      "code_word": "viewport",
+      "id": "viewport",
       "thing": "the large picture of the video's current frame, where he places Tip and Base",
       "code_today": [
-        "canvas"
+        "viewport"
       ],
-      "status": "unruled"
+      "status": "ruled",
+      "ruled": "2026-11-02, his words, for Scripture, Origenerator and Funestra",
+      "retired": [
+        "canvas"
+      ]
     },
     {
       "screen": [

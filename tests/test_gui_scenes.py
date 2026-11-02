@@ -2,7 +2,7 @@
 
 `_rebuild_scenes` remapped the axis, the actions and the tracking positions
 from old scene index to new and left the labels on their old key. Every
-label past the split point then belonged to the scene before it: the canvas
+label past the split point then belonged to the scene before it: the viewport
 read the wrong bucket, the label session counted the wrong frames done, and
 "Delete all N labeled frames in this scene?" deleted another scene's work.
 """

@@ -3,7 +3,7 @@
 # Qt method overrides (called by the Qt event loop, not by our code)
 from __future__ import annotations
 
-_.paintEvent    # QWidget override (TimelineWidget, FrameCanvas)
+_.paintEvent    # QWidget override (TimelineWidget, Viewport)
 _.mousePressEvent   # QWidget override
 _.mouseMoveEvent    # QWidget override
 _.mouseReleaseEvent # QWidget override

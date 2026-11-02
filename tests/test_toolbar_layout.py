@@ -100,7 +100,7 @@ def test_the_point_menus_remove_items_wear_the_familys_cross(window, monkeypatch
     window._rebuild_scenes()
     window.pending_tip = (40, 30)
 
-    window._on_canvas_context_menu(40, 30)
+    window._on_viewport_context_menu(40, 30)
 
     (menu,) = shown
     (remove_tip,) = [action for action in menu.actions() if action.text() == "Remove Tip"]
