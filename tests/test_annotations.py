@@ -145,9 +145,9 @@ class TestTheLabels:
         assert annotations.labels == {}
 
 
-class TestLoadingADocument:
+class TestLoadingAProject:
 
-    def test_a_document_fills_the_four_kinds_of_mark(self):
+    def test_a_project_fills_the_four_kinds_of_mark(self):
         annotations = SceneAnnotations()
         annotations.load(axes={0: _axis(frame=3)}, actions={0: [{"at": 0, "pos": 1}]},
                          tracking={0: _tracked()}, labels={0: {4: {"is_action": True}}})

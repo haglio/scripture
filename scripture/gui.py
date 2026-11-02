@@ -68,13 +68,13 @@ from scripture.label_session import LabelSession, schedule_frames
 from scripture.motion_tracker import AxisDefinition
 from scripture.overlay import auto_overlay, tracked_overlay
 from scripture.project import (
-    ProjectDocument,
-    document_from_state,
+    Project,
     load_project,
+    project_from_state,
     provenance_of_actions,
     reopen_last_project,
     save_project,
-    state_from_document,
+    state_from_project,
 )
 from scripture.scene import Scene, actions_by_scene, scenes_from_splits
 from scripture.tracking_workers import AutoProcessWorker, ProcessWorker
@@ -1173,7 +1173,7 @@ class App(QMainWindow):
 
     # ── Video loading ──────────────────────────────────────────────
 
-    def _reset_document(self):
+    def _reset_project(self):
         self.splits = []
         self.scenes = []
         self.annotations.clear()
@@ -1190,7 +1190,7 @@ class App(QMainWindow):
         )
         if not path or not self._load_video(path):
             return
-        self._reset_document()
+        self._reset_project()
         self.scenes = [Scene(0, self.total_frames)]
         self._mark_dirty()
         self._show_frame(0)
@@ -1616,8 +1616,8 @@ class App(QMainWindow):
 
     # ── Project save/load ──────────────────────────────────────────
 
-    def _document(self):
-        return ProjectDocument(
+    def _project(self):
+        return Project(
             video_path=self.video_path,
             splits=self.splits,
             axes=self.annotations.axes,
@@ -1629,7 +1629,7 @@ class App(QMainWindow):
         )
 
     def _build_state(self):
-        return state_from_document(self._document())
+        return state_from_project(self._project())
 
     def _do_save(self, path):
         save_project(path, self._build_state())
@@ -1669,22 +1669,22 @@ class App(QMainWindow):
             self._do_load(path)
 
     def _do_load(self, path):
-        document = document_from_state(load_project(path))
-        if not self._load_video(document.video_path):
+        project = project_from_state(load_project(path))
+        if not self._load_video(project.video_path):
             return
 
-        self._reset_document()
-        self.splits = document.splits
+        self._reset_project()
+        self.splits = project.splits
         self._rebuild_scenes()
-        self.annotations.load(axes=document.axes, actions=document.actions,
-                              tracking=document.tracking, labels=document.labels)
-        self._set_auto_result(document.auto)
+        self.annotations.load(axes=project.axes, actions=project.actions,
+                              tracking=project.tracking, labels=project.labels)
+        self._set_auto_result(project.auto)
 
         self._project_path = path
         self._mark_clean()
         self._cancel_placing()
         self._save_last_project(path)
-        self.current_frame_idx = document.current_frame
+        self.current_frame_idx = project.current_frame
         self._show_frame(self.current_frame_idx)
 
     def _save_last_project(self, path):
@@ -1707,7 +1707,7 @@ class App(QMainWindow):
         for a in self.annotations.actions.values():
             all_a.extend(a)
         fs = build_funscript(all_a, int(self.total_frames / self.fps),
-                             provenance=provenance_of_actions(self._document()))
+                             provenance=provenance_of_actions(self._project()))
         dn = Path(self.video_path).stem + ".funscript" if self.video_path else "output.funscript"
         path, _ = QFileDialog.getSaveFileName(self, "Export", dn, "Funscript (*.funscript);;All (*)")
         if path:

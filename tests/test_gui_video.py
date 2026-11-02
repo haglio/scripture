@@ -1,4 +1,4 @@
-"""Opening a video starts a new document; nothing of the last one may survive.
+"""Opening a video starts a new project; nothing of the last one may survive.
 
 `_open_video` cleared the splits, the scenes and the three per-scene dicts and
 left the hand-placed labels, the label session and its undo stack alone. The
