@@ -9,6 +9,8 @@ read the wrong bucket, the label session counted the wrong frames done, and
 
 from __future__ import annotations
 
+from tests.gui_doubles import Footage
+
 
 def _label(contact):
     """A hand-placed label. The numbers are invented; only the keys matter."""
@@ -16,7 +18,7 @@ def _label(contact):
 
 
 def _with_one_scene(window, total_frames=1000):
-    window.total_frames = total_frames
+    window.video = Footage(total_frames=total_frames)
     window.splits = []
     window._rebuild_scenes()
     return window

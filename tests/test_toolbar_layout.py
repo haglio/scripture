@@ -20,6 +20,7 @@ from shared_ui.icons import qt_icon
 from shared_ui.spacing import MARGIN_STANDARD
 
 from scripture import gui
+from tests.gui_doubles import Footage
 
 _FILE_ACTIONS = ["New", "Save", "Save As", "Load", "Export"]
 
@@ -94,7 +95,7 @@ def test_each_file_action_wears_the_familys_mark_for_it(toolbar, label, mark):
 def test_the_point_menus_remove_items_wear_the_familys_cross(window, monkeypatch):
     shown = []
     monkeypatch.setattr(QMenu, "exec", lambda menu, *_args: shown.append(menu))
-    window.total_frames = 1000
+    window.video = Footage(total_frames=1000)
     window.splits = []
     window._rebuild_scenes()
     window.pending_tip = (40, 30)

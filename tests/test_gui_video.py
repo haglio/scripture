@@ -11,11 +11,11 @@ from __future__ import annotations
 
 from scripture import gui
 from scripture.video import VideoSource
-from tests.gui_doubles import Capture, Dialogs, FileDialog
+from tests.gui_doubles import Capture, Dialogs, FileDialog, Footage
 
 
 def _labeled(window, frame):
-    window.total_frames = 1000
+    window.video = Footage(total_frames=1000)
     window.splits = []
     window._rebuild_scenes()
     window.annotations.set_label(0, frame, {
