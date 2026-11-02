@@ -34,6 +34,10 @@ numpy/OpenCV logic with synthetic data.
 `PYTHONPATH`, so the venv's copies are the ones Scripture runs, and moving a pin
 means installing the new tag into the venv too.
 
+## Its words
+
+- **`glossary.json` lists the things on this app's screen and their words, and `tests/test_glossary.py` holds the code to it.** A noun for a drawn thing is a row there before it is a word in the code; a rename moves the old word from the row's `code_today` to its `retired`.
+
 ## Test fixtures must be fabricated, never copied from the real library
 
 Every fixture value that stands in for library data — a video title, a filename,

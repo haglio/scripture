@@ -1,0 +1,129 @@
+{
+  "app": "Scripture",
+  "drafted": "2026-11-02",
+  "columns": {
+    "thing": "where it is on the screen and what it looks like",
+    "screen": "the words on the screen that name it (a label, a button, a tooltip), quoted; null when no label names it",
+    "his_word": "the word the user says for it, from his own messages and the spoken commands; null when he has none yet",
+    "code_today": "the words the code says for it now; each has to be in the code, or the row is stale",
+    "code_word": "the one word the code is to say for it; null while unruled",
+    "status": "ruled: his word, given where `ruled` says | his_word: a word he has used, not yet put to him as the code's | agreed: screen, user and code already say one word | unruled: no word of his yet, the row waits for him | kept: a name from outside this app, or a thing he has no word for, so the code keeps its own",
+    "retired": "code words for it that are gone and stay gone; `keep` lists the tokens that may still carry the letters (another thing's name)"
+  },
+  "things": [
+    {
+      "screen": [
+        "Save",
+        "Save As",
+        "Load",
+        "Save the project"
+      ],
+      "his_word": null,
+      "code_word": "project",
+      "id": "project",
+      "thing": "the .scripture file: a video and everything marked on it",
+      "code_today": [
+        "project"
+      ],
+      "status": "agreed",
+      "retired": [
+        "project document",
+        "document from state",
+        "state from document"
+      ]
+    },
+    {
+      "screen": [
+        "Label Session",
+        "Reset Labels"
+      ],
+      "his_word": null,
+      "code_word": "label",
+      "id": "label",
+      "thing": "the points placed on one frame: Tip, Base and contact",
+      "code_today": [
+        "label"
+      ],
+      "status": "agreed",
+      "retired": [
+        "gt",
+        "ground truth"
+      ],
+      "keep": [
+        "\"ground_truth\""
+      ]
+    },
+    {
+      "screen": [
+        "Discard Scene Actions",
+        "Process Scene Actions"
+      ],
+      "his_word": null,
+      "code_word": "scene",
+      "id": "scene",
+      "thing": "a stretch of the video between two cuts",
+      "code_today": [
+        "scene"
+      ],
+      "status": "agreed"
+    },
+    {
+      "screen": [
+        "Discard Scene Actions",
+        "Process Scene Actions"
+      ],
+      "his_word": "action",
+      "code_word": "action",
+      "id": "action",
+      "thing": "a point of the funscript",
+      "code_today": [
+        "action"
+      ],
+      "status": "agreed"
+    },
+    {
+      "screen": null,
+      "his_word": null,
+      "code_word": null,
+      "id": "frame_picture",
+      "thing": "the large picture of the video's current frame, where he places Tip and Base",
+      "code_today": [
+        "canvas"
+      ],
+      "status": "unruled"
+    },
+    {
+      "screen": [
+        "New",
+        "Save",
+        "Save As",
+        "Load",
+        "Export"
+      ],
+      "his_word": null,
+      "code_word": "toolbar",
+      "id": "toolbar",
+      "thing": "the row of buttons along the top of the window",
+      "code_today": [
+        "toolbar"
+      ],
+      "status": "kept"
+    },
+    {
+      "screen": null,
+      "his_word": null,
+      "code_word": null,
+      "id": "other_words",
+      "thing": "words the code uses for things no screen shows or names: a band of values, a strip of pixels along an axis, a style sheet, a console interpreter, shared_ui's HUD radius, map as a verb",
+      "code_today": [
+        "band",
+        "strip",
+        "sheet",
+        "console",
+        "hud",
+        "map"
+      ],
+      "status": "kept"
+    }
+  ]
+}
