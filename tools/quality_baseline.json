@@ -1,0 +1,102 @@
+{
+  "chain_length": {},
+  "class_attributes": {
+    "scripture/gui.py::App": 35
+  },
+  "fan_out": {},
+  "library_patches": {
+    "tests/test_loading.py": 2
+  },
+  "methods": {
+    "scripture/gui.py::App": 84
+  },
+  "mocks": {
+    "tests/test_loading.py": 1
+  },
+  "monkeypatches": {
+    "tests/conftest.py": 1,
+    "tests/test_gui_export.py": 5,
+    "tests/test_gui_loading.py": 3,
+    "tests/test_gui_saving.py": 4,
+    "tests/test_gui_state.py": 2,
+    "tests/test_gui_video.py": 5,
+    "tests/test_loading.py": 3,
+    "tests/test_motion_tracker.py": 1,
+    "tests/test_preview.py": 1,
+    "tests/test_taskbar_identity.py": 9,
+    "tests/test_toolbar_layout.py": 1,
+    "tests/test_tracker_environment.py": 2,
+    "tests/test_video.py": 1
+  },
+  "mutables_imported": {},
+  "patches": {
+    "tests/test_loading.py": 5
+  },
+  "private_imports": {},
+  "private_reaches": {},
+  "prose_lines": {
+    "scripture/annotations.py": 21,
+    "scripture/auto_funscript.py": 97,
+    "scripture/content.py": 18,
+    "scripture/cotracker_tracking.py": 65,
+    "scripture/cycle_extract.py": 21,
+    "scripture/funscript.py": 9,
+    "scripture/gui.py": 95,
+    "scripture/label_session.py": 20,
+    "scripture/main.py": 22,
+    "scripture/motion_tracker.py": 13,
+    "scripture/overlay.py": 16,
+    "scripture/project.py": 19,
+    "scripture/scene.py": 6,
+    "scripture/tracker_environment.py": 20,
+    "scripture/video.py": 13,
+    "tests/conftest.py": 23,
+    "tests/gui_doubles.py": 10,
+    "tests/stamps.py": 2,
+    "tests/test_annotations.py": 7,
+    "tests/test_auto_funscript.py": 39,
+    "tests/test_cotracker_tracking.py": 15,
+    "tests/test_cycle_extract.py": 18,
+    "tests/test_family_look.py": 1,
+    "tests/test_funscript.py": 3,
+    "tests/test_gui_export.py": 5,
+    "tests/test_gui_headless.py": 8,
+    "tests/test_gui_import.py": 15,
+    "tests/test_gui_loading.py": 7,
+    "tests/test_gui_saving.py": 7,
+    "tests/test_gui_scenes.py": 9,
+    "tests/test_gui_state.py": 15,
+    "tests/test_gui_toolbar.py": 1,
+    "tests/test_gui_video.py": 8,
+    "tests/test_gui_widgets.py": 8,
+    "tests/test_icon.py": 3,
+    "tests/test_label_session.py": 6,
+    "tests/test_launch_smoke.py": 53,
+    "tests/test_launcher_contract.py": 11,
+    "tests/test_loading.py": 2,
+    "tests/test_overlay.py": 6,
+    "tests/test_process_name.py": 16,
+    "tests/test_project.py": 10,
+    "tests/test_scene.py": 1,
+    "tests/test_taskbar_identity.py": 1,
+    "tests/test_toolbar_layout.py": 12,
+    "tests/test_tracker_environment.py": 23,
+    "tests/test_video.py": 7,
+    "tests/test_windows_settings.py": 4,
+    "tests/videos.py": 2
+  },
+  "reach_chains": {
+    "scripture/annotations.py": 16,
+    "scripture/gui.py": 198,
+    "scripture/label_session.py": 3,
+    "scripture/video.py": 3
+  },
+  "simple_namespaces": {
+    "tests/test_cotracker_tracking.py": 2,
+    "tests/test_loading.py": 1
+  },
+  "statements": {
+    "scripture/auto_funscript.py": 335,
+    "scripture/gui.py": 1339
+  }
+}
