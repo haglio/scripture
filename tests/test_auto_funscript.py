@@ -240,7 +240,6 @@ class TestTrackFlowSignal:
         )
         # Flow must not bridge the cut at index 3
         assert result.dy[3] == 0.0
-        assert 3 in result.cuts
 
     def test_contact_over_lost_anchor_keeps_roi_alive(self):
         # Anchor visible at frame 0 only; face then covers its position.
@@ -434,7 +433,6 @@ class TestPipelineResultSerialization:
         signal = TrackSignal(
             dy=np.array([0.0, 1.5, -2.0]),
             lock=["anchor", "contact", "none"],
-            cuts=[2],
             rois=[(10, 20, 130, 140), (12, 22, 130, 140), None],
             detections={0: [Detection(ANCHOR, 0.9, (10, 20, 30, 40))]},
             beliefs=[(10, 20, 30, 40), (11, 21, 30, 40), None],
@@ -454,7 +452,6 @@ class TestPipelineResultSerialization:
         assert restored.signal.lock == ["anchor", "contact", "none"]
         np.testing.assert_array_equal(
             restored.signal.roi_active, [True, True, False])
-        assert restored.signal.cuts == [2]
         assert restored.signal.rois == [(10, 20, 130, 140), (12, 22, 130, 140), None]
         assert restored.signal.beliefs == [(10, 20, 30, 40), (11, 21, 30, 40), None]
         det = restored.signal.detections[0][0]

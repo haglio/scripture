@@ -259,7 +259,6 @@ class TrackSignal:
     """
     dy: np.ndarray
     lock: list[str]
-    cuts: list[int] = field(default_factory=list)
     rois: list[tuple[int, int, int, int] | None] = field(default_factory=list)
     detections: dict[int, list[Detection]] = field(default_factory=dict)
     beliefs: list[tuple[int, int, int, int] | None] = field(default_factory=list)
@@ -326,7 +325,6 @@ def track_flow_signal(
 
     dy_list: list[float] = []
     lock_log: list[str] = []
-    cuts: list[int] = []
     roi_log: list[tuple[int, int, int, int] | None] = []
     belief_log: list[tuple[int, int, int, int] | None] = []
     detection_log: dict[int, list[Detection]] = {}
@@ -346,7 +344,6 @@ def track_flow_signal(
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         small = cv2.resize(gray, _CUT_DETECT_SIZE)
         if prev_small is not None and is_scene_cut(prev_small, small, config.cut_threshold):
-            cuts.append(idx)
             roi = None
             belief = None
             lock_mode = "none"
@@ -414,7 +411,6 @@ def track_flow_signal(
     return TrackSignal(
         dy=np.array(dy_list),
         lock=lock_log,
-        cuts=cuts,
         rois=roi_log,
         detections=detection_log,
         beliefs=belief_log,
@@ -540,7 +536,6 @@ def pipeline_result_to_state(result: PipelineResult) -> dict:
     return {
         "dy": [round(v, 4) for v in sig.dy.tolist()],
         "lock": list(sig.lock),
-        "cuts": list(sig.cuts),
         "rois": [list(r) if r is not None else None for r in sig.rois],
         "beliefs": [list(b) if b is not None else None for b in sig.beliefs],
         "detections": {
@@ -586,7 +581,6 @@ def pipeline_result_from_state(state: dict) -> PipelineResult:
     signal = TrackSignal(
         dy=np.array(state["dy"]),
         lock=lock,
-        cuts=list(state["cuts"]),
         rois=[tuple(r) if r is not None else None for r in state["rois"]],
         beliefs=[tuple(b) if b is not None else None
                  for b in state.get("beliefs", [None] * len(state["rois"]))],

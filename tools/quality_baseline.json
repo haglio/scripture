@@ -96,7 +96,7 @@
     "tests/test_loading.py": 1
   },
   "statements": {
-    "scripture/auto_funscript.py": 335,
+    "scripture/auto_funscript.py": 332,
     "scripture/gui.py": 1330
   },
   "uncovered_lines": {
