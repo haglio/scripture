@@ -5,10 +5,12 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from scipy.ndimage import median_filter
 
 from scripture import cotracker_tracking
 from scripture.cotracker_tracking import (
     TrackingChunk,
+    _get_video_geometry,
     chunks_outward,
     compute_pos_from_points,
     ends_from_visible_points,
@@ -19,6 +21,7 @@ from scripture.cotracker_tracking import (
     scale_coords,
 )
 from scripture.motion_tracker import AxisDefinition
+from tests.videos import a_flat_video
 
 
 class TestSanitizePositions:
@@ -51,7 +54,72 @@ class TestSanitizePositions:
         assert result.max() <= 1.0
 
 
+class TestWhatSanitizingDoes:
+
+    def test_smoothing_follows_the_median_filter(self):
+        noisy = 0.5 + np.random.default_rng(11).normal(0, 0.02, 300)
+
+        assert sanitize_positions(noisy, fps=30).std() < median_filter(noisy, size=5, mode="nearest").std()
+
+    def test_the_smoothing_s_overshoot_past_a_step_is_clamped(self):
+        step = np.r_[np.zeros(20), np.ones(20)]
+
+        result = sanitize_positions(step, fps=1)
+
+        assert (result.min(), result.max()) == (0.0, 1.0)
+
+    def test_a_signal_too_short_to_filter_comes_back_as_it_was(self):
+        short = np.array([0.1, 0.9, 0.2])
+
+        np.testing.assert_array_equal(sanitize_positions(short), short)
+
+
+class TestSamplingAlongTheAxis:
+
+    @staticmethod
+    def _along_row(gray, row, **kw):
+        base = np.array([0, row], dtype=np.float64)
+        axis_vec = np.array([gray.shape[1] - 1, 0], dtype=np.float64)
+        return sample_axis_intensity(gray, base, axis_vec, **kw)[1]
+
+    def test_it_averages_a_strip_across_the_axis(self):
+        gray = np.zeros((100, 200), dtype=np.uint8)
+        gray[50, :] = 220
+
+        assert self._along_row(gray, 50, strip_w=5) == pytest.approx(20.0)
+
+    def test_what_falls_outside_the_frame_is_left_out_of_the_average(self):
+        gray = np.full((100, 200), 100, dtype=np.uint8)
+        gray[-5:, :] = 0
+
+        assert self._along_row(gray, 0, strip_w=5) == pytest.approx(100.0)
+
+    def test_the_result_is_smoothed_along_the_axis(self):
+        gray = np.full((100, 200), 200, dtype=np.uint8)
+        gray[:, 100] = 0
+
+        assert self._along_row(gray, 50, n=200, strip_w=0).min() == pytest.approx(160.0, abs=1.0)
+
+
+def test_coordinates_scale_by_each_side_s_own_ratio():
+    scaled = scale_coords(np.array([[10.0, 10.0]]), from_size=(100, 200), to_size=(200, 200))
+
+    assert scaled.tolist() == [[10.0, 20.0]]
+
+
+def test_a_video_is_tracked_at_a_size_whose_long_side_is_384(tmp_path):
+    video = a_flat_video(tmp_path / "example clip.mp4", frames=2, size=(160, 120))
+
+    assert _get_video_geometry(video, 0) == ((120, 160), (288, 384))
+
+
 class TestIntensityGradientContact:
+
+    def test_the_search_starts_part_way_along_the_axis_by_default(self):
+        t_values = np.linspace(0, 1, 11)
+        intensities = np.array([9.0, 9, 0, 0, 0, 0, 0, 1, 1, 1, 1])
+
+        assert find_contact_gradient(t_values, intensities) == pytest.approx(0.6)
 
     def test_sharp_edge_detected(self):
         gray = np.full((100, 200), 200, dtype=np.uint8)
@@ -76,6 +144,9 @@ class TestIntensityGradientContact:
 
 
 class TestComputePosFromPoints:
+
+    def test_an_axis_with_no_length_reads_as_the_middle(self):
+        assert compute_pos_from_points((5, 5), (5, 5), (9, 9)) == 50
 
     def test_contact_at_base(self):
         assert compute_pos_from_points((100, 800), (100, 100), (100, 800)) == 0

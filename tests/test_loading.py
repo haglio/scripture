@@ -85,3 +85,9 @@ def test_the_pyproject_says_the_launch_needs_every_key_of_the_example_in_the_loc
 
     assert (content.PROJECT_DIR / declared["every-key-of"], content.PROJECT_DIR / declared["in"]) == (
         content.EXAMPLE_CONTENT, content.LOCAL_CONTENT)
+
+
+def test_what_is_wrong_with_the_tracker_goes_to_the_launcher_s_log(capsys):
+    main._report_tracker_environment(found=lambda: ["an invented complaint"])
+
+    assert capsys.readouterr().err == "scripture: an invented complaint\n"

@@ -5,14 +5,8 @@ import pytest
 from PyQt6.QtCore import QEvent, QPointF, Qt
 from PyQt6.QtGui import QMouseEvent, QPixmap
 
-from scripture.gui import (
-    TimelineState,
-    TimelineWidget,
-    Viewport,
-    action_dot_frames,
-    next_frame,
-    previous_frame,
-)
+from scripture.editing_rules import next_frame, previous_frame
+from scripture.gui import TimelineState, TimelineWidget, Viewport, action_dot_frames
 from scripture.motion_tracker import AxisDefinition
 from scripture.roi_lock import Detection
 from scripture.scene import Scene

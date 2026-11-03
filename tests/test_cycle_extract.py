@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from scripture.cycle_extract import (
+    _adaptive_prominence,
     _enforce_alternating,
     extract_cycles,
     remove_drift,
@@ -120,3 +122,45 @@ class TestEnforceAlternating:
         kept = _enforce_alternating(np.array([0, 1, 2]), values)
 
         assert list(kept) == [0, 1, 2]
+
+
+class TestWhatCountsAsACycle:
+
+    @staticmethod
+    def _sine(period_ms, seconds, fps, *, level=0.5, swing=0.5):
+        ms = np.arange(0, seconds * 1000, 1000 / fps)
+        return level + swing * np.sin(2 * np.pi * ms / period_ms), ms
+
+    def test_turnarounds_closer_than_200_ms_do_not_all_count(self):
+        positions, ms = self._sine(100, 2, 1000)
+
+        assert 0 < len(extract_cycles(positions, ms, fps=1000)) <= 24
+
+    def test_the_prominence_needed_can_be_capped_below_what_the_signal_asks(self):
+        ms = np.arange(0, 20000, 1000 / 30)
+        wave = (0.5 + 0.4 * np.sin(2 * np.pi * ms / 8000)
+                + 0.04 * np.sin(2 * np.pi * ms / 800))
+
+        capped = extract_cycles(wave, ms, max_prominence=0.02, fps=30)
+
+        assert len(capped) > len(extract_cycles(wave, ms, fps=30))
+
+    def test_a_flat_signal_needs_only_the_floor(self):
+        assert _adaptive_prominence(np.full(300, 0.5), fps=30) == 0.05
+
+    def test_a_full_swing_needs_about_a_seventh_of_the_range(self):
+        positions, _ms = self._sine(1000, 20, 30)
+
+        assert _adaptive_prominence(positions, fps=30) == pytest.approx(0.143, abs=0.005)
+
+    def test_turnarounds_all_on_one_side_of_the_middle_collapse_to_the_most_extreme(self):
+        positions, ms = self._sine(2000, 30, 30, level=0.2, swing=0.1)
+
+        assert len(extract_cycles(positions, ms, fps=30)) == 1
+
+    def test_a_position_past_the_top_is_written_as_100(self):
+        positions = np.zeros(60)
+        positions[28:33] = 1.0
+        ms = np.arange(60) * 1000 / 30
+
+        assert max(a["pos"] for a in extract_cycles(positions, ms, fps=30)) == 100
