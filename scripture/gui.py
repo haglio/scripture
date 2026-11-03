@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import cv2
@@ -66,7 +67,7 @@ from scripture.frames import frame_of_ms
 from scripture.funscript import build_funscript
 from scripture.label_session import LabelSession, schedule_frames
 from scripture.motion_tracker import AxisDefinition
-from scripture.overlay import auto_overlay, tracked_overlay
+from scripture.overlay import FrameMoment, auto_overlay, tracked_overlay
 from scripture.project import (
     Project,
     load_project,
@@ -133,6 +134,28 @@ _LOCK_LABELS = {
 }
 
 
+@dataclass(frozen=True)
+class TimelineState:
+    scenes: list = field(default_factory=list)
+    scene_axes: dict = field(default_factory=dict)
+    scene_actions: dict = field(default_factory=dict)
+    splits: list = field(default_factory=list)
+    total_frames: int = 0
+    current_frame: int = 0
+    labels: dict = field(default_factory=dict)
+    fps: float = 30.0
+
+
+def action_dot_frames(state: TimelineState) -> list[int]:
+    labeled = [frame for frames in state.labels.values()
+               for frame, entry in frames.items() if entry.get("is_action")]
+    computed = [frame_of_ms(action["at"], state.fps)
+                for scene_idx, actions in state.scene_actions.items()
+                if scene_idx not in state.labels
+                for action in actions]
+    return labeled + computed
+
+
 class TimelineWidget(QWidget):
     frame_changed = pyqtSignal(int)
     context_menu_requested = pyqtSignal(int)
@@ -141,29 +164,16 @@ class TimelineWidget(QWidget):
         super().__init__()
         self.setFixedHeight(28 + _HANDLE_HEIGHT)
         self.setMinimumWidth(100)
-        self.scenes = []
-        self.scene_axes = {}
-        self.scene_actions = {}
-        self.splits = []
+        self._state = TimelineState()
         self.total_frames = 0
-        self.current_frame = 0
-        self.labels = {}
-        self.fps = 30.0
         self._dragging = False
         self._zoom = 1.0
         self._scroll = 0.0
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
-    def set_state(self, scenes, scene_axes, scene_actions, splits, total_frames,
-                  current_frame, labels, fps):
-        self.scenes = scenes
-        self.scene_axes = scene_axes
-        self.scene_actions = scene_actions
-        self.splits = splits
-        self.total_frames = total_frames
-        self.current_frame = current_frame
-        self.labels = labels
-        self.fps = fps
+    def set_state(self, state: TimelineState):
+        self._state = state
+        self.total_frames = state.total_frames
         self.update()
 
     def _frame_to_x(self, frame):
@@ -191,49 +201,11 @@ class TimelineWidget(QWidget):
         bar_y = _HANDLE_HEIGHT
         bar_h = h_total - _HANDLE_HEIGHT
 
-        for i, scene in enumerate(self.scenes):
-            x1 = self._frame_to_x(scene.start_frame)
-            x2 = self._frame_to_x(scene.end_frame)
-            if x2 < 0 or x1 > w:
-                continue
-            if i in self.scene_actions:
-                color = _SCENE_PROCESSED
-            elif i in self.scene_axes:
-                color = _SCENE_ANNOTATED
-            else:
-                color = _SCENE_EMPTY
-            p.fillRect(x1, bar_y, x2 - x1, bar_h, color)
+        self._paint_scenes(p, bar_y, bar_h)
+        self._paint_action_dots(p, bar_y + bar_h // 2)
+        self._paint_markers(p, bar_y, bar_h)
 
-        mid_y = bar_y + bar_h // 2
-        fps = self.fps
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(_ACTION_DOT_COLOR))
-        scenes_with_labels = set(self.labels.keys())
-        for frames in self.labels.values():
-            for frame_idx, entry in frames.items():
-                if entry.get("is_action"):
-                    ax = self._frame_to_x(frame_idx)
-                    if 0 <= ax <= w:
-                        p.drawEllipse(ax - 2, mid_y - 2, 4, 4)
-        for scene_idx, actions in self.scene_actions.items():
-            if scene_idx in scenes_with_labels:
-                continue
-            for a in actions:
-                frame = frame_of_ms(a["at"], fps)
-                ax = self._frame_to_x(frame)
-                if 0 <= ax <= w:
-                    p.drawEllipse(ax - 2, mid_y - 2, 4, 4)
-
-        markers = [(split, _SCENE_BORDER, 3) for split in self.splits]
-        markers += [(axis.frame, _REP_FRAME_COLOR, 2) for axis in self.scene_axes.values()]
-        for frame, color, width in markers:
-            x = self._frame_to_x(frame)
-            if -_MARKER_SLACK <= x <= w + _MARKER_SLACK:
-                p.setPen(QPen(color, width))
-                p.drawLine(x, bar_y, x, bar_y + bar_h)
-                self._draw_handle(p, x, color)
-
-        cx = self._frame_to_x(self.current_frame)
+        cx = self._frame_to_x(self._state.current_frame)
         p.setPen(QPen(WHITE, 2))
         p.drawLine(cx, bar_y, cx, bar_y + bar_h)
 
@@ -241,6 +213,40 @@ class TimelineWidget(QWidget):
         p.setPen(QPen(BORDER_SUBTLE))
         p.drawRect(0, bar_y, w - 1, bar_h - 1)
         p.end()
+
+    def _paint_scenes(self, p, bar_y, bar_h):
+        state = self._state
+        for i, scene in enumerate(state.scenes):
+            x1 = self._frame_to_x(scene.start_frame)
+            x2 = self._frame_to_x(scene.end_frame)
+            if x2 < 0 or x1 > self.width():
+                continue
+            if i in state.scene_actions:
+                color = _SCENE_PROCESSED
+            elif i in state.scene_axes:
+                color = _SCENE_ANNOTATED
+            else:
+                color = _SCENE_EMPTY
+            p.fillRect(x1, bar_y, x2 - x1, bar_h, color)
+
+    def _paint_action_dots(self, p, mid_y):
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(_ACTION_DOT_COLOR))
+        for frame in action_dot_frames(self._state):
+            ax = self._frame_to_x(frame)
+            if 0 <= ax <= self.width():
+                p.drawEllipse(ax - 2, mid_y - 2, 4, 4)
+
+    def _paint_markers(self, p, bar_y, bar_h):
+        state = self._state
+        markers = [(split, _SCENE_BORDER, 3) for split in state.splits]
+        markers += [(axis.frame, _REP_FRAME_COLOR, 2) for axis in state.scene_axes.values()]
+        for frame, color, width in markers:
+            x = self._frame_to_x(frame)
+            if -_MARKER_SLACK <= x <= self.width() + _MARKER_SLACK:
+                p.setPen(QPen(color, width))
+                p.drawLine(x, bar_y, x, bar_y + bar_h)
+                self._draw_handle(p, x, color)
 
     def _draw_handle(self, p, x, color):
         p.setPen(Qt.PenStyle.NoPen)
@@ -252,8 +258,9 @@ class TimelineWidget(QWidget):
     def _nearest_handle_frame(self, x, y):
         if y > _HANDLE_HEIGHT:
             return None
-        handles = [(self._frame_to_x(s), s) for s in self.splits]
-        handles += [(self._frame_to_x(a.frame), a.frame) for a in self.scene_axes.values()]
+        state = self._state
+        handles = [(self._frame_to_x(s), s) for s in state.splits]
+        handles += [(self._frame_to_x(a.frame), a.frame) for a in state.scene_axes.values()]
         best_frame, best_dist = None, 7
         for hx, hf in handles:
             d = abs(hx - x)
@@ -300,6 +307,73 @@ class TimelineWidget(QWidget):
             self._scroll = 0.0
         self._clamp_scroll()
         self.update()
+
+
+def _viewport_rect(to_viewport, rect):
+    x, y, w, h = rect
+    return (*to_viewport(x, y), *to_viewport(x + w, y + h))
+
+
+def _draw_detections(p, to_viewport, detections):
+    for det in detections:
+        color = _DET_COLORS.get(det.class_name, _DET_DEFAULT_COLOR)
+        cx1, cy1, cx2, cy2 = _viewport_rect(to_viewport, det.rect)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(color, 1, Qt.PenStyle.DotLine))
+        p.drawRect(cx1, cy1, cx2 - cx1, cy2 - cy1)
+        p.setPen(QPen(color))
+        p.setFont(make_font(size=SIZE_SMALL))
+        p.drawText(cx1 + 2, cy1 + 12, f"{det.class_name} {det.confidence:.2f}")
+
+
+def _draw_remembered_anchor(p, to_viewport, overlay):
+    cx1, cy1, cx2, cy2 = _viewport_rect(to_viewport, overlay["belief"])
+    memory_color = GREEN
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.setPen(QPen(memory_color, 2, Qt.PenStyle.DashLine))
+    p.drawRect(cx1, cy1, cx2 - cx1, cy2 - cy1)
+    p.setPen(QPen(memory_color))
+    p.setFont(make_font(size=SIZE_SMALL))
+    age = overlay.get("belief_age_s")
+    p.drawText(cx1 + 2, cy1 - 4, "anchor (memory)" if age is None else f"anchor (memory {age:.0f}s)")
+
+
+def _draw_roi(p, to_viewport, overlay):
+    lock = overlay.get("lock", "none")
+    cx1, cy1, cx2, cy2 = _viewport_rect(to_viewport, overlay["roi"])
+    roi_color = _LOCK_COLORS.get(lock, _DET_DEFAULT_COLOR)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.setPen(QPen(roi_color, 2))
+    p.drawRect(cx1, cy1, cx2 - cx1, cy2 - cy1)
+    p.setPen(QPen(roi_color))
+    p.setFont(make_font(size=SIZE_SMALL, bold=True))
+    p.drawText(cx1 + 3, cy2 - 5, _LOCK_LABELS.get(lock, ""))
+
+
+def _draw_position_gauge(p, overlay, viewport_size):
+    width, height = viewport_size
+    gauge_x = width - 26
+    gauge_top, gauge_h = 20, max(60, height - 60)
+    p.setPen(QPen(BORDER_SUBTLE))
+    p.setBrush(QBrush(BG_SECONDARY))
+    p.drawRect(gauge_x, gauge_top, 12, gauge_h)
+    if not overlay.get("active"):
+        p.setPen(QPen(YELLOW))
+        p.setFont(make_font(size=SIZE_SMALL, bold=True))
+        p.drawText(gauge_x - 60, gauge_top + 14, "no target")
+        return
+    pos = overlay.get("pos", 50)
+    marker_y = gauge_top + int((100 - pos) / 100 * gauge_h)
+    if overlay.get("is_action"):
+        p.setPen(QPen(GREEN, 3))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(gauge_x - 4, marker_y - 8, 20, 16)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QBrush(GREEN))
+    p.drawRect(gauge_x + 1, marker_y - 2, 11, 5)
+    p.setPen(QPen(GREEN))
+    p.setFont(make_font(size=SIZE_SMALL, bold=overlay.get("is_action", False)))
+    p.drawText(gauge_x - 24, marker_y + 4, f"{pos:3d}")
 
 
 class Viewport(QWidget):
@@ -512,72 +586,13 @@ class Viewport(QWidget):
         p.drawText(ccx + 12, ccy + 4, str(ov["pos"]))
 
     def _draw_auto_overlay(self, p):
-        ov = self._auto_overlay
-
-        for det in ov.get("detections") or []:
-            x, y, w, h = det.rect
-            color = _DET_COLORS.get(det.class_name, _DET_DEFAULT_COLOR)
-            cx1, cy1 = self._frame_to_viewport(x, y)
-            cx2, cy2 = self._frame_to_viewport(x + w, y + h)
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.setPen(QPen(color, 1, Qt.PenStyle.DotLine))
-            p.drawRect(cx1, cy1, cx2 - cx1, cy2 - cy1)
-            p.setPen(QPen(color))
-            p.setFont(make_font(size=SIZE_SMALL))
-            p.drawText(cx1 + 2, cy1 + 12, f"{det.class_name} {det.confidence:.2f}")
-
-        belief = ov.get("belief")
-        if belief is not None:
-            x, y, w, h = belief
-            cx1, cy1 = self._frame_to_viewport(x, y)
-            cx2, cy2 = self._frame_to_viewport(x + w, y + h)
-            memory_color = GREEN
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.setPen(QPen(memory_color, 2, Qt.PenStyle.DashLine))
-            p.drawRect(cx1, cy1, cx2 - cx1, cy2 - cy1)
-            p.setPen(QPen(memory_color))
-            p.setFont(make_font(size=SIZE_SMALL))
-            age = ov.get("belief_age_s")
-            label = "anchor (memory)" if age is None else f"anchor (memory {age:.0f}s)"
-            p.drawText(cx1 + 2, cy1 - 4, label)
-
-        lock = ov.get("lock", "none")
-        roi = ov.get("roi")
-        if roi is not None:
-            x, y, w, h = roi
-            cx1, cy1 = self._frame_to_viewport(x, y)
-            cx2, cy2 = self._frame_to_viewport(x + w, y + h)
-            roi_color = _LOCK_COLORS.get(lock, _DET_DEFAULT_COLOR)
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.setPen(QPen(roi_color, 2))
-            p.drawRect(cx1, cy1, cx2 - cx1, cy2 - cy1)
-            p.setPen(QPen(roi_color))
-            p.setFont(make_font(size=SIZE_SMALL, bold=True))
-            p.drawText(cx1 + 3, cy2 - 5, _LOCK_LABELS.get(lock, ""))
-
-        gauge_x = self.width() - 26
-        gauge_top, gauge_h = 20, max(60, self.height() - 60)
-        p.setPen(QPen(BORDER_SUBTLE))
-        p.setBrush(QBrush(BG_SECONDARY))
-        p.drawRect(gauge_x, gauge_top, 12, gauge_h)
-        if ov.get("active"):
-            pos = ov.get("pos", 50)
-            marker_y = gauge_top + int((100 - pos) / 100 * gauge_h)
-            color = GREEN
-            if ov.get("is_action"):
-                p.setPen(QPen(color, 3))
-                p.setBrush(Qt.BrushStyle.NoBrush)
-                p.drawEllipse(gauge_x - 4, marker_y - 8, 20, 16)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(color))
-            p.drawRect(gauge_x + 1, marker_y - 2, 11, 5)
-            p.setPen(QPen(color))
-            p.setFont(make_font(size=SIZE_SMALL, bold=ov.get("is_action", False)))
-            p.drawText(gauge_x - 24, marker_y + 4, f"{ov.get('pos', 50):3d}")
-        else:
-            p.setPen(QPen(YELLOW))
-            p.setFont(make_font(size=SIZE_SMALL, bold=True))
-            p.drawText(gauge_x - 60, gauge_top + 14, "no target")
+        overlay = self._auto_overlay
+        _draw_detections(p, self._frame_to_viewport, overlay.get("detections") or [])
+        if overlay.get("belief") is not None:
+            _draw_remembered_anchor(p, self._frame_to_viewport, overlay)
+        if overlay.get("roi") is not None:
+            _draw_roi(p, self._frame_to_viewport, overlay)
+        _draw_position_gauge(p, overlay, (self.width(), self.height()))
 
     def _draw_label(self, p):
         label = self._label
@@ -655,6 +670,18 @@ class Viewport(QWidget):
             self.zoom /= 1.15
 
 
+def next_frame(frames, current):
+    if not frames:
+        return None
+    return next((frame for frame in frames if frame > current), frames[0])
+
+
+def previous_frame(frames, current):
+    if not frames:
+        return None
+    return next((frame for frame in reversed(frames) if frame < current), frames[-1])
+
+
 def _fmt_duration(seconds):
     s = int(seconds)
     if s < _SECONDS_PER_MINUTE:
@@ -717,10 +744,14 @@ class App(QMainWindow):
         QShortcut(QKeySequence("S"), self, self._split_or_unsplit)
         QShortcut(QKeySequence(Qt.Key.Key_Left), self, self._frame_back)
         QShortcut(QKeySequence(Qt.Key.Key_Right), self, self._frame_forward)
-        QShortcut(QKeySequence(Qt.Key.Key_Tab), self, self._next_poi)
-        QShortcut(QKeySequence("Shift+Tab"), self, self._prev_poi)
-        QShortcut(QKeySequence("]"), self, self._next_action_frame)
-        QShortcut(QKeySequence("["), self, self._prev_action_frame)
+        QShortcut(QKeySequence(Qt.Key.Key_Tab), self,
+                  lambda: self._go_to(next_frame(self._get_points_of_interest(), self.current_frame_idx)))
+        QShortcut(QKeySequence("Shift+Tab"), self,
+                  lambda: self._go_to(previous_frame(self._get_points_of_interest(), self.current_frame_idx)))
+        QShortcut(QKeySequence("]"), self,
+                  lambda: self._go_to(next_frame(self._action_frames_for_current_scene(), self.current_frame_idx)))
+        QShortcut(QKeySequence("["), self,
+                  lambda: self._go_to(previous_frame(self._action_frames_for_current_scene(), self.current_frame_idx)))
         QShortcut(QKeySequence("A"), self, self._toggle_label_action)
         QShortcut(QKeySequence("N"), self, self._label_no_contact)
         QShortcut(QKeySequence("C"), self, self._place_label_contact)
@@ -742,25 +773,9 @@ class App(QMainWindow):
             pois.add(axis.frame)
         return sorted(pois)
 
-    def _next_poi(self):
-        pois = self._get_points_of_interest()
-        if not pois:
-            return
-        for p in pois:
-            if p > self.current_frame_idx:
-                self._show_frame(p)
-                return
-        self._show_frame(pois[0])
-
-    def _prev_poi(self):
-        pois = self._get_points_of_interest()
-        if not pois:
-            return
-        for p in reversed(pois):
-            if p < self.current_frame_idx:
-                self._show_frame(p)
-                return
-        self._show_frame(pois[-1])
+    def _go_to(self, frame):
+        if frame is not None:
+            self._show_frame(frame)
 
     def _action_frames_for_current_scene(self):
         idx = self._current_scene_idx()
@@ -768,27 +783,6 @@ class App(QMainWindow):
         if not actions:
             return []
         return sorted(frame_of_ms(a["at"], self.fps) for a in actions)
-
-    def _next_action_frame(self):
-        frames = self._action_frames_for_current_scene()
-        if not frames:
-            return
-        for f in frames:
-            if f > self.current_frame_idx:
-                self._show_frame(f)
-                return
-        self._show_frame(frames[0])
-
-    def _prev_action_frame(self):
-        frames = self._action_frames_for_current_scene()
-        if not frames:
-            return
-        for f in reversed(frames):
-            if f < self.current_frame_idx:
-                self._show_frame(f)
-                return
-        self._show_frame(frames[-1])
-
 
     def _ensure_label_of_frame(self):
         idx = self._current_scene_idx()
@@ -958,6 +952,22 @@ class App(QMainWindow):
         root.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
         root.setSpacing(GAP_MEDIUM)
 
+        self._build_toolbar()
+
+        self.viewport = Viewport()
+        self.viewport.clicked.connect(self._on_viewport_click)
+        self.viewport.point_dragged.connect(self._on_point_dragged)
+        self.viewport.context_menu_requested.connect(self._on_viewport_context_menu)
+        root.addWidget(self.viewport, stretch=1)
+
+        self.timeline = TimelineWidget()
+        self.timeline.frame_changed.connect(self._show_frame)
+        self.timeline.context_menu_requested.connect(self._on_timeline_context_menu)
+        root.addWidget(self.timeline)
+
+        root.addLayout(self._build_footer())
+
+    def _build_toolbar(self):
         tb = QToolBar()
         tb.setMovable(False)
         tb.setFloatable(False)
@@ -1005,17 +1015,7 @@ class App(QMainWindow):
         right_pad.setFixedWidth(MARGIN_STANDARD)
         tb.addWidget(right_pad)
 
-        self.viewport = Viewport()
-        self.viewport.clicked.connect(self._on_viewport_click)
-        self.viewport.point_dragged.connect(self._on_point_dragged)
-        self.viewport.context_menu_requested.connect(self._on_viewport_context_menu)
-        root.addWidget(self.viewport, stretch=1)
-
-        self.timeline = TimelineWidget()
-        self.timeline.frame_changed.connect(self._show_frame)
-        self.timeline.context_menu_requested.connect(self._on_timeline_context_menu)
-        root.addWidget(self.timeline)
-
+    def _build_footer(self):
         footer = QHBoxLayout()
         footer.setSpacing(GAP_MEDIUM)
 
@@ -1043,8 +1043,7 @@ class App(QMainWindow):
             f"padding: {GAP_SMALL}px {GAP_MEDIUM}px; border-radius: {BUTTON_RADIUS_HUD}px;"
         )
         footer.addWidget(self.info_label, stretch=1)
-
-        root.addLayout(footer)
+        return footer
 
     def _set_status(self, text):
         self.info_label.setText(text)
@@ -1073,11 +1072,11 @@ class App(QMainWindow):
                 self.auto_result.actions, self.scenes, self.fps))
 
     def _update_timeline(self):
-        self.timeline.set_state(
+        self.timeline.set_state(TimelineState(
             self.scenes, self.annotations.axes, self.annotations.actions,
             self.splits, self.total_frames, self.current_frame_idx,
             self.annotations.labels, self.fps,
-        )
+        ))
 
     def _update_info(self):
         if self.total_frames == 0:
@@ -1140,6 +1139,7 @@ class App(QMainWindow):
         idx = self._current_scene_idx()
         self.viewport.set_frame(frame)
 
+        moment = FrameMoment(frame_idx, self.fps, self.annotations.actions.get(idx, []))
         axis = self.annotations.axis_of(idx)
         if axis is not None and axis.frame == frame_idx:
             self.viewport.set_axis(axis)
@@ -1150,8 +1150,7 @@ class App(QMainWindow):
 
         if self.auto_result is not None:
             self.viewport.set_auto_overlay(auto_overlay(
-                result=self.auto_result, frame_idx=frame_idx, fps=self.fps,
-                actions=self.annotations.actions.get(idx, []),
+                moment, result=self.auto_result,
                 detection_frames=self._auto_det_frames,
                 last_anchor=self._auto_last_anchor))
         else:
@@ -1160,8 +1159,7 @@ class App(QMainWindow):
         if axis is not None and (idx in self.annotations.tracking
                                  or idx in self.annotations.actions):
             self.viewport.set_overlay(tracked_overlay(
-                axis=axis, scene=self.scenes[idx], frame_idx=frame_idx, fps=self.fps,
-                actions=self.annotations.actions.get(idx, []),
+                moment, axis=axis, scene=self.scenes[idx],
                 result=self.annotations.tracking.get(idx)))
         else:
             self.viewport.set_overlay(None)
@@ -1181,13 +1179,8 @@ class App(QMainWindow):
         frame = self.current_frame_idx
         if frame in self.splits:
             self._do_unsplit(frame)
-        elif 0 < frame < self.total_frames:
-            self.splits.append(frame)
-            self._rebuild_scenes()
-            self._cancel_placing()
-            self._mark_dirty()
-            self._show_frame(frame)
-            self._set_status(f"Split at frame {frame}. {len(self.scenes)} scenes.")
+        else:
+            self._do_split_at(frame)
 
     def _do_unsplit(self, frame):
         idx = self._current_scene_idx()

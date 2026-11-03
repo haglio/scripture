@@ -4,7 +4,7 @@ import numpy as np
 
 from scripture.auto_funscript import PipelineResult, TrackSignal
 from scripture.motion_tracker import AxisDefinition, TrackingResult
-from scripture.overlay import auto_overlay, interpolate_actions, tracked_overlay
+from scripture.overlay import FrameMoment, auto_overlay, interpolate_actions, tracked_overlay
 from scripture.scene import Scene
 
 _AXIS = AxisDefinition(tip=(100, 100), base=(100, 300), frame=0)
@@ -19,8 +19,8 @@ def _tracked(positions, **extra):
 
 
 def _overlay(frame, actions=(), result=None):
-    return tracked_overlay(axis=_AXIS, scene=_SCENE, frame_idx=frame, fps=30.0,
-                           actions=list(actions), result=result)
+    return tracked_overlay(FrameMoment(frame, 30.0, list(actions)),
+                           axis=_AXIS, scene=_SCENE, result=result)
 
 
 class TestTheTrackedOverlay:
@@ -75,9 +75,10 @@ def _pipeline(lock, positions, **signal):
 
 
 def _auto(result, frame, **extra):
-    fields = {"actions": [], "detection_frames": [], "last_anchor": None}
+    fields = {"detection_frames": [], "last_anchor": None}
     fields.update(extra)
-    return auto_overlay(result=result, frame_idx=frame, fps=30.0, **fields)
+    return auto_overlay(FrameMoment(frame, 30.0, fields.pop("actions", [])),
+                        result=result, **fields)
 
 
 class TestTheAutomaticOverlay:

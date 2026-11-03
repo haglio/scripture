@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import cache
 from typing import TYPE_CHECKING
@@ -49,10 +50,10 @@ def sample_axis_intensity(
     gray: np.ndarray,
     base: np.ndarray,
     axis_vec: np.ndarray,
-    perp: np.ndarray,
     n: int = 200,
     strip_w: int = 20,
 ) -> tuple[np.ndarray, np.ndarray]:
+    perp = np.array([-axis_vec[1], axis_vec[0]]) / np.linalg.norm(axis_vec)
     t_values = np.linspace(0, 1, n)
     intensities = np.zeros(n)
     h, w = gray.shape[:2]
@@ -125,6 +126,7 @@ def scale_coords(
 _TARGET_LONG_SIDE = 384
 _AXIS_POINTS = 30
 _MAX_CHUNK_FRAMES = 300
+_CHUNK_OVERLAP = 75
 _VISIBLE_ABOVE = 0.5
 
 
@@ -182,110 +184,105 @@ class CoTrackResult:
     base_coords: np.ndarray
 
 
+@dataclass(frozen=True)
+class TrackingChunk:
+    start: int
+    end: int
+    query_frame: int
+    seed: int | None
+
+
+def chunks_outward(n_frames: int, reference: int) -> list[TrackingChunk]:
+    if n_frames <= _MAX_CHUNK_FRAMES:
+        return [TrackingChunk(0, n_frames, reference, seed=None)]
+    first_start = max(0, reference - _MAX_CHUNK_FRAMES // 2)
+    first_end = min(n_frames, first_start + _MAX_CHUNK_FRAMES)
+    first_start = max(0, first_end - _MAX_CHUNK_FRAMES)
+    return [
+        TrackingChunk(first_start, first_end, reference - first_start, seed=None),
+        *_chunks_forward(first_end - _CHUNK_OVERLAP, n_frames),
+        *_chunks_backward(first_start + _CHUNK_OVERLAP),
+    ]
+
+
+def _chunks_forward(start: int, n_frames: int) -> Iterator[TrackingChunk]:
+    while start < n_frames:
+        end = min(start + _MAX_CHUNK_FRAMES, n_frames)
+        yield TrackingChunk(start, end, 0, seed=start)
+        if end == n_frames:
+            return
+        start = end - _CHUNK_OVERLAP
+
+
+def _chunks_backward(end: int) -> Iterator[TrackingChunk]:
+    while end > 0:
+        start = max(0, end - _MAX_CHUNK_FRAMES)
+        seed = end - 1
+        yield TrackingChunk(start, end, seed - start, seed=seed)
+        if start == 0:
+            return
+        end = start + _CHUNK_OVERLAP
+
+
+def points_along_axis(axis: AxisDefinition) -> np.ndarray:
+    tip = np.array(axis.tip, dtype=np.float64)
+    base = np.array(axis.base, dtype=np.float64)
+    return np.array([base + t * (tip - base) for t in np.linspace(0, 1, _AXIS_POINTS)])
+
+
+def ends_from_visible_points(
+    tracks: np.ndarray,
+    visibility: np.ndarray,
+    drawn_points: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    drawn_length = np.linalg.norm(drawn_points[-1] - drawn_points[0])
+    base_coords = np.zeros((len(tracks), 2), dtype=np.float64)
+    tip_coords = np.zeros((len(tracks), 2), dtype=np.float64)
+    base, contact = drawn_points[0], drawn_points[-1]
+    for i, (points, visible) in enumerate(zip(tracks, visibility > _VISIBLE_ABOVE, strict=True)):
+        if visible.any():
+            seen = points[visible]
+            base, contact = seen[0], seen[-1]
+        base_coords[i] = base
+        along = contact - base
+        length = np.linalg.norm(along)
+        tip_coords[i] = base + along / length * drawn_length if length > 1 else contact
+    return base_coords, tip_coords
+
+
+def _queries_at(query_frame: int, points: np.ndarray):
+    import torch  # noqa: PLC0415
+
+    queries = torch.zeros(1, _AXIS_POINTS, 3, device="cuda")
+    queries[0, :, 0] = query_frame
+    queries[0, :, 1] = torch.from_numpy(points[:, 0].copy()).float()
+    queries[0, :, 2] = torch.from_numpy(points[:, 1].copy()).float()
+    return queries
+
+
 def cotrack_axis(
     video_path: str,
     axis: AxisDefinition,
     start_frame: int,
     end_frame: int,
 ) -> CoTrackResult:
-    import torch  # noqa: PLC0415
-
     model = _get_model()
     n_frames = end_frame - start_frame
-    ref_local = max(0, min(axis.frame - start_frame, n_frames - 1))
-
     orig_size, scaled_size = _get_video_geometry(video_path, start_frame)
-
-    tip = np.array(axis.tip, dtype=np.float64)
-    base = np.array(axis.base, dtype=np.float64)
-    t_params = np.linspace(0, 1, _AXIS_POINTS)
-    axis_points = np.array([base + t * (tip - base) for t in t_params])
-    axis_points_scaled = scale_coords(axis_points, orig_size, scaled_size)
-
+    drawn_points = scale_coords(points_along_axis(axis), orig_size, scaled_size)
     all_tracks = np.zeros((n_frames, _AXIS_POINTS, 2), dtype=np.float64)
     all_vis = np.zeros((n_frames, _AXIS_POINTS), dtype=np.float64)
 
-    if n_frames <= _MAX_CHUNK_FRAMES:
-        video = _read_chunk(video_path, start_frame, n_frames, scaled_size)
-        queries = torch.zeros(1, _AXIS_POINTS, 3, device="cuda")
-        queries[0, :, 0] = ref_local
-        queries[0, :, 1] = torch.from_numpy(axis_points_scaled[:, 0]).float()
-        queries[0, :, 2] = torch.from_numpy(axis_points_scaled[:, 1]).float()
-        tracks, vis = _track_chunk(model, video, queries)
-        actual = min(tracks.shape[0], n_frames)
-        all_tracks[:actual] = tracks[:actual]
-        all_vis[:actual] = vis[:actual]
-    else:
-        chunk_size = _MAX_CHUNK_FRAMES
-        overlap = min(100, chunk_size // 4)
+    reference = max(0, min(axis.frame - start_frame, n_frames - 1))
+    for chunk in chunks_outward(n_frames, reference):
+        length = chunk.end - chunk.start
+        video = _read_chunk(video_path, start_frame + chunk.start, length, scaled_size)
+        seed_points = drawn_points if chunk.seed is None else all_tracks[chunk.seed]
+        tracks, vis = _track_chunk(model, video, _queries_at(chunk.query_frame, seed_points))
+        reached = min(tracks.shape[0], length)
+        all_tracks[chunk.start:chunk.start + reached] = tracks[:reached]
+        all_vis[chunk.start:chunk.start + reached] = vis[:reached]
 
-        def _run_chunk(c_start, c_end, q_frame, q_points):
-            c_len = c_end - c_start
-            video = _read_chunk(video_path, start_frame + c_start, c_len, scaled_size)
-            queries = torch.zeros(1, _AXIS_POINTS, 3, device="cuda")
-            queries[0, :, 0] = q_frame
-            queries[0, :, 1] = torch.from_numpy(q_points[:, 0].copy()).float()
-            queries[0, :, 2] = torch.from_numpy(q_points[:, 1].copy()).float()
-            tracks, vis = _track_chunk(model, video, queries)
-            actual = min(tracks.shape[0], c_len)
-            for i in range(actual):
-                gi = c_start + i
-                if gi < n_frames:
-                    all_tracks[gi] = tracks[i]
-                    all_vis[gi] = vis[i]
-
-        ref_chunk_start = max(0, ref_local - chunk_size // 2)
-        ref_chunk_end = min(n_frames, ref_chunk_start + chunk_size)
-        ref_chunk_start = max(0, ref_chunk_end - chunk_size)
-        _run_chunk(ref_chunk_start, ref_chunk_end,
-                   ref_local - ref_chunk_start, axis_points_scaled)
-
-        pos = ref_chunk_end - overlap
-        while pos < n_frames:
-            c_end = min(pos + chunk_size, n_frames)
-            seed_frame = pos
-            q_points = all_tracks[seed_frame]
-            _run_chunk(pos, c_end, 0, q_points)
-            pos = c_end - overlap
-            if c_end == n_frames:
-                break
-
-        pos = ref_chunk_start + overlap
-        while pos > 0:
-            c_start = max(0, pos - chunk_size)
-            seed_frame = pos - 1
-            q_frame = seed_frame - c_start
-            q_points = all_tracks[seed_frame]
-            _run_chunk(c_start, pos, q_frame, q_points)
-            pos = c_start + overlap
-            if c_start == 0:
-                break
-
-    ref_axis_len_scaled = np.linalg.norm(axis_points_scaled[-1] - axis_points_scaled[0])
-
-    base_coords_s = np.zeros((n_frames, 2), dtype=np.float64)
-    contact_coords_s = np.zeros((n_frames, 2), dtype=np.float64)
-    tip_coords_s = np.zeros((n_frames, 2), dtype=np.float64)
-    last_base = axis_points_scaled[0]
-    last_contact = axis_points_scaled[-1]
-
-    for i in range(n_frames):
-        visible = all_vis[i] > _VISIBLE_ABOVE
-        if visible.any():
-            vis_indices = np.where(visible)[0]
-            last_base = all_tracks[i, vis_indices[0]]
-            last_contact = all_tracks[i, vis_indices[-1]]
-        base_coords_s[i] = last_base
-        contact_coords_s[i] = last_contact
-        bc_vec = last_contact - last_base
-        bc_len = np.linalg.norm(bc_vec)
-        if bc_len > 1:
-            anchor_dir = bc_vec / bc_len
-            tip_coords_s[i] = last_base + anchor_dir * ref_axis_len_scaled
-        else:
-            tip_coords_s[i] = last_contact
-
-    base_coords = scale_coords(base_coords_s, scaled_size, orig_size)
-    tip_coords = scale_coords(tip_coords_s, scaled_size, orig_size)
-
-    return CoTrackResult(tip_coords=tip_coords, base_coords=base_coords)
+    base_coords, tip_coords = ends_from_visible_points(all_tracks, all_vis, drawn_points)
+    return CoTrackResult(tip_coords=scale_coords(tip_coords, scaled_size, orig_size),
+                         base_coords=scale_coords(base_coords, scaled_size, orig_size))

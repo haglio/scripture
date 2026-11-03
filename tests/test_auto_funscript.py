@@ -7,17 +7,13 @@ import numpy as np
 import pytest
 
 from scripture.auto_funscript import (
-    ANCHOR_CLASSES,
     TRACKER_VERSION,
-    Detection,
     PipelineResult,
+    PipelineRun,
     TrackConfig,
     TrackSignal,
     anti_plateau_normalize,
-    combine_roi,
     compute_positions,
-    contact_near_rect,
-    find_interacting,
     flow_to_position,
     generate_funscript,
     is_scene_cut,
@@ -26,9 +22,16 @@ from scripture.auto_funscript import (
     pipeline_result_to_state,
     run_pipeline,
     signal_to_actions,
-    smooth_roi,
     track_flow_signal,
     weighted_flow,
+)
+from scripture.roi_lock import (
+    ANCHOR_CLASSES,
+    Detection,
+    combine_roi,
+    contact_near_rect,
+    find_interacting,
+    smooth_roi,
 )
 from tests.stamps import A_STAMP, METHOD, METHOD_VERSION
 from tests.videos import a_flat_video
@@ -44,8 +47,12 @@ def _flow_of(dy):
     return flow_fn
 
 
-def det(cls, x, y, w, h, conf=0.9):
-    return Detection(class_name=cls, confidence=conf, rect=(x, y, w, h))
+def det(cls, *rect, conf=0.9):
+    return Detection(class_name=cls, confidence=conf, rect=rect)
+
+
+def _no_detections():
+    return PipelineRun(detect_fn=lambda _frame: [], flow_fn=_flow_of(0.0))
 
 
 class TestFindInteracting:
@@ -351,9 +358,10 @@ class TestRunPipeline:
 
         progress = []
         result = run_pipeline(
-            video_path, config=TrackConfig(detect_every=5),
+            video_path,
+            PipelineRun(config=TrackConfig(detect_every=5),
+                        detect_fn=lambda f: dets, flow_fn=_flow_of(2.0)),
             on_frame=progress.append,
-            detect_fn=lambda f: dets, flow_fn=_flow_of(2.0),
         )
         assert len(result.positions) == 30
         assert len(result.signal.rois) == 30
@@ -364,7 +372,7 @@ class TestRunPipeline:
     def test_the_result_says_which_tracker_made_it_and_at_which_version(self, tmp_path):
         video_path = a_flat_video(tmp_path / "example clip.mp4")
 
-        result = run_pipeline(video_path, detect_fn=lambda _frame: [], flow_fn=_flow_of(0.0))
+        result = run_pipeline(video_path, _no_detections())
 
         made = result.provenance
         assert (made["app"], made[METHOD]) == ("scripture", "roi_flow")
@@ -378,9 +386,10 @@ class TestGenerateFunscript:
         output_path = str(tmp_path / "example clip.funscript")
 
         actions = generate_funscript(
-            video_path, output_path, config=TrackConfig(detect_every=5),
-            detect_fn=lambda _frame: [Detection(ANCHOR, 0.9, (40, 30, 40, 60))],
-            flow_fn=_flow_of(2.0))
+            video_path, output_path,
+            PipelineRun(config=TrackConfig(detect_every=5),
+                        detect_fn=lambda _frame: [Detection(ANCHOR, 0.9, (40, 30, 40, 60))],
+                        flow_fn=_flow_of(2.0)))
 
         written = json.loads(Path(output_path).read_text(encoding="utf-8"))
         assert written["metadata"]["creator"] == "scripture"
@@ -391,7 +400,7 @@ class TestGenerateFunscript:
         output_path = tmp_path / "example clip.funscript"
 
         generate_funscript(
-            video_path, str(output_path), detect_fn=lambda _frame: [], flow_fn=_flow_of(0.0))
+            video_path, str(output_path), _no_detections())
 
         written = json.loads(output_path.read_text(encoding="utf-8"))
         assert written["provenance"][METHOD] == "roi_flow"

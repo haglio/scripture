@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import math
 import os
 import sys
 import time
@@ -20,6 +19,7 @@ from scripture.content import LOCAL_CONTENT, load_content
 from scripture.cycle_extract import extract_cycles
 from scripture.frames import ms_of_frame
 from scripture.funscript import build_funscript, made_by
+from scripture.roi_lock import Detection, RoiLock
 
 TRACKER = "roi_flow"
 TRACKER_VERSION = "1"
@@ -27,96 +27,6 @@ TRACKER_VERSION = "1"
 _CONTENT = load_content()
 
 DEFAULT_MODEL_PATH = overlay_value(_CONTENT, "model_path", path=LOCAL_CONTENT)
-
-ANCHOR_CLASSES: tuple[str, ...] = tuple(overlay_value(_CONTENT, "anchor_classes", path=LOCAL_CONTENT))
-
-
-@dataclass
-class Detection:
-    class_name: str
-    confidence: float
-    rect: tuple[int, int, int, int]
-
-
-_INTERACTION_DISTANCE_FACTOR = 0.85
-
-_CONTACT_CLASSES: tuple[str, ...] = tuple(overlay_value(_CONTENT, "contact_classes", path=LOCAL_CONTENT))
-
-
-def _center(rect: tuple[int, int, int, int]) -> tuple[float, float]:
-    x, y, w, h = rect
-    return x + w / 2, y + h / 2
-
-
-def _half_diagonal(rect: tuple[int, int, int, int]) -> float:
-    _, _, w, h = rect
-    return math.hypot(w, h) / 2
-
-
-def _within_interaction_distance(
-    rect_a: tuple[int, int, int, int],
-    rect_b: tuple[int, int, int, int],
-) -> bool:
-    acx, acy = _center(rect_a)
-    bcx, bcy = _center(rect_b)
-    dist = math.hypot(bcx - acx, bcy - acy)
-    max_dist = (_half_diagonal(rect_a) + _half_diagonal(rect_b)) * _INTERACTION_DISTANCE_FACTOR
-    return dist < max_dist
-
-
-def find_interacting(anchor: Detection, detections: list[Detection]) -> list[Detection]:
-    return [
-        d for d in detections
-        if d.class_name != ANCHOR_CLASSES[0]
-        and _within_interaction_distance(anchor.rect, d.rect)
-    ]
-
-
-def contact_near_rect(
-    rect: tuple[int, int, int, int],
-    detections: list[Detection],
-) -> list[Detection]:
-    return [
-        d for d in detections
-        if d.class_name in _CONTACT_CLASSES
-        and _within_interaction_distance(rect, d.rect)
-    ]
-
-
-def combine_roi(
-    rects: list[tuple[int, int, int, int]],
-    frame_size: tuple[int, int],
-    padding: int = 20,
-    min_size: int = 128,
-) -> tuple[int, int, int, int]:
-    frame_h, frame_w = frame_size
-    x1 = max(0, min(b[0] for b in rects) - padding)
-    y1 = max(0, min(b[1] for b in rects) - padding)
-    x2 = min(frame_w, max(b[0] + b[2] for b in rects) + padding)
-    y2 = min(frame_h, max(b[1] + b[3] for b in rects) + padding)
-
-    w, h = x2 - x1, y2 - y1
-    if w < min_size:
-        x1 = max(0, x1 - (min_size - w) // 2)
-        w = min_size
-    if h < min_size:
-        y1 = max(0, y1 - (min_size - h) // 2)
-        h = min_size
-
-    x1 = min(x1, max(0, frame_w - w))
-    y1 = min(y1, max(0, frame_h - h))
-    return int(x1), int(y1), int(w), int(h)
-
-
-def smooth_roi(
-    previous: tuple[int, int, int, int] | None,
-    new: tuple[int, int, int, int],
-    factor: float,
-) -> tuple[int, int, int, int]:
-    if previous is None:
-        return new
-    return tuple(int(p * factor + n * (1 - factor)) for p, n in zip(previous, new, strict=True))
-
 
 def flow_to_position(
     dy: np.ndarray,
@@ -223,15 +133,32 @@ def signal_to_actions(
     return extract_cycles(positions / 100.0, timestamps_ms, fps=fps)
 
 
-def _best_anchor(detections: list[Detection]) -> Detection | None:
-    for cls in ANCHOR_CLASSES:
-        candidates = [d for d in detections if d.class_name == cls]
-        if candidates:
-            return max(candidates, key=lambda d: d.confidence)
-    return None
-
-
 _CUT_DETECT_SIZE = (48, 27)
+
+
+class _RoiFlow:
+    def __init__(self, flow_fn: Callable[[np.ndarray, np.ndarray], np.ndarray], patch_size: int) -> None:
+        self._flow_fn = flow_fn
+        self._patch_size = patch_size
+        self._previous: np.ndarray | None = None
+
+    def forget(self) -> None:
+        self._previous = None
+
+    def dy_within(self, gray: np.ndarray, roi: tuple[int, int, int, int] | None) -> float:
+        if roi is None:
+            self.forget()
+            return 0.0
+        x, y, w, h = roi
+        patch = gray[y:y + h, x:x + w]
+        if patch.size == 0:
+            return 0.0
+        patch = cv2.resize(patch, (self._patch_size, self._patch_size))
+        dy = 0.0
+        if self._previous is not None:
+            dy, _ = weighted_flow(self._flow_fn(self._previous, patch))
+        self._previous = patch
+        return dy
 
 
 def track_flow_signal(
@@ -247,76 +174,31 @@ def track_flow_signal(
     belief_log: list[tuple[int, int, int, int] | None] = []
     detection_log: dict[int, list[Detection]] = {}
 
-    roi: tuple[int, int, int, int] | None = None
-    belief: tuple[int, int, int, int] | None = None
-    lock_mode = "none"
-    prev_patch: np.ndarray | None = None
+    lock = RoiLock(detect_every=config.detect_every, padding=config.roi_padding,
+                   min_size=config.roi_min_size, smoothing=config.roi_smoothing,
+                   persistence=config.roi_persistence_frames)
+    flow = _RoiFlow(flow_fn, config.patch_size)
     prev_small: np.ndarray | None = None
-    frames_since_lock = 0
 
     for idx, frame in enumerate(frames):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         small = cv2.resize(gray, _CUT_DETECT_SIZE)
         if prev_small is not None and is_scene_cut(prev_small, small, config.cut_threshold):
-            roi = None
-            belief = None
-            lock_mode = "none"
-            prev_patch = None
-            frames_since_lock = 0
+            lock.lose()
+            flow.forget()
         prev_small = small
 
-        lock_refreshed = False
-        if idx % config.detect_every == 0 or roi is None:
-            detections = detect_fn(frame)
-            detection_log[idx] = detections
-            anchor = _best_anchor(detections)
-            if anchor is not None:
-                belief = anchor.rect
-                lock_mode = "anchor"
-                lock_refreshed = True
-                rects = [anchor.rect] + [
-                    d.rect for d in find_interacting(anchor, detections)]
-                target = combine_roi(
-                    rects, gray.shape, config.roi_padding, config.roi_min_size)
-                roi = smooth_roi(roi, target, config.roi_smoothing)
-            elif roi is not None and belief is not None:
-                contacts = contact_near_rect(belief, detections)
-                if contacts:
-                    lock_mode = "contact"
-                    lock_refreshed = True
-                    target = combine_roi(
-                        [belief] + [d.rect for d in contacts],
-                        gray.shape, config.roi_padding, config.roi_min_size)
-                    roi = smooth_roi(roi, target, config.roi_smoothing)
-                else:
-                    lock_mode = "coast"
+        refreshed = False
+        if lock.wants_detection_on(idx):
+            detection_log[idx] = detect_fn(frame)
+            refreshed = lock.look_at(detection_log[idx], gray.shape)
+        if not refreshed:
+            lock.grow_older()
 
-        if lock_refreshed:
-            frames_since_lock = 0
-        elif roi is not None:
-            frames_since_lock += 1
-            if frames_since_lock > config.roi_persistence_frames:
-                roi = None
-                belief = None
-                lock_mode = "none"
-                prev_patch = None
-
-        dy = 0.0
-        if roi is not None:
-            x, y, w, h = roi
-            patch = gray[y:y + h, x:x + w]
-            if patch.size > 0:
-                patch = cv2.resize(patch, (config.patch_size, config.patch_size))
-                if prev_patch is not None:
-                    dy, _ = weighted_flow(flow_fn(prev_patch, patch))
-                prev_patch = patch
-        else:
-            prev_patch = None
-
-        dy_list.append(dy)
-        lock_log.append(lock_mode if roi is not None else "none")
-        roi_log.append(roi)
-        belief_log.append(belief)
+        dy_list.append(flow.dy_within(gray, lock.roi))
+        lock_log.append(lock.mode if lock.roi is not None else "none")
+        roi_log.append(lock.roi)
+        belief_log.append(lock.belief)
         if on_frame is not None:
             on_frame(idx)
 
@@ -386,29 +268,35 @@ class PipelineResult:
     provenance: dict | None = None
 
 
+@dataclass(frozen=True)
+class PipelineRun:
+    model_path: str = DEFAULT_MODEL_PATH
+    start_frame: int = 0
+    end_frame: int | None = None
+    config: TrackConfig = field(default_factory=TrackConfig)
+    detect_fn: Callable[[np.ndarray], list[Detection]] | None = None
+    flow_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None
+
+
 def run_pipeline(
     video_path: str,
-    model_path: str = DEFAULT_MODEL_PATH,
-    start_frame: int = 0,
-    end_frame: int | None = None,
-    config: TrackConfig | None = None,
+    run: PipelineRun | None = None,
+    *,
     on_frame: Callable[[int], None] | None = None,
-    detect_fn: Callable[[np.ndarray], list[Detection]] | None = None,
-    flow_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None,
 ) -> PipelineResult:
-    config = config or TrackConfig()
+    run = run or PipelineRun()
+    config = run.config
 
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
-    if end_frame is None or end_frame > total_frames:
-        end_frame = total_frames
+    end_frame = total_frames if run.end_frame is None else min(run.end_frame, total_frames)
 
     signal = track_flow_signal(
-        _read_frames(video_path, start_frame, end_frame),
-        detect_fn or _make_yolo_detector(model_path, config.conf_threshold),
-        flow_fn or _make_dis_flow(),
+        _read_frames(video_path, run.start_frame, end_frame),
+        run.detect_fn or _make_yolo_detector(run.model_path, config.conf_threshold),
+        run.flow_fn or _make_dis_flow(),
         config,
         on_frame=on_frame,
     )
@@ -417,9 +305,9 @@ def run_pipeline(
         signal=signal,
         positions=compute_positions(signal, config),
         actions=signal_to_actions(signal, fps=fps, config=config,
-                                  start_frame=start_frame),
+                                  start_frame=run.start_frame),
         fps=fps,
-        start_frame=start_frame,
+        start_frame=run.start_frame,
         total_frames=total_frames,
         provenance=made_by(TRACKER, TRACKER_VERSION),
     )
@@ -487,18 +375,11 @@ def pipeline_result_from_state(state: dict) -> PipelineResult:
 def generate_funscript(
     video_path: str,
     output_path: str,
-    model_path: str = DEFAULT_MODEL_PATH,
-    start_frame: int = 0,
-    end_frame: int | None = None,
-    config: TrackConfig | None = None,
+    run: PipelineRun | None = None,
+    *,
     on_frame: Callable[[int], None] | None = None,
-    detect_fn: Callable[[np.ndarray], list[Detection]] | None = None,
-    flow_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None,
 ) -> list[dict]:
-    result = run_pipeline(
-        video_path, model_path=model_path, start_frame=start_frame,
-        end_frame=end_frame, config=config, on_frame=on_frame,
-        detect_fn=detect_fn, flow_fn=flow_fn)
+    result = run_pipeline(video_path, run, on_frame=on_frame)
     funscript = build_funscript(
         result.actions, duration_seconds=int(result.total_frames / result.fps),
         provenance=result.provenance)
@@ -548,9 +429,10 @@ def main(argv: list[str] | None = None) -> int:
     n_frames_hint = (args.end_frame or total) - args.start_frame
 
     actions = generate_funscript(
-        args.video, args.output, model_path=args.model,
-        start_frame=args.start_frame, end_frame=args.end_frame,
-        config=config, on_frame=report,
+        args.video, args.output,
+        PipelineRun(model_path=args.model, start_frame=args.start_frame,
+                    end_frame=args.end_frame, config=config),
+        on_frame=report,
     )
     elapsed = time.time() - started
     print(f"\n{len(actions)} actions -> {args.output}  ({elapsed:.0f}s)")
