@@ -1,8 +1,3 @@
-"""The project file: the JSON wrapper, and the schema it wraps.
-
-Only the wrapper was reachable from here before -- the schema lived inside the
-Qt window, so nothing could round-trip it without standing a window up.
-"""
 from __future__ import annotations
 
 import json
@@ -155,8 +150,6 @@ class TestDocumentSchema:
             "tip": (40, 30), "base": (40, 150), "contact": (40, 90), "is_action": True}
 
     def test_a_project_saved_before_these_keys_existed_still_opens(self):
-        """Every key but the video and the splits is optional, which is what
-        lets a file written by an older build load at all."""
         restored = project_from_state(
             {"video_path": "C:/videos/example clip.mp4", "splits": []})
 
@@ -167,10 +160,6 @@ class TestDocumentSchema:
 
 
 class TestTheShapeAnotherAppRewrites:
-    """Evolver globs this app's sessions folder, reads the video each project
-    was cut against and writes the file back whole -- so the field name and the
-    version are its contract, not this app's private business.  Renaming either
-    without the other side is what this holds."""
 
     def _project(self):
         return Project(video_path="C:/videos/example clip.mp4", splits=[])

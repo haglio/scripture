@@ -1,10 +1,3 @@
-"""A labeling session: which frame is being decided, and what can be undone.
-
-The state machine was five attributes on the Qt window and eleven methods around
-them, so the rule that finishing the schedule ends the session was written out
-by hand at its one call site, and nothing could exercise the undo stack without
-standing a window up.
-"""
 from __future__ import annotations
 
 from scripture.label_session import LabelSession, next_scheduled, schedule_frames

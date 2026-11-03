@@ -1,4 +1,3 @@
-"""CoTracker3-based axis tracking for per-frame tip/base coordinates."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,7 +11,6 @@ from scripture.motion_tracker import AxisDefinition
 
 @cache
 def _get_model():
-    # Local: torch is seconds to import plus a GPU handshake.
     import torch  # noqa: PLC0415
 
     return torch.hub.load("facebookresearch/co-tracker", "cotracker3_offline").to("cuda")
@@ -22,13 +20,6 @@ _FILTER_WIDTH = 5
 
 
 def sanitize_positions(positions: np.ndarray, fps: float = 30.0) -> np.ndarray:
-    """Apply temporal smoothing and physical constraints to raw pos signal.
-
-    - Smooths the signal to remove single-frame noise
-    - Enforces a maximum speed (full travel in no less than ~0.25s)
-    - Clamps output to [0, 1]
-    """
-    # Local: scipy is a heavy import, and only this function asks for it.
     from scipy.ndimage import median_filter  # noqa: PLC0415
     from scipy.signal import savgol_filter  # noqa: PLC0415
 
@@ -36,17 +27,14 @@ def sanitize_positions(positions: np.ndarray, fps: float = 30.0) -> np.ndarray:
     if n < _FILTER_WIDTH:
         return positions.copy()
 
-    # 1. Median filter to kill single-frame spikes (non-linear, preserves edges)
     cleaned = median_filter(positions, size=_FILTER_WIDTH, mode="nearest")
 
-    # 2. Light Savitzky-Golay smoothing
     window = max(_FILTER_WIDTH, min(int(fps * 0.2), n))
     if window % 2 == 0:
         window += 1
     window = min(window, n)
     cleaned = savgol_filter(cleaned, window, 3)
 
-    # 3. Enforce max speed: full travel (0→1) takes at least 0.25s
     max_delta_per_frame = 1.0 / (fps * 0.25)
     for i in range(1, n):
         delta = cleaned[i] - cleaned[i - 1]
@@ -64,12 +52,6 @@ def sample_axis_intensity(
     n: int = 200,
     strip_w: int = 20,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Sample averaged intensity along the axis in a strip.
-
-    Returns (t_values, intensities) where t_values is [0, 1] parametric
-    and intensities is the mean pixel value across the strip at each t.
-    """
-    # Local: scipy is a heavy import, and only this sampler asks for it.
     from scipy.ndimage import uniform_filter1d  # noqa: PLC0415
 
     t_values = np.linspace(0, 1, n)
@@ -89,8 +71,6 @@ def sample_axis_intensity(
     return t_values, uniform_filter1d(intensities, size=5)
 
 
-# The far end of the axis: t runs 0 (base) to 1 (tip), so the search stops at
-# the tip.
 _SEARCH_MAX = 1.0
 _FAINTEST_EDGE = 1e-6
 
@@ -100,10 +80,6 @@ def find_contact_gradient(
     intensities: np.ndarray,
     search_min: float = 0.4,
 ) -> float:
-    """Find the contact point as the largest intensity gradient along the axis.
-
-    Returns t in [0, 1] where 0=base, 1=tip.
-    """
     gradient = np.abs(np.diff(intensities))
     search = (t_values[:-1] >= search_min) & (t_values[:-1] <= _SEARCH_MAX)
     g = gradient.copy()
@@ -121,7 +97,6 @@ def compute_pos_from_points(
     tip: tuple[int, int],
     contact: tuple[int, int],
 ) -> int:
-    """Project contact point onto the base→tip axis. Returns 0-100."""
     base_a = np.array(base, dtype=np.float64)
     tip_a = np.array(tip, dtype=np.float64)
     contact_a = np.array(contact, dtype=np.float64)
@@ -138,10 +113,6 @@ def scale_coords(
     from_size: tuple[int, int],
     to_size: tuple[int, int],
 ) -> np.ndarray:
-    """Scale (x, y) coordinates between two frame sizes.
-
-    from_size and to_size are (height, width).
-    """
     from_h, from_w = from_size
     to_h, to_w = to_size
     scale_x = to_w / from_w
@@ -153,13 +124,12 @@ def scale_coords(
 
 
 _TARGET_LONG_SIDE = 384
-_AXIS_POINTS = 30  # points handed to CoTracker3 along the axis
-_MAX_CHUNK_FRAMES = 300  # CoTracker3 internal attention uses ~50x the video tensor size
+_AXIS_POINTS = 30
+_MAX_CHUNK_FRAMES = 300
 _VISIBLE_ABOVE = 0.5
 
 
 def _get_video_geometry(video_path: str, start_frame: int):
-    """Read one frame to determine original and scaled sizes."""
     cap = cv2.VideoCapture(video_path)
     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     ret, frame = cap.read()
@@ -174,8 +144,6 @@ def _get_video_geometry(video_path: str, start_frame: int):
 
 def _read_chunk(video_path: str, start_frame: int, n_frames: int,
                 scaled_size: tuple[int, int]):
-    """Read n_frames starting at start_frame, downscale, return GPU tensor."""
-    # Local: torch is seconds to import plus a GPU handshake.
     import torch  # noqa: PLC0415
 
     new_h, new_w = scaled_size
@@ -190,14 +158,12 @@ def _read_chunk(video_path: str, start_frame: int, n_frames: int,
         frames.append(cv2.cvtColor(resized, cv2.COLOR_BGR2RGB))
     cap.release()
 
-    arr = np.stack(frames)  # (T, H, W, 3)
-    tensor = torch.from_numpy(arr).permute(0, 3, 1, 2).float()  # (T, 3, H, W)
-    return tensor.unsqueeze(0).to("cuda")  # (1, T, 3, H, W)
+    arr = np.stack(frames)
+    tensor = torch.from_numpy(arr).permute(0, 3, 1, 2).float()
+    return tensor.unsqueeze(0).to("cuda")
 
 
 def _track_chunk(model, video_chunk, queries):
-    """Run CoTracker3 on a single chunk, return tracks and visibility on CPU."""
-    # Local: torch is seconds to import plus a GPU handshake.
     import torch  # noqa: PLC0415
 
     with torch.no_grad():
@@ -213,9 +179,8 @@ def _track_chunk(model, video_chunk, queries):
 
 @dataclass
 class CoTrackResult:
-    """Full output from cotrack_axis."""
-    tip_coords: np.ndarray     # (N_frames, 2) in original frame coords
-    base_coords: np.ndarray    # (N_frames, 2) in original frame coords
+    tip_coords: np.ndarray
+    base_coords: np.ndarray
 
 
 def cotrack_axis(
@@ -224,16 +189,6 @@ def cotrack_axis(
     start_frame: int,
     end_frame: int,
 ) -> CoTrackResult:
-    """Track tip/base and detect contact position using CoTracker3.
-
-    Places a row of points along the axis on the representative frame, tracks
-    all of them, reconstructs per-frame tip/base via line fitting from
-    visible points, and derives the contact position from the visibility
-    transition boundary.
-
-    For long scenes, processes in chunks of _MAX_CHUNK_FRAMES.
-    """
-    # Local: torch is seconds to import plus a GPU handshake.
     import torch  # noqa: PLC0415
 
     model = _get_model()
@@ -242,19 +197,16 @@ def cotrack_axis(
 
     orig_size, scaled_size = _get_video_geometry(video_path, start_frame)
 
-    # Generate query points along the axis (in scaled coordinates)
     tip = np.array(axis.tip, dtype=np.float64)
     base = np.array(axis.base, dtype=np.float64)
     t_params = np.linspace(0, 1, _AXIS_POINTS)
     axis_points = np.array([base + t * (tip - base) for t in t_params])
     axis_points_scaled = scale_coords(axis_points, orig_size, scaled_size)
 
-    # Allocate output arrays (in scaled coords, converted at the end)
     all_tracks = np.zeros((n_frames, _AXIS_POINTS, 2), dtype=np.float64)
     all_vis = np.zeros((n_frames, _AXIS_POINTS), dtype=np.float64)
 
     if n_frames <= _MAX_CHUNK_FRAMES:
-        # Small enough to process in one shot
         video = _read_chunk(video_path, start_frame, n_frames, scaled_size)
         queries = torch.zeros(1, _AXIS_POINTS, 3, device="cuda")
         queries[0, :, 0] = ref_local
@@ -265,11 +217,6 @@ def cotrack_axis(
         all_tracks[:actual] = tracks[:actual]
         all_vis[:actual] = vis[:actual]
     else:
-        # Process in overlapping chunks, expanding outward from the
-        # reference frame.  The chunk containing ref_local is processed
-        # first (seeded from the user's axis points).  Subsequent chunks
-        # are seeded from the overlap region of the previous chunk,
-        # ensuring continuity without drift.
         chunk_size = _MAX_CHUNK_FRAMES
         overlap = min(100, chunk_size // 4)
 
@@ -288,31 +235,26 @@ def cotrack_axis(
                     all_tracks[gi] = tracks[i]
                     all_vis[gi] = vis[i]
 
-        # 1. Process the chunk containing the reference frame
         ref_chunk_start = max(0, ref_local - chunk_size // 2)
         ref_chunk_end = min(n_frames, ref_chunk_start + chunk_size)
         ref_chunk_start = max(0, ref_chunk_end - chunk_size)
         _run_chunk(ref_chunk_start, ref_chunk_end,
                    ref_local - ref_chunk_start, axis_points_scaled)
 
-        # 2. Expand forward from ref chunk
         pos = ref_chunk_end - overlap
         while pos < n_frames:
             c_end = min(pos + chunk_size, n_frames)
-            # Seed from overlap region (tracked by previous chunk)
-            seed_frame = pos  # global index where we have good data
+            seed_frame = pos
             q_points = all_tracks[seed_frame]
             _run_chunk(pos, c_end, 0, q_points)
             pos = c_end - overlap
             if c_end == n_frames:
                 break
 
-        # 3. Expand backward from ref chunk
         pos = ref_chunk_start + overlap
         while pos > 0:
             c_start = max(0, pos - chunk_size)
-            # Seed from overlap region (tracked by previous chunk)
-            seed_frame = pos - 1  # global index where we have good data
+            seed_frame = pos - 1
             q_frame = seed_frame - c_start
             q_points = all_tracks[seed_frame]
             _run_chunk(c_start, pos, q_frame, q_points)
@@ -320,17 +262,6 @@ def cotrack_axis(
             if c_start == 0:
                 break
 
-    # CoTracker3 interpretation:
-    # - The lowest-t visible point tracks the BASE well
-    # - The highest-t visible point tracks the CONTACT (not the tip!)
-    # - The actual TIP is further along the same direction
-    #
-    # Strategy:
-    # 1. base_coords = lowest visible tracked point (good tracking)
-    # 2. contact_coords = highest visible tracked point (good tracking)
-    # 3. tip_coords = base + anchor_direction * reference_axis_length
-    #    where anchor_direction = unit(contact - base)
-    # 4. pos = intensity gradient along the base->tip axis
     ref_axis_len_scaled = np.linalg.norm(axis_points_scaled[-1] - axis_points_scaled[0])
 
     base_coords_s = np.zeros((n_frames, 2), dtype=np.float64)
@@ -347,7 +278,6 @@ def cotrack_axis(
             last_contact = all_tracks[i, vis_indices[-1]]
         base_coords_s[i] = last_base
         contact_coords_s[i] = last_contact
-        # Derive tip from base + anchor direction * reference length
         bc_vec = last_contact - last_base
         bc_len = np.linalg.norm(bc_vec)
         if bc_len > 1:
@@ -356,7 +286,6 @@ def cotrack_axis(
         else:
             tip_coords_s[i] = last_contact
 
-    # Scale to original resolution
     base_coords = scale_coords(base_coords_s, scaled_size, orig_size)
     tip_coords = scale_coords(tip_coords_s, scaled_size, orig_size)
 

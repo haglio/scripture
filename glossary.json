@@ -118,14 +118,12 @@
       "his_word": null,
       "code_word": null,
       "id": "other_words",
-      "thing": "words the code uses for things no screen shows or names: a band of values, a strip of pixels along an axis, a style sheet, a console interpreter, shared_ui's HUD radius, map as a verb",
+      "thing": "words the code uses for things no screen shows or names: a band of values, a strip of pixels along an axis, a style sheet, shared_ui's HUD radius",
       "code_today": [
         "band",
         "strip",
         "sheet",
-        "console",
-        "hud",
-        "map"
+        "hud"
       ],
       "status": "kept"
     }

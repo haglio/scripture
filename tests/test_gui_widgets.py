@@ -1,11 +1,3 @@
-"""What the two custom widgets emit when they are clicked.
-
-Neither had any test, so both carried a right-click payload -- the screen
-coordinates of the click -- that both handlers dropped on the floor, papered
-over by whitelist entries reading "the signal emits them; the slot must
-accept". These are the app's own signals; it decides what they carry.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -53,8 +45,6 @@ def test_the_viewport_asks_for_a_menu_at_the_video_point_under_the_click(qt_app,
 
 
 def test_the_timeline_paints_a_scene_with_labels_and_actions(qt_app):
-    """paintEvent is the widget's longest method and had no coverage at all.
-    Rendering it offscreen is what makes changes to what it reads safe."""
     timeline = TimelineWidget()
     timeline.resize(400, 60)
     timeline.set_state(

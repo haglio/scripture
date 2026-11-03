@@ -1,10 +1,3 @@
-"""Export is what the app is for, and nothing had exercised the write.
-
-Replacing `save_funscript`'s body with `return None` left the suite at its exact
-count: `_export` gathers every scene's actions, builds the funscript and writes
-it, and none of those three steps was reached by a test.
-"""
-
 from __future__ import annotations
 
 import json

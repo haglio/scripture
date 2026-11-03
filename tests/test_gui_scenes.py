@@ -1,19 +1,9 @@
-"""A split renumbers the scenes, and the hand-labeled frames must follow.
-
-`_rebuild_scenes` remapped the axis, the actions and the tracking positions
-from old scene index to new and left the labels on their old key. Every
-label past the split point then belonged to the scene before it: the viewport
-read the wrong bucket, the label session counted the wrong frames done, and
-"Delete all N labeled frames in this scene?" deleted another scene's work.
-"""
-
 from __future__ import annotations
 
 from tests.gui_doubles import Footage
 
 
 def _label(contact):
-    """A hand-placed label. The numbers are invented; only the keys matter."""
     return {"tip": (40, 30), "base": (40, 150), "contact": contact, "is_action": True}
 
 
@@ -50,7 +40,6 @@ def test_unsplitting_gathers_both_scenes_labels_into_the_merged_one(window):
 
 
 def test_undo_after_a_split_deletes_the_label_it_was_recorded_for(window):
-    """The undo stack names scenes too, so it has to move with the labels."""
     _with_one_scene(window)
     window.annotations.set_label(0, 800, _label((40, 90)))
     window.session.after_label(0, 800)

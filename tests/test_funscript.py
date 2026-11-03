@@ -27,15 +27,12 @@ class TestBuildFunscript:
         assert timestamps == [1000, 2000, 3000]
 
     def test_the_script_says_which_app_authored_it(self):
-        """The credit is what an outside player shows for a script it did not make."""
         assert build_funscript([], 100, provenance=None)["metadata"]["creator"] == CREATOR
 
 
 class TestExport:
 
     def test_the_file_reads_back_as_the_funscript_that_was_written(self, tmp_path):
-        """Replacing the writer's body with `return None` left the suite at its
-        exact count, because nothing here had ever opened what it wrote."""
         funscript = build_funscript([{"at": 0, "pos": 50}], 12, provenance=None)
         path = tmp_path / "example clip.funscript"
 

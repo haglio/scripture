@@ -4,7 +4,6 @@ from scripture.scene import Scene, actions_by_scene, scenes_from_splits
 
 
 class TestScenesFromSplits:
-    """Test the split-points-to-scenes derivation logic."""
 
     def test_no_splits_gives_one_scene(self):
         scenes = scenes_from_splits([], 1000)
@@ -39,9 +38,9 @@ class TestActionsByScene:
         scenes = [Scene(0, 300), Scene(300, 900)]
         fps = 30.0
         actions = [
-            {"at": 1000, "pos": 10},   # frame 30 -> scene 0
-            {"at": 9000, "pos": 90},   # frame 270 -> scene 0
-            {"at": 11000, "pos": 40},  # frame 330 -> scene 1
+            {"at": 1000, "pos": 10},
+            {"at": 9000, "pos": 90},
+            {"at": 11000, "pos": 40},
         ]
         buckets = actions_by_scene(actions, scenes, fps)
         assert [a["at"] for a in buckets[0]] == [1000, 9000]

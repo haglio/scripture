@@ -1,11 +1,3 @@
-"""What has been marked on each scene, and the rules between those marks.
-
-A scene carries an axis the operator drew, the funscript actions and tracked
-positions a run derived from that axis, and the sparse hand labels of a training
-session.  The derived pair is only meaningful for the axis it was measured
-against, so it is this module that drops it when the axis moves -- the rule lived
-at five call sites before, and each one had to remember it.
-"""
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -18,7 +10,6 @@ Label = dict[str, object]
 
 @dataclass
 class SceneAnnotation:
-    """One scene's marks: what was drawn, what was derived, what was labeled."""
 
     axis: AxisDefinition | None = None
     actions: list[dict] | None = None
@@ -27,7 +18,6 @@ class SceneAnnotation:
 
 
 class SceneAnnotations:
-    """Scene index to its marks, holding the axis-changed rule in one place."""
 
     def __init__(self) -> None:
         self._by_scene: dict[int, SceneAnnotation] = {}
@@ -36,7 +26,6 @@ class SceneAnnotations:
         return self._by_scene.setdefault(scene, SceneAnnotation())
 
     def set_axis(self, scene: int, axis: AxisDefinition) -> None:
-        """Draw a scene's axis, discarding what the old one had derived."""
         record = self._record(scene)
         record.axis = axis
         record.actions = None
@@ -47,7 +36,6 @@ class SceneAnnotations:
         return record.axis if record else None
 
     def drop_axis(self, scene: int) -> AxisDefinition | None:
-        """Erase a scene's axis, and with it what that axis had derived."""
         record = self._by_scene.get(scene)
         if record is None:
             return None
@@ -64,7 +52,6 @@ class SceneAnnotations:
         record.tracking = tracking
 
     def discard_result(self, scene: int) -> None:
-        """Throw away a run's output, leaving the axis it was measured against."""
         record = self._by_scene.get(scene)
         if record is None:
             return
@@ -76,7 +63,6 @@ class SceneAnnotations:
         self._record(scene).labels[frame] = label
 
     def label_at(self, scene: int, frame: int) -> Label | None:
-        """The label on that frame itself, to be read or edited in place."""
         return self.labels_of(scene).get(frame)
 
     def labels_of(self, scene: int) -> dict[int, Label]:
@@ -98,13 +84,6 @@ class SceneAnnotations:
         self._prune(scene)
 
     def reindex(self, scene_of_frame: Callable[[int], int]) -> None:
-        """Renumber every mark for a new scene layout.
-
-        An axis goes to the scene holding the frame it was drawn on, taking the
-        actions and positions derived from it; a label goes to the scene holding
-        the frame it labels, whether or not that scene has an axis.  Two axes
-        landing on one scene leave the later of them, as a merge must.
-        """
         moved: dict[int, SceneAnnotation] = {}
         for record in self._by_scene.values():
             if record.axis is None:
@@ -119,7 +98,6 @@ class SceneAnnotations:
         self._by_scene = moved
 
     def replace_actions(self, actions: dict[int, list[dict]]) -> None:
-        """Take one bucketing of the whole video, dropping the per-scene runs'."""
         for record in self._by_scene.values():
             record.actions = None
         for scene, entries in actions.items():
@@ -136,7 +114,6 @@ class SceneAnnotations:
     def load(self, *, axes: dict[int, AxisDefinition], actions: dict[int, list[dict]],
              tracking: dict[int, TrackingResult],
              labels: dict[int, dict[int, Label]]) -> None:
-        """Take the four kinds of mark a saved project holds."""
         for scene, axis in axes.items():
             self._record(scene).axis = axis
         for scene, entries in actions.items():

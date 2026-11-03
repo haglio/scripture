@@ -1,16 +1,3 @@
-"""The file actions sit at the right of the toolbar, the way Evolver's do.
-
-They were flush left after a margin pad, which left the two apps' top bars
-reading as different chrome for the same kind of row.  What puts them right is
-the expanding spacer ahead of them -- so this checks the ORDER, which is the
-thing that would silently come undone if the actions were ever moved back up.
-
-Asked of the toolbar the window actually builds.  This read the window's source
-instead -- walking its syntax tree for calls on a local spelled `tb` -- so
-renaming that local, or annotating the icon color's assignment, turned it red
-with the row on screen unchanged (audit scripture/all/tests/002).
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -44,7 +31,6 @@ def test_the_spacer_comes_before_the_file_actions(toolbar, window):
 
 
 def test_the_spacer_is_what_takes_up_the_slack(toolbar, window):
-    """An expanding widget is the whole mechanism; a fixed one pushes nothing."""
     spacer = toolbar.widgetForAction(window._spacer_action)
 
     assert spacer.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Expanding
@@ -64,7 +50,6 @@ def test_the_row_starts_and_ends_with_its_margin_pad(toolbar):
 
 
 def _drawn(icon) -> bytes:
-    """The icon as pixels, which is the only place its color shows."""
     image = icon.pixmap(32, 32).toImage()
     return image.constBits().asstring(image.sizeInBytes())
 

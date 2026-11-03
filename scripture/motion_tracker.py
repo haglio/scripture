@@ -1,4 +1,3 @@
-"""Motion tracking along a user-defined axis."""
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -19,15 +18,15 @@ TRACKER_VERSION = "1"
 class AxisDefinition:
     tip: tuple[int, int]
     base: tuple[int, int]
-    frame: int = 0  # the frame on which tip/base were marked
+    frame: int = 0
 
 
 @dataclass
 class TrackingResult:
     timestamps_ms: np.ndarray
-    positions: np.ndarray  # 0.0 (base) to 1.0 (tip)
-    tip_coords: np.ndarray | None = None   # (N, 2) per-frame [x, y]
-    base_coords: np.ndarray | None = None  # (N, 2) per-frame [x, y]
+    positions: np.ndarray
+    tip_coords: np.ndarray | None = None
+    base_coords: np.ndarray | None = None
     provenance: dict | None = None
 
 
@@ -42,19 +41,6 @@ def _released_after(capture):
 def track_motion(video_path: str, axis: AxisDefinition,
                  start_frame: int, end_frame: int,
                  on_frame: Callable[[int], None] | None = None) -> TrackingResult:
-    """Track axis and detect contact position.
-
-    Phase 1: CoTracker3 tracks points along the anchor to get per-frame
-    tip/base coordinates (axis tracking).
-
-    Phase 2: Intensity gradient along the tracked axis detects the
-    contact point — the mouth/hand creates a sharp brightness transition
-    on the anchor surface.
-
-    Returns timestamps (ms), positions (0-1), and per-frame tip/base
-    coordinates.
-    """
-    # Local, and it has to be: cotracker_tracking imports this module, so a top-level import here would be a cycle.
     from scripture.cotracker_tracking import (  # noqa: PLC0415
         cotrack_axis,
         find_contact_gradient,
@@ -65,12 +51,10 @@ def track_motion(video_path: str, axis: AxisDefinition,
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
 
-    # Phase 1: CoTracker3 axis tracking
     ct_result = cotrack_axis(video_path, axis, start_frame, end_frame)
     tip_coords = ct_result.tip_coords
     base_coords = ct_result.base_coords
 
-    # Phase 2: Intensity gradient contact detection per frame
     n_frames = end_frame - start_frame
     raw_positions = np.full(n_frames, 0.5)
 

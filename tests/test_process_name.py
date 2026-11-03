@@ -1,12 +1,3 @@
-"""Scripture says its own name in the Windows task list.
-
-Why an app names its processes, and why its own is the one it can only name for
-the run after, is :mod:`app_support.process_identity`'s to say.  What is left
-here is the pair only this repo can be wrong about: that the app makes the copy
-its launcher starts it through, run against a throwaway venv rather than read off
-``main.py``; and that the launcher's spec names that copy of the interpreter the
-launcher runs.
-"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -30,18 +21,10 @@ def test_the_launcher_prefers_the_copy_named_for_this_app():
 
 
 def test_the_launcher_runs_the_console_interpreter_its_log_needs():
-    """It redirects the app's output into its log, which a windowed interpreter
-    has none of."""
     assert LAUNCHER.interpreter == "python.exe"
 
 
 def test_the_app_prepares_that_copy_for_next_time(tmp_path: Path):
-    """From the console interpreter -- the launcher runs python.exe, redirecting
-    the app's output into its log, so naming pythonw would leave a copy nothing
-    ever starts.  Described as the app's name alone: one app with one window, so
-    the row is its name, not its name twice.  Carrying the app's own mark.  And
-    never taking a launch down: nothing to copy from costs the name and nothing
-    else."""
     assert_the_process_is_named(
         _name_this_process, tmp_path,
         ProcessName(

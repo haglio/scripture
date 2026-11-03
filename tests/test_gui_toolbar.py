@@ -1,5 +1,3 @@
-"""The toolbar's buttons as the family dresses a toolbar's buttons, as Evolver's top bar does."""
-
 from __future__ import annotations
 
 from PyQt6.QtCore import QPoint, QRect

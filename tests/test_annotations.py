@@ -1,9 +1,3 @@
-"""Per-scene annotations: the record, and the rule that keeps it consistent.
-
-The four dicts this replaces were keyed by scene index with nothing owning the
-invariant between them, so every caller had to remember that changing a scene's
-axis makes the actions and the tracked positions derived from the old one stale.
-"""
 from __future__ import annotations
 
 import numpy as np
@@ -58,7 +52,6 @@ class TestTheAxisChangeRule:
 
 
 class TestReindexingOnASplit:
-    """A split renumbers the scenes, so every mark has to find its new one."""
 
     def test_an_axis_lands_on_the_scene_holding_the_frame_it_was_drawn_on(self):
         annotations = SceneAnnotations()
@@ -93,7 +86,6 @@ class TestReindexingOnASplit:
 
 
 class TestActionsForTheWholeVideo:
-    """The automatic pipeline answers for every scene at once."""
 
     def test_a_fresh_bucketing_replaces_what_the_per_scene_runs_left(self):
         annotations = SceneAnnotations()

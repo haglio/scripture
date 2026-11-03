@@ -1,11 +1,3 @@
-"""Closing with "Save" must not close over a save that never happened.
-
-The close guard asked "Save before closing?", called `_save_project()` and then
-accepted the event whatever came back -- and `_save_project` has two ways to
-return having written nothing. So the one answer that means "keep my work" was
-the one that threw it away.
-"""
-
 from __future__ import annotations
 
 from PyQt6.QtWidgets import QMessageBox
@@ -34,7 +26,6 @@ def test_a_cancelled_save_as_dialog_leaves_the_window_open(window, monkeypatch, 
 
 
 def test_closing_with_no_video_open_leaves_the_window_open(window, monkeypatch):
-    """The other branch that returns having written nothing."""
     window._mark_dirty()
 
     event = _close_asking_to_save(window, monkeypatch, FileDialog())

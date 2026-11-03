@@ -1,13 +1,3 @@
-"""Fully automatic funscript generation: YOLO detection + ROI optical flow.
-
-Offline port of the only pipeline that has produced a usable funscript on
-first-person 2D footage (FunGen's LIVE_YOLO_ROI tracker): YOLO finds the anchor object
-and whatever is interacting with it, their union defines a region of interest,
-and dense optical flow inside that ROI drives the position signal.
-
-CLI:  python -m scripture.auto_funscript VIDEO [--start-frame N] [--end-frame N]
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -32,30 +22,20 @@ TRACKER_VERSION = "1"
 
 _CONTENT = load_content()
 
-# The detector's weights and class vocabulary are private; they reach the code
-# through the content overlay (scripture/content.example.json documents the shape).
 DEFAULT_MODEL_PATH = overlay_value(_CONTENT, "model_path", path=LOCAL_CONTENT)
 
-# The classes the ROI can anchor on, most-preferred first: the model often
-# still sees the second when the first is occluded.
 ANCHOR_CLASSES: tuple[str, ...] = tuple(overlay_value(_CONTENT, "anchor_classes", path=LOCAL_CONTENT))
 
 
 @dataclass
 class Detection:
-    """One YOLO detection with rect in (x, y, w, h) pixel coords."""
     class_name: str
     confidence: float
     rect: tuple[int, int, int, int]
 
 
-# An object interacts with the anchor when its center is closer than this
-# fraction of the two rects' combined half-diagonals.
 _INTERACTION_DISTANCE_FACTOR = 0.85
 
-# Classes that can be the thing touching the anchor.  When the anchor itself
-# is occluded, one of these overlapping its last known position is evidence
-# the interaction is still happening there.
 _CONTACT_CLASSES: tuple[str, ...] = tuple(overlay_value(_CONTENT, "contact_classes", path=LOCAL_CONTENT))
 
 
@@ -81,8 +61,6 @@ def _within_interaction_distance(
 
 
 def find_interacting(anchor: Detection, detections: list[Detection]) -> list[Detection]:
-    """Return the detections, other than the anchor's own class, close enough
-    to it to be interacting."""
     return [
         d for d in detections
         if d.class_name != ANCHOR_CLASSES[0]
@@ -94,7 +72,6 @@ def contact_near_rect(
     rect: tuple[int, int, int, int],
     detections: list[Detection],
 ) -> list[Detection]:
-    """Contact-class detections close enough to `rect` to be touching it."""
     return [
         d for d in detections
         if d.class_name in _CONTACT_CLASSES
@@ -108,10 +85,6 @@ def combine_roi(
     padding: int = 20,
     min_size: int = 128,
 ) -> tuple[int, int, int, int]:
-    """Union of rects, padded and clamped to the frame, at least min_size.
-
-    frame_size is (height, width); the returned ROI is (x, y, w, h).
-    """
     frame_h, frame_w = frame_size
     x1 = max(0, min(b[0] for b in rects) - padding)
     y1 = max(0, min(b[1] for b in rects) - padding)
@@ -136,7 +109,6 @@ def smooth_roi(
     new: tuple[int, int, int, int],
     factor: float,
 ) -> tuple[int, int, int, int]:
-    """Blend the new ROI toward the previous one; factor is the weight kept."""
     if previous is None:
         return new
     return tuple(int(p * factor + n * (1 - factor)) for p, n in zip(previous, new, strict=True))
@@ -147,14 +119,6 @@ def flow_to_position(
     gain: float = 10.0,
     median_window: int = 3,
 ) -> np.ndarray:
-    """Map per-frame flow velocity to a raw 0-100 position series.
-
-    This is the mapping FunGen's live tracker actually ships: the position
-    is the (median-filtered) flow velocity scaled around a center of 50.
-    For rhythmic motion a scaled velocity is itself a cycle wave, just
-    phase-shifted, which is why this works.
-    """
-    # Local: scipy is a heavy import, and only this conversion asks for it.
     from scipy.ndimage import median_filter  # noqa: PLC0415
 
     smoothed = median_filter(dy.astype(np.float64), size=median_window, mode="nearest")
@@ -166,14 +130,6 @@ def anti_plateau_normalize(
     window: int = 120,
     threshold: float = 15.0,
 ) -> np.ndarray:
-    """Rescale positions so local cycle ranges span the full 0-100.
-
-    For each sample, the surrounding window's p10..p90 band is stretched to
-    0..100 — but only where that band exceeds the threshold, so idle jitter
-    stays small instead of being blown up into fake cycles.  Offline we can
-    center the window, avoiding the lag FunGen's causal version has.
-    """
-    # Local: numpy's stride tricks are only wanted by this one normalization.
     from numpy.lib.stride_tricks import sliding_window_view  # noqa: PLC0415
 
     n = len(positions)
@@ -200,12 +156,6 @@ def is_scene_cut(
     gray: np.ndarray,
     threshold: float = 0.5,
 ) -> bool:
-    """Detect a hard cut by comparing grayscale histograms.
-
-    Histograms ignore in-scene motion (pans, cycles) but shift sharply
-    when the shot changes.  threshold is the L1 distance between the two
-    normalized histograms (0 = identical, 2 = disjoint).
-    """
     h1, _ = np.histogram(prev_gray, bins=32, range=(0, 256))
     h2, _ = np.histogram(gray, bins=32, range=(0, 256))
     h1 = h1 / max(1, h1.sum())
@@ -214,11 +164,6 @@ def is_scene_cut(
 
 
 def weighted_flow(flow: np.ndarray) -> tuple[float, float]:
-    """Magnitude-weighted mean (dy, dx) of a dense flow field.
-
-    Weighting each vector by its own magnitude keeps a small moving object
-    (hand, face) from being diluted by a large static background.
-    """
     magnitudes = np.sqrt(flow[..., 0] ** 2 + flow[..., 1] ** 2)
     total = magnitudes.sum()
     if total <= 0:
@@ -230,8 +175,6 @@ def weighted_flow(flow: np.ndarray) -> tuple[float, float]:
 
 @dataclass
 class TrackConfig:
-    """Tuning dials; defaults mirror the FunGen run that produced a usable
-    script (padding/persistence/smoothing) plus offline-only additions."""
     detect_every: int = 3
     conf_threshold: float = 0.4
     roi_padding: int = 20
@@ -248,15 +191,6 @@ class TrackConfig:
 
 @dataclass
 class TrackSignal:
-    """Per-frame motion signal plus diagnostics from the tracking pass.
-
-    lock records how the ROI was justified on each frame: "anchor" (an anchor
-    anchor_tip detected), "contact" (anchor occluded but a contact-class object
-    covers its last known position), "coast" (nothing relevant detected,
-    persistence window still open), or "none" (no ROI).  rois has one entry
-    per frame; detections holds the YOLO rects for exactly the frames where
-    detection ran.  All of it exists so a GUI can replay what the tracker saw.
-    """
     dy: np.ndarray
     lock: list[str]
     rois: list[tuple[int, int, int, int] | None] = field(default_factory=list)
@@ -269,7 +203,6 @@ class TrackSignal:
 
 
 def compute_positions(signal: TrackSignal, config: TrackConfig) -> np.ndarray:
-    """The final per-frame 0-100 position series beneath the actions."""
     positions = flow_to_position(
         signal.dy, gain=config.gain, median_window=config.median_window)
     return anti_plateau_normalize(
@@ -282,8 +215,6 @@ def signal_to_actions(
     config: TrackConfig,
     start_frame: int = 0,
 ) -> list[dict]:
-    """Turn the per-frame flow signal into funscript turnaround actions."""
-    # Local: cycle_extract brings scipy with it, which importing this module should not.
     from scripture.cycle_extract import extract_cycles  # noqa: PLC0415
 
     if not signal.roi_active.any():
@@ -295,8 +226,6 @@ def signal_to_actions(
 
 
 def _best_anchor(detections: list[Detection]) -> Detection | None:
-    """Pick the rect that anchors the ROI: the first anchor class, falling back
-    to the next (which the model often still sees when the first is occluded)."""
     for cls in ANCHOR_CLASSES:
         candidates = [d for d in detections if d.class_name == cls]
         if candidates:
@@ -314,13 +243,6 @@ def track_flow_signal(
     config: TrackConfig,
     on_frame: Callable[[int], None] | None = None,
 ) -> TrackSignal:
-    """Run the detection + ROI + optical-flow loop over a frame stream.
-
-    detect_fn maps a BGR frame to Detections; flow_fn maps two equal-size
-    grayscale patches to a dense flow field.  Both are injected so the loop
-    is testable without a GPU.
-    """
-    # Local: cv2 is a heavy import, and only a real track reaches here.
     import cv2  # noqa: PLC0415
 
     dy_list: list[float] = []
@@ -330,10 +252,6 @@ def track_flow_signal(
     detection_log: dict[int, list[Detection]] = {}
 
     roi: tuple[int, int, int, int] | None = None
-    # Where the anchor is believed to be while occluded. Every attempt to
-    # move this rect between sightings (global-motion translation, contact
-    # pinning) predicted the reappearing anchor WORSE on real footage than
-    # freezing it, so it stays exactly where the anchor was last seen.
     belief: tuple[int, int, int, int] | None = None
     lock_mode = "none"
     prev_patch: np.ndarray | None = None
@@ -366,8 +284,6 @@ def track_flow_signal(
                     rects, gray.shape, config.roi_padding, config.roi_min_size)
                 roi = smooth_roi(roi, target, config.roi_smoothing)
             elif roi is not None and belief is not None:
-                # Anchor occluded: something touching its believed spot is
-                # evidence the interaction continues right there.
                 contacts = contact_near_rect(belief, detections)
                 if contacts:
                     lock_mode = "contact"
@@ -418,8 +334,6 @@ def track_flow_signal(
 
 
 def _read_frames(video_path: str, start_frame: int, end_frame: int | None):
-    """Yield BGR frames from start_frame up to (exclusive) end_frame."""
-    # Local: cv2 is a heavy import, and only a real read reaches here.
     import cv2  # noqa: PLC0415
 
     cap = cv2.VideoCapture(video_path)
@@ -438,8 +352,6 @@ def _read_frames(video_path: str, start_frame: int, end_frame: int | None):
 
 
 def _make_yolo_detector(model_path: str, conf_threshold: float):
-    """Wrap an ultralytics model as detect_fn(frame) -> list[Detection]."""
-    # Local: ultralytics pulls torch in with it, which is seconds and a GPU handshake.
     from ultralytics import YOLO  # noqa: PLC0415
 
     model = YOLO(model_path, task="detect")
@@ -448,8 +360,6 @@ def _make_yolo_detector(model_path: str, conf_threshold: float):
         results = model(frame, device=0, verbose=False, conf=conf_threshold)
         detections = []
         for result in results:
-            # The attribute is the detector library's own and has no alias,
-            # so it keeps that library's spelling; the name beside it is ours.
             for found in result.boxes:
                 x1, y1, x2, y2 = found.xyxy[0].tolist()
                 detections.append(Detection(
@@ -463,8 +373,6 @@ def _make_yolo_detector(model_path: str, conf_threshold: float):
 
 
 def _make_dis_flow():
-    """Wrap OpenCV DIS optical flow as flow_fn(prev_gray, gray) -> flow."""
-    # Local: cv2 is a heavy import, and only the flow tracker asks for one.
     import cv2  # noqa: PLC0415
 
     dis = cv2.DISOpticalFlow.create(cv2.DISOPTICAL_FLOW_PRESET_ULTRAFAST)
@@ -477,7 +385,6 @@ def _make_dis_flow():
 
 @dataclass
 class PipelineResult:
-    """Everything the tracking pass produced for a stretch of video."""
     signal: TrackSignal
     positions: np.ndarray
     actions: list[dict]
@@ -497,8 +404,6 @@ def run_pipeline(
     detect_fn: Callable[[np.ndarray], list[Detection]] | None = None,
     flow_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None,
 ) -> PipelineResult:
-    """Run the full pipeline in memory; detect_fn/flow_fn are injectable."""
-    # Local: cv2 is a heavy import, and a caller that never runs the pipeline pays nothing.
     import cv2  # noqa: PLC0415
 
     config = config or TrackConfig()
@@ -531,7 +436,6 @@ def run_pipeline(
 
 
 def pipeline_result_to_state(result: PipelineResult) -> dict:
-    """JSON-serializable form of a PipelineResult for project persistence."""
     sig = result.signal
     return {
         "dy": [round(v, 4) for v in sig.dy.tolist()],
@@ -556,14 +460,6 @@ def pipeline_result_to_state(result: PipelineResult) -> dict:
 
 
 def _detection_from_state(saved: dict) -> Detection:
-    """One saved detection, whichever key its rect was written under.
-
-    A project saved before the field was renamed carries the older key. It
-    cannot be named here, so it is read by elimination: a saved detection has
-    exactly three keys, two of which are the class name and the confidence.
-    Projects live wherever the user saved them, so there is no set of files to
-    rewrite ahead of time -- the migration is this read.
-    """
     rect = saved["rect"] if "rect" in saved else next(
         value for key, value in saved.items()
         if key not in ("class_name", "confidence"))
@@ -573,10 +469,8 @@ def _detection_from_state(saved: dict) -> Detection:
 
 
 def pipeline_result_from_state(state: dict) -> PipelineResult:
-    """Inverse of pipeline_result_to_state."""
     lock = state.get("lock")
     if lock is None:
-        # Sessions saved before lock states existed only recorded activity
         lock = ["anchor" if a else "none" for a in state["roi_active"]]
     signal = TrackSignal(
         dy=np.array(state["dy"]),
@@ -611,7 +505,6 @@ def generate_funscript(
     detect_fn: Callable[[np.ndarray], list[Detection]] | None = None,
     flow_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None,
 ) -> list[dict]:
-    """Video in, funscript out.  Returns the action list it wrote."""
     result = run_pipeline(
         video_path, model_path=model_path, start_frame=start_frame,
         end_frame=end_frame, config=config, on_frame=on_frame,
@@ -659,7 +552,6 @@ def main(argv: list[str] | None = None) -> int:
             msg += f"  {rate:.0f} fps"
             print(msg, end="", flush=True)
 
-    # Local: cv2 is a heavy import and only the command line reaches this.
     import cv2  # noqa: PLC0415
     cap = cv2.VideoCapture(args.video)
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))

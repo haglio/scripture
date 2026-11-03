@@ -1,9 +1,3 @@
-"""What gets drawn over a frame, worked out without a window.
-
-Both overlay builders lived on the Qt window, which nothing in the suite could
-import, so the geometry that decides where the contact dot lands and which way
-the motion is going had never been exercised at all.
-"""
 from __future__ import annotations
 
 import numpy as np
@@ -51,7 +45,7 @@ class TestTheTrackedOverlay:
         assert _overlay(0) is None
 
     def test_without_a_run_the_position_is_read_off_the_actions(self):
-        overlay = _overlay(15, actions=_ACTIONS)  # frame 15 at 30fps == 500ms
+        overlay = _overlay(15, actions=_ACTIONS)
 
         assert overlay["pos"] == 50
         assert overlay["is_action"] is False
@@ -119,7 +113,6 @@ class TestTheAutomaticOverlay:
 
 
 class TestInterpolatingBetweenActions:
-    """Kept from the window's own static method, which had these four pins."""
 
     def test_a_frame_on_an_action_takes_its_position_and_is_marked_one(self):
         assert interpolate_actions(_ACTIONS, 1010, 16.0) == (80, True)
