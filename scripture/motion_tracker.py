@@ -63,13 +63,11 @@ def track_motion(video_path: str, axis: AxisDefinition,
             base_f = base_coords[i]
             tip_f = tip_coords[i]
             axis_vec = tip_f - base_f
-            axis_len = np.linalg.norm(axis_vec)
-            if axis_len < 1:
+            if np.linalg.norm(axis_vec) < 1:
                 continue
-            perp = np.array([-axis_vec[1], axis_vec[0]]) / axis_len
 
             t_vals, intensities = cotracker_tracking.sample_axis_intensity(
-                gray, base_f, axis_vec, perp, n=200, strip_w=20,
+                gray, base_f, axis_vec, n=200, strip_w=20,
             )
             raw_positions[i] = cotracker_tracking.find_contact_gradient(t_vals, intensities)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import bisect
+from dataclasses import dataclass
 from itertools import pairwise
 
 import numpy as np
@@ -32,11 +33,26 @@ def interpolate_actions(actions: list[dict], frame_ms: float,
     return 50, False
 
 
-def tracked_overlay(*, axis: AxisDefinition, scene: Scene, frame_idx: int, fps: float,
-                    actions: list[dict], result: TrackingResult | None) -> dict | None:
-    frame_ms = ms_of_frame(frame_idx, fps)
-    half_a_frame = half_frame_ms(fps)
-    local_idx = frame_idx - scene.start_frame
+@dataclass(frozen=True)
+class FrameMoment:
+    frame_idx: int
+    fps: float
+    actions: list[dict]
+
+    @property
+    def ms(self) -> float:
+        return ms_of_frame(self.frame_idx, self.fps)
+
+    @property
+    def half_a_frame(self) -> float:
+        return half_frame_ms(self.fps)
+
+
+def tracked_overlay(moment: FrameMoment, *, axis: AxisDefinition, scene: Scene,
+                    result: TrackingResult | None) -> dict | None:
+    actions = moment.actions
+    half_a_frame = moment.half_a_frame
+    local_idx = moment.frame_idx - scene.start_frame
 
     if result is not None:
         if local_idx < 0 or local_idx >= len(result.positions):
@@ -49,7 +65,7 @@ def tracked_overlay(*, axis: AxisDefinition, scene: Scene, frame_idx: int, fps: 
         if is_action:
             pos_100 = on_action[0]["pos"]
     elif actions:
-        pos_100, is_action = interpolate_actions(actions, frame_ms, half_a_frame)
+        pos_100, is_action = interpolate_actions(actions, moment.ms, half_a_frame)
         pos_frac = pos_100 / 100.0
     else:
         return None
@@ -65,15 +81,12 @@ def tracked_overlay(*, axis: AxisDefinition, scene: Scene, frame_idx: int, fps: 
     }
 
 
-def auto_overlay(*, result: PipelineResult, frame_idx: int, fps: float,
-                 actions: list[dict], detection_frames: list[int],
+def auto_overlay(moment: FrameMoment, *, result: PipelineResult, detection_frames: list[int],
                  last_anchor: np.ndarray | None) -> dict | None:
-    local = frame_idx - result.start_frame
+    local = moment.frame_idx - result.start_frame
     if local < 0 or local >= len(result.positions):
         return None
 
-    frame_ms = ms_of_frame(frame_idx, fps)
-    half_a_frame = half_frame_ms(fps)
     lock = result.signal.lock[local]
     beliefs = result.signal.beliefs
     remembered = (beliefs[local] if local < len(beliefs)
@@ -85,8 +98,8 @@ def auto_overlay(*, result: PipelineResult, frame_idx: int, fps: float,
         "active": lock != "none",
         "lock": lock,
         "belief": remembered,
-        "belief_age_s": _age(remembered, last_anchor, local, fps),
-        "is_action": any(abs(a["at"] - frame_ms) < half_a_frame for a in actions),
+        "belief_age_s": _age(remembered, last_anchor, local, moment.fps),
+        "is_action": any(abs(a["at"] - moment.ms) < moment.half_a_frame for a in moment.actions),
     }
 
 
