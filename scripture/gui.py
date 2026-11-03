@@ -61,6 +61,7 @@ from shared_ui.spacing import BUTTON_ICON, BUTTON_RADIUS_HUD, GAP_MEDIUM, GAP_SM
 
 from scripture.annotations import SceneAnnotations
 from scripture.content import LOCAL_CONTENT, load_content
+from scripture.cotracker_tracking import compute_pos_from_points
 from scripture.frames import frame_of_ms
 from scripture.funscript import build_funscript
 from scripture.label_session import LabelSession, schedule_frames
@@ -208,7 +209,7 @@ class TimelineWidget(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(_ACTION_DOT_COLOR))
         scenes_with_labels = set(self.labels.keys())
-        for scene_idx, frames in self.labels.items():
+        for frames in self.labels.values():
             for frame_idx, entry in frames.items():
                 if entry.get("is_action"):
                     ax = self._frame_to_x(frame_idx)
@@ -818,7 +819,6 @@ class App(QMainWindow):
         else:
             return None
         if label.get("contact") and label.get("tip") and label.get("base"):
-            from scripture.cotracker_tracking import compute_pos_from_points  # noqa: PLC0415
             label["pos"] = compute_pos_from_points(label["base"], label["tip"], label["contact"])
         else:
             label["pos"] = "—"

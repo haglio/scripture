@@ -12,7 +12,7 @@ class Scene:
 
 
 def scenes_from_splits(splits: list[int], total_frames: int) -> list[Scene]:
-    boundaries = sorted(set([0] + splits + [total_frames]))
+    boundaries = sorted({0, *splits, total_frames})
     return [Scene(boundaries[i], boundaries[i + 1]) for i in range(len(boundaries) - 1)]
 
 

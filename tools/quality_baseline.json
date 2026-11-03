@@ -47,7 +47,7 @@
     "tests/test_loading.py": 1
   },
   "statements": {
-    "scripture/auto_funscript.py": 307,
+    "scripture/auto_funscript.py": 303,
     "scripture/gui.py": 1255
   },
   "trailing_comments": {},

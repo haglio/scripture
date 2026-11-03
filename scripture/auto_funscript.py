@@ -9,11 +9,15 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import cv2
 import numpy as np
 from app_support.funscript import write as write_funscript
 from app_support.overlay import overlay_value
+from numpy.lib.stride_tricks import sliding_window_view
+from scipy.ndimage import median_filter
 
 from scripture.content import LOCAL_CONTENT, load_content
+from scripture.cycle_extract import extract_cycles
 from scripture.frames import ms_of_frame
 from scripture.funscript import build_funscript, made_by
 
@@ -119,8 +123,6 @@ def flow_to_position(
     gain: float = 10.0,
     median_window: int = 3,
 ) -> np.ndarray:
-    from scipy.ndimage import median_filter  # noqa: PLC0415
-
     smoothed = median_filter(dy.astype(np.float64), size=median_window, mode="nearest")
     return np.clip(50.0 + gain * smoothed, 0.0, 100.0)
 
@@ -130,8 +132,6 @@ def anti_plateau_normalize(
     window: int = 120,
     threshold: float = 15.0,
 ) -> np.ndarray:
-    from numpy.lib.stride_tricks import sliding_window_view  # noqa: PLC0415
-
     n = len(positions)
     if n <= 1:
         return positions.astype(np.float64).copy()
@@ -215,8 +215,6 @@ def signal_to_actions(
     config: TrackConfig,
     start_frame: int = 0,
 ) -> list[dict]:
-    from scripture.cycle_extract import extract_cycles  # noqa: PLC0415
-
     if not signal.roi_active.any():
         return []
 
@@ -243,8 +241,6 @@ def track_flow_signal(
     config: TrackConfig,
     on_frame: Callable[[int], None] | None = None,
 ) -> TrackSignal:
-    import cv2  # noqa: PLC0415
-
     dy_list: list[float] = []
     lock_log: list[str] = []
     roi_log: list[tuple[int, int, int, int] | None] = []
@@ -334,8 +330,6 @@ def track_flow_signal(
 
 
 def _read_frames(video_path: str, start_frame: int, end_frame: int | None):
-    import cv2  # noqa: PLC0415
-
     cap = cv2.VideoCapture(video_path)
     if start_frame:
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
@@ -373,8 +367,6 @@ def _make_yolo_detector(model_path: str, conf_threshold: float):
 
 
 def _make_dis_flow():
-    import cv2  # noqa: PLC0415
-
     dis = cv2.DISOpticalFlow.create(cv2.DISOPTICAL_FLOW_PRESET_ULTRAFAST)
 
     def flow(prev_gray: np.ndarray, gray: np.ndarray) -> np.ndarray:
@@ -404,8 +396,6 @@ def run_pipeline(
     detect_fn: Callable[[np.ndarray], list[Detection]] | None = None,
     flow_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None,
 ) -> PipelineResult:
-    import cv2  # noqa: PLC0415
-
     config = config or TrackConfig()
 
     cap = cv2.VideoCapture(video_path)
@@ -552,7 +542,6 @@ def main(argv: list[str] | None = None) -> int:
             msg += f"  {rate:.0f} fps"
             print(msg, end="", flush=True)
 
-    import cv2  # noqa: PLC0415
     cap = cv2.VideoCapture(args.video)
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
