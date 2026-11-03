@@ -1,4 +1,3 @@
-"""Scene data model and split-point logic."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -13,7 +12,6 @@ class Scene:
 
 
 def scenes_from_splits(splits: list[int], total_frames: int) -> list[Scene]:
-    """Derive an ordered list of scenes from a list of split-point frame indices."""
     boundaries = sorted(set([0] + splits + [total_frames]))
     return [Scene(boundaries[i], boundaries[i + 1]) for i in range(len(boundaries) - 1)]
 
@@ -23,11 +21,6 @@ def actions_by_scene(
     scenes: list[Scene],
     fps: float,
 ) -> dict[int, list[dict]]:
-    """Bucket funscript actions into scenes by their frame position.
-
-    Scenes with no actions get no entry (matching how the GUI treats an
-    unprocessed scene).
-    """
     buckets: dict[int, list[dict]] = {}
     for action in actions:
         frame = frame_of_ms(action["at"], fps)

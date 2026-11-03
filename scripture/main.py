@@ -17,8 +17,6 @@ APP_USER_MODEL_ID = "FunTime.Scripture"
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 _ICON = PROJECT_DIR / "icon.ico"
 
-# What the loading screen says, in order, each weighted by its share of the
-# wait: the tracker check imports torch, which is most of it.
 STEPS = (
     ("Checking the tracker...", 5.0),
     ("Loading Scripture...", 1.0),
@@ -29,12 +27,6 @@ CANCEL_HINT = "Press Esc to cancel opening Scripture"
 
 
 def _set_windows_app_user_model_id(preview: Preview | None) -> None:
-    """Claim the identity the pinned shortcut carries, and stamp the pin with it,
-    before any window exists.
-
-    Cosmetic: a window under the interpreter's icon is still a window, so a
-    refusal costs the icon and nothing else.
-    """
     if sys.platform != "win32":
         return
     with contextlib.suppress(OSError):
@@ -47,21 +39,10 @@ def _its_taskbar_identity(preview: Preview | None) -> str:
 
 
 def _name_this_process() -> None:
-    """Leave ``launch_scripture.vbs`` an interpreter that says "Scripture" next
-    time.  The console interpreter, because that is the one the launcher runs --
-    it redirects the app's output into its log.  Why it is one launch late, and
-    why it can never cost the launch: :meth:`ProcessNamer.name_this_process`."""
     ProcessNamer("Scripture", icon=_ICON).name_this_process("Scripture", interpreter="python.exe")
 
 
 def _report_tracker_environment() -> None:
-    """Say on the way up when this machine's torch cannot run the tracker.
-
-    Here rather than in the suite: the merge gate installs the CPU wheel on
-    purpose and has no GPU, so a test of this could only ever skip there, while
-    the machine that tracks is the one that needs telling.  The launcher sends
-    this stream to sessions/scripture_launcher.log.
-    """
     for said in complaints():
         print(f"scripture: {said}", file=sys.stderr)
 
@@ -71,13 +52,11 @@ def _log_errors_and_keep_running() -> None:
 
 
 def open_scripture(loading, *, preview: Preview | None, dress):
-    """The launch, step by step, each step said before it is taken."""
     checking, loading_scripture, opening = (step for step, _weight in STEPS)
     loading.say(checking)
     _report_tracker_environment()
     loading.say(loading_scripture)
     content.refuse_an_incomplete_overlay()
-    # Local: the window, and the toolkit under it, only when a window is wanted.
     from scripture.gui import App  # noqa: PLC0415
 
     dress()
@@ -101,7 +80,6 @@ def main():
     _set_windows_app_user_model_id(preview)
     _name_this_process()
 
-    # Local: the toolkit, only when a window is wanted.
     from PyQt6.QtWidgets import QApplication  # noqa: PLC0415
     from shared_ui.colors import dress_application  # noqa: PLC0415
     from shared_ui.loading_window import Loading, LoadingCanceled  # noqa: PLC0415
@@ -109,8 +87,7 @@ def main():
     app = QApplication.instance() or QApplication(sys.argv)
     loading = Loading(app, logging.getLogger("scripture"), open_the_loading_screen(preview))
     try:
-        # On the application, not the window: the family's palette and chrome,
-        # whose tooltip rule reaches a top-level popup only from here.
+        # Qt styles a tooltip, a top-level popup, only from the QApplication's rules.
         window = open_scripture(
             loading, preview=preview, dress=lambda: dress_application(app))
     except LoadingCanceled:

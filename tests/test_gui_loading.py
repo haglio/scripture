@@ -1,12 +1,3 @@
-"""Opening a project must not put the window out of the video business.
-
-`_do_load` released the open capture and only then tried the project's video.
-When that video had moved, the "Video not found" dialog left `self.cap` pointing
-at a released capture -- still truthy, so `_show_frame`'s only guard passed and
-every frame read after it came back empty. The viewport simply stopped updating,
-with nothing said after that one dialog.
-"""
-
 from __future__ import annotations
 
 from scripture import gui
@@ -46,7 +37,7 @@ def test_a_project_that_opens_releases_the_capture_it_replaces(
 
     window._do_load(project)
 
-    assert window.video.frame_at(0) is None  # the stand-in yields no frames
+    assert window.video.frame_at(0) is None
     assert replaced.released
 
 

@@ -22,7 +22,6 @@ class TestSmoothSignal:
         clean = np.sin(np.linspace(0, 4 * np.pi, 200))
         noisy = clean + np.random.normal(0, 0.3, 200)
         smoothed = smooth_signal(noisy, window=15, polyorder=3)
-        # Smoothed should be closer to clean than noisy is
         noisy_error = np.mean((noisy - clean) ** 2)
         smooth_error = np.mean((smoothed - clean) ** 2)
         assert smooth_error < noisy_error
@@ -32,12 +31,10 @@ class TestExtractCycles:
 
     def test_simple_sine_finds_peaks_and_valleys(self):
         t = np.linspace(0, 4 * np.pi, 400)
-        positions = (np.sin(t) + 1) / 2  # 0 to 1 range
+        positions = (np.sin(t) + 1) / 2
         timestamps_ms = np.linspace(0, 4000, 400)
         actions = extract_cycles(positions, timestamps_ms, max_prominence=0.3)
-        # A 2-cycle sine should produce roughly 4 peaks + 4 valleys = ~4-5 extrema
         assert len(actions) >= 3
-        # All positions should be in 0-100 range
         for a in actions:
             assert 0 <= a["pos"] <= 100
             assert a["at"] >= 0
@@ -49,31 +46,24 @@ class TestExtractCycles:
         assert actions == []
 
     def test_drifting_signal_detects_cycles(self):
-        """Globally-normalized drift drowns cycles when drift >> cycle amplitude.
-        After normalization, cycles have prominence ~0.06, well below the
-        default 0.15 threshold.  extract_cycles must still find them.
-        """
         drift = np.linspace(0, 15, 1000)
         cycles = np.sin(np.linspace(0, 20 * np.pi, 1000))
         raw = drift + cycles
-        # Simulate global normalization
         positions = (raw - raw.min()) / (raw.max() - raw.min())
-        timestamps_ms = np.linspace(0, 33333, 1000)  # ~33s at 30fps
+        timestamps_ms = np.linspace(0, 33333, 1000)
         actions = extract_cycles(positions, timestamps_ms, fps=30)
-        # 10 cycles × 2 extrema = ~20 expected
         assert len(actions) >= 12
 
     def test_alternating_extrema(self):
-        """Peaks and valleys must alternate — no two consecutive peaks."""
         t = np.linspace(0, 10 * np.pi, 500)
         positions = (np.sin(t) + 1) / 2
         timestamps_ms = np.linspace(0, 5000, 500)
         actions = extract_cycles(positions, timestamps_ms, fps=30)
         assert len(actions) >= 4
         for i in range(1, len(actions)):
-            if actions[i - 1]["pos"] > 50:  # was a peak
+            if actions[i - 1]["pos"] > 50:
                 assert actions[i]["pos"] < 50, "Two consecutive peaks"
-            else:  # was a valley
+            else:
                 assert actions[i]["pos"] > 50, "Two consecutive valleys"
 
 
@@ -89,15 +79,11 @@ class TestRemoveDrift:
         cycles = 0.1 * np.sin(np.linspace(0, 20 * np.pi, 500))
         signal = np.clip(drift + cycles + 0.5, 0, 1)
         result = remove_drift(signal, cutoff_period_frames=101)
-        # Cycles should survive
         assert np.std(result) > 0.02
-        # Drift slope should be removed: linear fit on result should be near-flat
         slope = np.polyfit(np.arange(len(result)), result, 1)[0]
         assert abs(slope) < 0.001
 
     def test_a_signal_shorter_than_the_window_is_only_recentered(self):
-        """Too short to fit the filter, so there is no drift to find: it comes
-        back centered on 0.5 with its shape intact."""
         signal = np.array([0.0, 0.5, 1.0])
 
         result = remove_drift(signal)
@@ -105,8 +91,6 @@ class TestRemoveDrift:
         np.testing.assert_allclose(result, [0.0, 0.5, 1.0])
 
     def test_an_even_window_is_the_odd_one_above_it(self):
-        """savgol needs an odd window, so an even cutoff is nudged up by one --
-        which means 300 and 301 are the same request."""
         signal = np.random.RandomState(42).rand(500)
 
         np.testing.assert_allclose(
@@ -115,8 +99,6 @@ class TestRemoveDrift:
 
 
 class TestEnforceAlternating:
-    """Two extrema of the same kind in a row: the branch that picks between
-    them ran in no test, so flipping the valley half left the suite green."""
 
     def test_two_peaks_in_a_row_leave_only_the_higher(self):
         values = np.array([0.9, 0.7, 0.1])

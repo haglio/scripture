@@ -1,4 +1,3 @@
-"""Tests for the automatic YOLO+flow funscript pipeline."""
 from __future__ import annotations
 
 import json
@@ -34,12 +33,10 @@ from scripture.auto_funscript import (
 from tests.stamps import A_STAMP, METHOD, METHOD_VERSION
 from tests.videos import a_flat_video
 
-# The class vocabulary is private; take it from whichever overlay is loaded.
 ANCHOR, ANCHOR_TIP = ANCHOR_CLASSES[0], ANCHOR_CLASSES[1]
 
 
 def _flow_of(dy):
-    """A flow field of constant vertical motion, whatever the frames."""
     def flow_fn(_prev_gray, gray):
         flow = np.zeros((*gray.shape, 2), dtype=np.float32)
         flow[..., 1] = dy
@@ -53,7 +50,6 @@ def det(cls, x, y, w, h, conf=0.9):
 
 class TestFindInteracting:
     def test_nearby_hand_interacts(self):
-        # Anchor at (100,100) 50x100, hand overlapping its center region
         anchor = det(ANCHOR, 100, 100, 50, 100)
         hand = det("hand", 110, 120, 40, 40)
         assert find_interacting(anchor, [anchor, hand]) == [hand]
@@ -85,7 +81,6 @@ class TestContactNearBox:
 class TestCombineRoi:
     def test_union_with_padding(self):
         rects = [(200, 200, 100, 200), (180, 150, 80, 80)]
-        # Union: x 180-300, y 150-400. Padding 20 -> 160-320, 130-420.
         assert combine_roi(rects, frame_size=(544, 960), padding=20) == (160, 130, 160, 290)
 
     def test_clamped_to_frame(self):
@@ -99,7 +94,6 @@ class TestCombineRoi:
         x, y, w, h = combine_roi(rects, frame_size=(544, 960), padding=0, min_size=128)
         assert w == 128
         assert h == 128
-        # Still centered on the small rect and inside the frame
         assert 0 <= x <= 960 - 128
         assert 0 <= y <= 544 - 128
 
@@ -109,18 +103,15 @@ class TestSmoothRoi:
         assert smooth_roi(None, (10, 20, 100, 200), factor=0.6) == (10, 20, 100, 200)
 
     def test_blend_weights_previous_by_factor(self):
-        # factor 0.6 keeps 60% of previous, takes 40% of new
         assert smooth_roi((0, 0, 100, 100), (100, 100, 200, 200), factor=0.6) == (
             40, 40, 140, 140)
 
 
 class TestWeightedFlow:
     def test_small_moving_object_dominates_static_background(self):
-        # 100x100 flow field, all static except a 10x10 patch moving down 5px
         flow = np.zeros((100, 100, 2), dtype=np.float32)
         flow[40:50, 40:50, 1] = 5.0
         dy, dx = weighted_flow(flow)
-        # Magnitude weighting: only moving pixels carry weight, so dy ~= 5
         assert dy == pytest.approx(5.0, abs=0.01)
         assert dx == pytest.approx(0.0, abs=0.01)
 
@@ -146,14 +137,14 @@ class TestFlowToPosition:
 class TestAntiPlateauNormalize:
     def test_moderate_wave_expands_to_full_range(self):
         t = np.arange(600)
-        wave = 50 + 20 * np.sin(2 * np.pi * t / 30)  # 30-70 oscillation
+        wave = 50 + 20 * np.sin(2 * np.pi * t / 30)
         out = anti_plateau_normalize(wave, window=120, threshold=15.0)
         assert out.max() > 95
         assert out.min() < 5
 
     def test_tiny_jitter_is_not_amplified(self):
         rng = np.random.default_rng(42)
-        jitter = 50 + rng.normal(0, 1.5, 600)  # p90-p10 well under threshold
+        jitter = 50 + rng.normal(0, 1.5, 600)
         out = anti_plateau_normalize(jitter, window=120, threshold=15.0)
         np.testing.assert_allclose(out, jitter)
 
@@ -176,12 +167,11 @@ class TestSceneCut:
     def test_small_motion_is_not_a_cut(self):
         rng = np.random.default_rng(7)
         frame = rng.integers(0, 255, (30, 40)).astype(np.uint8)
-        shifted = np.roll(frame, 2, axis=0)  # small vertical pan
+        shifted = np.roll(frame, 2, axis=0)
         assert not is_scene_cut(frame, shifted)
 
 
 def textured_frame(seed=0, shape=(200, 300)):
-    """BGR frame with enough texture that flow patches are meaningful."""
     rng = np.random.default_rng(seed)
     gray = rng.integers(0, 255, shape).astype(np.uint8)
     return np.stack([gray] * 3, axis=-1)
@@ -199,7 +189,6 @@ class TestTrackFlowSignal:
             TrackConfig(detect_every=2),
         )
         assert len(result.dy) == 6
-        # First frame has no previous patch; afterwards flow is constant 3
         assert result.dy[0] == 0.0
         np.testing.assert_allclose(result.dy[1:], 3.0)
         assert result.roi_active.all()
@@ -226,7 +215,6 @@ class TestTrackFlowSignal:
             iter(frames), detect_fn, _flow_of(2.0),
             TrackConfig(detect_every=1, roi_persistence_frames=3),
         )
-        # ROI from frame 0 persists 3 frames after loss, then clears
         assert result.roi_active[:4].all()
         assert not result.roi_active[-3:].any()
 
@@ -238,12 +226,9 @@ class TestTrackFlowSignal:
             iter(frames), lambda f: detections, _flow_of(4.0),
             TrackConfig(detect_every=1),
         )
-        # Flow must not bridge the cut at index 3
         assert result.dy[3] == 0.0
 
     def test_contact_over_lost_anchor_keeps_roi_alive(self):
-        # Anchor visible at frame 0 only; face then covers its position.
-        # Contact hold must outlast the plain persistence window.
         frames = [textured_frame(0) for _ in range(12)]
         anchor = Detection(ANCHOR, 0.9, (100, 60, 60, 90))
         face_over_anchor = Detection("face", 0.9, (80, 40, 110, 130))
@@ -275,15 +260,11 @@ class TestTrackFlowSignal:
             iter(frames), detect_fn, _flow_of(2.0),
             TrackConfig(detect_every=1, roi_persistence_frames=3),
         )
-        # Far face is not holding the lock: coast, then expire
         assert result.lock[1] == "coast"
         assert not result.roi_active[-3:].any()
         assert result.lock[-1] == "none"
 
     def test_belief_stays_frozen_during_occlusion(self):
-        # Measured on real footage: every attempt to move the remembered
-        # rect (global-motion translation, contact pinning) predicted the
-        # re-appearing anchor WORSE than simply freezing it. Freeze it.
         frames = [textured_frame(0) for _ in range(10)]
         anchor = Detection(ANCHOR, 0.9, (100, 60, 60, 90))
         face_over_anchor = Detection("face", 0.9, (80, 40, 110, 130))
@@ -310,10 +291,8 @@ class TestTrackFlowSignal:
             iter(frames), lambda f: dets, _flow_of(1.0),
             TrackConfig(detect_every=2),
         )
-        # One ROI tuple per frame (persisted between detections)
         assert len(result.rois) == 4
         assert all(r is not None and len(r) == 4 for r in result.rois)
-        # Detections recorded only on the frames where YOLO ran
         assert sorted(result.detections.keys()) == [0, 2]
         assert [d.class_name for d in result.detections[0]] == [ANCHOR, "hand"]
 
@@ -326,7 +305,6 @@ class TestComputePositions:
         signal = TrackSignal(dy=dy, lock=["anchor"] * n)
         pos = compute_positions(signal, TrackConfig())
         assert len(pos) == n
-        # Gain + normalization drive the wave to (nearly) full range
         assert pos.max() > 95
         assert pos.min() < 5
 
@@ -336,17 +314,13 @@ class TestSignalToActions:
         fps = 30.0
         n = 300
         t = np.arange(n)
-        # ~1 cycle/sec oscillation in flow velocity, active throughout
         dy = 3.0 * np.sin(2 * np.pi * t / 30)
         signal = TrackSignal(dy=dy, lock=["anchor"] * n)
         actions = signal_to_actions(signal, fps=fps, config=TrackConfig())
-        # ~10 cycles -> ~20 turnarounds; allow slack for edge handling
         assert 12 <= len(actions) <= 28
         pos = np.array([a["pos"] for a in actions])
-        # Normalization should spread turnarounds wide
         assert pos.max() >= 85
         assert pos.min() <= 15
-        # Timestamps in ms and increasing
         ts = np.array([a["at"] for a in actions])
         assert (np.diff(ts) > 0).all()
         assert ts[-1] <= n / fps * 1000
@@ -366,7 +340,6 @@ class TestSignalToActions:
         shifted = signal_to_actions(
             signal, fps=30.0, config=TrackConfig(), start_frame=300)
         assert len(base) == len(shifted)
-        # 300 frames at 30fps = 10s offset
         for a, b in zip(base, shifted, strict=True):
             assert b["at"] - a["at"] == 10000
 
@@ -400,9 +373,6 @@ class TestRunPipeline:
 
 class TestGenerateFunscript:
     def test_a_video_becomes_a_funscript_file_with_injected_stages(self, tmp_path):
-        """The whole headless composition -- video in, file out. Nothing had
-        run it end to end, because the stages could not be injected past
-        run_pipeline."""
 
         video_path = a_flat_video(tmp_path / "example clip.mp4")
         output_path = str(tmp_path / "example clip.funscript")
@@ -475,16 +445,6 @@ class TestPipelineResultSerialization:
         assert restored.provenance == A_STAMP
 
     def test_a_project_saved_before_the_field_was_renamed_still_loads(self):
-        """A saved detection's rect used to sit under a different key.
-
-        That key cannot be named in this tree any more, so the loader finds it
-        by elimination -- a saved detection carries the class name, the
-        confidence, and one other value, which is the rect. Projects are saved
-        wherever the user chose, so there is no directory to migrate ahead of
-        time; this read is the migration. Without it the load raises KeyError,
-        and the caller that opens the last session swallows it, so the user's
-        tracking would vanish with no message.
-        """
         state = {
             "dy": [0.0, 1.0],
             "lock": ["anchor", "none"],

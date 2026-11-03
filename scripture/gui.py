@@ -1,4 +1,3 @@
-"""PyQt6 GUI for scripture: manual scene splitting, axis annotation, and export."""
 from __future__ import annotations
 
 import time
@@ -115,19 +114,16 @@ _AXIS_COLOR = YELLOW
 
 _ACTION_DOT_COLOR = QColor(*palette.GREEN, 180)
 
-# Detection rect colors by class (drawn in the auto-tracking overlay).  The class
-# names are private, so the map comes from the content overlay.
 _DET_COLORS = {
     name: QColor(*palette.nearest(rgb))
     for name, rgb in overlay_value(load_content(), "class_colors", path=LOCAL_CONTENT).items()
 }
 _DET_DEFAULT_COLOR = BORDER_DEFAULT
 
-# ROI border color by lock state: how the tracker justified this ROI
 _LOCK_COLORS = {
-    "anchor": GREEN,     # an anchor class detected
-    "contact": YELLOW,    # contact object over last anchor spot
-    "coast": RED,        # nothing relevant; persistence window
+    "anchor": GREEN,
+    "contact": YELLOW,
+    "coast": RED,
 }
 _LOCK_LABELS = {
     "anchor": "lock: anchor",
@@ -138,7 +134,7 @@ _LOCK_LABELS = {
 
 class TimelineWidget(QWidget):
     frame_changed = pyqtSignal(int)
-    context_menu_requested = pyqtSignal(int)  # frame
+    context_menu_requested = pyqtSignal(int)
 
     def __init__(self):
         super().__init__()
@@ -153,8 +149,8 @@ class TimelineWidget(QWidget):
         self.labels = {}
         self.fps = 30.0
         self._dragging = False
-        self._zoom = 1.0       # 1.0 = fully zoomed out (all frames visible)
-        self._scroll = 0.0     # left edge in frame-fraction (0.0 to 1.0 - 1/zoom)
+        self._zoom = 1.0
+        self._scroll = 0.0
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
     def set_state(self, scenes, scene_axes, scene_actions, splits, total_frames,
@@ -207,12 +203,10 @@ class TimelineWidget(QWidget):
                 color = _SCENE_EMPTY
             p.fillRect(x1, bar_y, x2 - x1, bar_h, color)
 
-        # Action frame dots along the center line
         mid_y = bar_y + bar_h // 2
         fps = self.fps
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(_ACTION_DOT_COLOR))
-        # Show labeled action frames if any annotations exist; otherwise computed
         scenes_with_labels = set(self.labels.keys())
         for scene_idx, frames in self.labels.items():
             for frame_idx, entry in frames.items():
@@ -222,7 +216,7 @@ class TimelineWidget(QWidget):
                         p.drawEllipse(ax - 2, mid_y - 2, 4, 4)
         for scene_idx, actions in self.scene_actions.items():
             if scene_idx in scenes_with_labels:
-                continue  # skip computed dots for annotated scenes
+                continue
             for a in actions:
                 frame = frame_of_ms(a["at"], fps)
                 ax = self._frame_to_x(frame)
@@ -290,18 +284,15 @@ class TimelineWidget(QWidget):
         if self.total_frames == 0:
             return
         x = int(event.position().x())
-        # Frame under cursor before zoom
         frame_at_cursor = self._x_to_frame(x)
         frac_at_cursor = frame_at_cursor / self.total_frames
 
-        # Adjust zoom
         delta = event.angleDelta().y()
         if delta > 0:
             self._zoom = min(self._zoom * 1.3, max(1.0, self.total_frames / 10))
         elif delta < 0:
             self._zoom = max(self._zoom / 1.3, 1.0)
 
-        # Adjust scroll so the frame under cursor stays under cursor
         if self._zoom > 1.0:
             self._scroll = frac_at_cursor - x / (self._zoom * self.width())
         else:
@@ -312,8 +303,8 @@ class TimelineWidget(QWidget):
 
 class Viewport(QWidget):
     clicked = pyqtSignal(int, int)
-    point_dragged = pyqtSignal(str, int, int)  # "tip" or "base", frame_x, frame_y
-    context_menu_requested = pyqtSignal(int, int)  # frame_x, frame_y
+    point_dragged = pyqtSignal(str, int, int)
+    context_menu_requested = pyqtSignal(int, int)
 
     def __init__(self):
         super().__init__()
@@ -325,10 +316,10 @@ class Viewport(QWidget):
         self._pending_tip = None
         self._pending_base = None
         self._zoom = 1.0
-        self._dragging_point = None  # "tip", "base", "contact", or None
-        self._overlay = None  # dict with axis, contact_pt, pos, is_action
-        self._label = None  # the label dict: tip, base, contact, is_action, pos
-        self._auto_overlay = None  # dict with roi, detections, pos, active, is_action
+        self._dragging_point = None
+        self._overlay = None
+        self._label = None
+        self._auto_overlay = None
 
     @property
     def zoom(self):
@@ -360,24 +351,14 @@ class Viewport(QWidget):
         self.update()
 
     def set_overlay(self, overlay):
-        """Set debug overlay data (or None to clear).
-
-        overlay dict keys: axis, contact_pt, pos (0-100), is_action (bool).
-        """
         self._overlay = overlay
         self.update()
 
     def set_label(self, label):
-        """Set the label for this frame (or None)."""
         self._label = label
         self.update()
 
     def set_auto_overlay(self, overlay):
-        """Set auto-tracking overlay data (or None to clear).
-
-        overlay dict keys: roi (x,y,w,h or None), detections (list of
-        Detection or None), pos (0-100), active (bool), is_action (bool).
-        """
         self._auto_overlay = overlay
         self.update()
 
@@ -399,12 +380,10 @@ class Viewport(QWidget):
         return int((cx - ox) / s), int((cy - oy) / s)
 
     def _hit_point(self, cx, cy):
-        """Return 'tip', 'base', 'contact', or None based on which point was hit."""
         def reaches(pt):
             px, py = self._frame_to_viewport(*pt)
             return (cx - px) ** 2 + (cy - py) ** 2 <= _GRAB_REACH ** 2
 
-        # Check the label's points first (on top visually, so should catch clicks first)
         if self._label:
             for label in ("contact", "tip", "base"):
                 pt = self._label.get(label)
@@ -475,19 +454,16 @@ class Viewport(QWidget):
         self._draw_point(p, axis.base, _BASE_COLOR, "BASE")
 
     def _draw_overlay(self, p):
-        """Draw debug overlay: axis, tip/base, contact with direction arrow."""
         ov = self._overlay
         axis = ov["axis"]
         tx, ty = self._frame_to_viewport(*axis.tip)
         bx, by = self._frame_to_viewport(*axis.base)
 
-        # Faint axis line
         faint_axis = QColor(_AXIS_COLOR)
         faint_axis.setAlpha(80)
         p.setPen(QPen(faint_axis, 1))
         p.drawLine(tx, ty, bx, by)
 
-        # Small semi-transparent tip/base dots (no labels)
         for pt, color in [(axis.tip, _TIP_COLOR), (axis.base, _BASE_COLOR)]:
             cx, cy = self._frame_to_viewport(*pt)
             faint = QColor(color)
@@ -501,19 +477,16 @@ class Viewport(QWidget):
         contact_color = GREEN
 
         if ov["is_action"]:
-            # Action frame: bold circle, no fill
             p.setPen(QPen(contact_color, 3))
             p.setBrush(QBrush(Qt.GlobalColor.transparent))
             p.drawEllipse(ccx - 7, ccy - 7, 14, 14)
         else:
-            # Non-action: small dot with direction arrow along the axis
             p.setPen(QPen(WHITE, 1))
             p.setBrush(QBrush(contact_color))
             p.drawEllipse(ccx - 3, ccy - 3, 6, 6)
 
             direction = ov.get("direction", 0)
             if direction != 0 and (tx != bx or ty != by):
-                # Arrow along axis: toward tip (+1) or toward base (-1)
                 ax_dx, ax_dy = tx - bx, ty - by
                 ax_len = (ax_dx ** 2 + ax_dy ** 2) ** 0.5
                 if ax_len > 0:
@@ -524,9 +497,8 @@ class Viewport(QWidget):
                     ex, ey = ccx + ux * arrow_len, ccy + uy * arrow_len
                     p.setPen(QPen(contact_color, 2))
                     p.drawLine(ccx, ccy, int(ex), int(ey))
-                    # Arrowhead
                     head = 5
-                    px, py = -uy, ux  # perpendicular
+                    px, py = -uy, ux
                     p.drawLine(int(ex), int(ey),
                                int(ex - ux * head + px * head * 0.5),
                                int(ey - uy * head + py * head * 0.5))
@@ -534,13 +506,11 @@ class Viewport(QWidget):
                                int(ex - ux * head - px * head * 0.5),
                                int(ey - uy * head - py * head * 0.5))
 
-        # Pos value on every frame
         p.setPen(QPen(contact_color))
         p.setFont(make_font(size=SIZE_SMALL, bold=ov["is_action"]))
         p.drawText(ccx + 12, ccy + 4, str(ov["pos"]))
 
     def _draw_auto_overlay(self, p):
-        """Draw the auto-tracker's view: detections, ROI, and a pos gauge."""
         ov = self._auto_overlay
 
         for det in ov.get("detections") or []:
@@ -584,7 +554,6 @@ class Viewport(QWidget):
             p.setFont(make_font(size=SIZE_SMALL, bold=True))
             p.drawText(cx1 + 3, cy2 - 5, _LOCK_LABELS.get(lock, ""))
 
-        # Position gauge along the right edge of the viewport
         gauge_x = self.width() - 26
         gauge_top, gauge_h = 20, max(60, self.height() - 60)
         p.setPen(QPen(BORDER_SUBTLE))
@@ -610,22 +579,18 @@ class Viewport(QWidget):
             p.drawText(gauge_x - 60, gauge_top + 14, "no target")
 
     def _draw_label(self, p):
-        """Draw the label's points."""
         label = self._label
-        # Axis line from base to tip
         if label.get("tip") and label.get("base"):
             tx, ty = self._frame_to_viewport(*label["tip"])
             bx, by = self._frame_to_viewport(*label["base"])
             p.setPen(QPen(_AXIS_COLOR, 2, Qt.PenStyle.DashLine))
             p.drawLine(tx, ty, bx, by)
-            # Tip marker
             p.setPen(QPen(WHITE, 1))
             p.setBrush(QBrush(_TIP_COLOR))
             p.drawEllipse(tx - 5, ty - 5, 10, 10)
             p.setPen(QPen(_TIP_COLOR))
             p.setFont(make_font(size=SIZE_SMALL))
             p.drawText(tx + 10, ty + 4, "T")
-            # Base marker
             p.setPen(QPen(WHITE, 1))
             p.setBrush(QBrush(_BASE_COLOR))
             p.drawEllipse(bx - 5, by - 5, 10, 10)
@@ -633,7 +598,6 @@ class Viewport(QWidget):
             p.setFont(make_font(size=SIZE_SMALL))
             p.drawText(bx + 10, by + 4, "B")
 
-        # Contact marker
         contact = label.get("contact")
         contact_color = GREEN
         if contact is not None:
@@ -646,12 +610,10 @@ class Viewport(QWidget):
                 p.setPen(QPen(WHITE, 1))
                 p.setBrush(QBrush(contact_color))
                 p.drawEllipse(ccx - 5, ccy - 5, 10, 10)
-            # Pos label
             pos = label.get("pos", "?")
             p.setPen(QPen(contact_color))
             p.setFont(make_font(size=SIZE_BODY, bold=label.get("is_action", False)))
             p.drawText(ccx + 12, ccy + 5, str(pos))
-        # No contact indicator — show "—" near the axis midpoint
         elif label.get("tip") and label.get("base"):
             mx = (tx + bx) // 2
             my = (ty + by) // 2
@@ -719,8 +681,8 @@ class App(QMainWindow):
         self.splits = []
         self.scenes = []
         self.annotations = SceneAnnotations()
-        self.auto_result = None   # PipelineResult from the YOLO+flow pipeline
-        self._auto_det_frames = []  # sorted detection frame indices (cache)
+        self.auto_result = None
+        self._auto_det_frames = []
         self.current_frame_idx = 0
         self.placing = None
         self.session = LabelSession()
@@ -774,7 +736,6 @@ class App(QMainWindow):
             self._show_frame(self.current_frame_idx + 1)
 
     def _get_points_of_interest(self):
-        """All scene breaks and representative frames, sorted."""
         pois = set(self.splits)
         for axis in self.annotations.axes.values():
             pois.add(axis.frame)
@@ -788,7 +749,7 @@ class App(QMainWindow):
             if p > self.current_frame_idx:
                 self._show_frame(p)
                 return
-        self._show_frame(pois[0])  # wrap
+        self._show_frame(pois[0])
 
     def _prev_poi(self):
         pois = self._get_points_of_interest()
@@ -798,10 +759,9 @@ class App(QMainWindow):
             if p < self.current_frame_idx:
                 self._show_frame(p)
                 return
-        self._show_frame(pois[-1])  # wrap
+        self._show_frame(pois[-1])
 
     def _action_frames_for_current_scene(self):
-        """Return sorted list of frame indices for actions in the current scene."""
         idx = self._current_scene_idx()
         actions = self.annotations.actions.get(idx, [])
         if not actions:
@@ -816,7 +776,7 @@ class App(QMainWindow):
             if f > self.current_frame_idx:
                 self._show_frame(f)
                 return
-        self._show_frame(frames[0])  # wrap
+        self._show_frame(frames[0])
 
     def _prev_action_frame(self):
         frames = self._action_frames_for_current_scene()
@@ -826,12 +786,10 @@ class App(QMainWindow):
             if f < self.current_frame_idx:
                 self._show_frame(f)
                 return
-        self._show_frame(frames[-1])  # wrap
+        self._show_frame(frames[-1])
 
-    # ── Labels ────────────────────────────────────
 
     def _ensure_label_of_frame(self):
-        """Ensure the current frame has a label, inheriting from nearest."""
         idx = self._current_scene_idx()
         frame = self.current_frame_idx
         here = self.annotations.label_at(idx, frame)
@@ -841,30 +799,25 @@ class App(QMainWindow):
         axis = self.annotations.axis_of(idx)
         if labeled:
             nearest = min(labeled, key=lambda f: abs(f - frame))
-            entry = dict(labeled[nearest])  # shallow copy
+            entry = dict(labeled[nearest])
         elif axis is not None:
             entry = {"tip": axis.tip, "base": axis.base, "contact": None, "is_action": False}
         else:
-            # Contact-only label (auto sessions have no manual axis; the
-            # trainer derives the axis from the automated anchor track)
             entry = {"tip": None, "base": None, "contact": None, "is_action": False}
         self.annotations.set_label(idx, frame, entry)
         return entry
 
     def _label_of_frame(self, scene_idx, frame_idx):
-        """Get the label for display (read-only, does not create entries)."""
         labels_of_scene = self.annotations.labels_of(scene_idx)
         if frame_idx in labels_of_scene:
             label = dict(labels_of_scene[frame_idx])
         elif labels_of_scene:
             nearest = min(labels_of_scene.keys(), key=lambda f: abs(f - frame_idx))
             label = dict(labels_of_scene[nearest])
-            label["is_action"] = False  # inherited frames aren't action frames
+            label["is_action"] = False
         else:
             return None
-        # Compute pos from tip/base/contact
         if label.get("contact") and label.get("tip") and label.get("base"):
-            # Local: cotracker_tracking brings torch and cv2 with it, which opening this window should not.
             from scripture.cotracker_tracking import compute_pos_from_points  # noqa: PLC0415
             label["pos"] = compute_pos_from_points(label["base"], label["tip"], label["contact"])
         else:
@@ -880,8 +833,6 @@ class App(QMainWindow):
         self._show_frame(self.current_frame_idx)
 
     def _label_no_contact(self):
-        """N: in a label session, record an explicit no-contact and advance;
-        otherwise toggle no-contact on the current frame."""
         entry = self._ensure_label_of_frame()
         if entry is None:
             return
@@ -891,7 +842,6 @@ class App(QMainWindow):
             self._session_after_label(self.current_frame_idx)
             return
         if entry["contact"] is None:
-            # Restore contact — put it at midpoint of axis
             if entry.get("tip") and entry.get("base"):
                 mx = (entry["tip"][0] + entry["base"][0]) // 2
                 my = (entry["tip"][1] + entry["base"][1]) // 2
@@ -902,11 +852,9 @@ class App(QMainWindow):
         self._show_frame(self.current_frame_idx)
 
     def _place_label_contact(self):
-        """Enter contact placement mode — next click sets the contact point."""
         self.placing = "contact"
         self._set_status("Click to place CONTACT point (or press C again to cancel)")
 
-    # ── Label session (sparse clicking) ─────────────────────────
 
     def _session_schedule(self):
         idx = self._current_scene_idx()
@@ -929,7 +877,6 @@ class App(QMainWindow):
             self._set_status("Label session paused — progress saves with the project.")
 
     def _session_goto_next(self, after):
-        """Make the next unlabeled scheduled frame past `after` the target."""
         if not self.session.active or not self.scenes:
             return
         schedule = self._session_schedule()
@@ -946,24 +893,19 @@ class App(QMainWindow):
                          "G = skip · U = undo · arrows = scrub · Home = back")
 
     def _session_after_label(self, labeled_frame):
-        """Record for undo, then target the next frame — never skipping a
-        still-unlabeled target the user labeled around."""
         self._session_goto_next(
             after=self.session.after_label(self._current_scene_idx(), labeled_frame))
 
     def _session_skip(self):
-        """G: give up on the current target and move to the next one."""
         if not self.session.active:
             return
         self._session_goto_next(after=self.session.anchor(self.current_frame_idx))
 
     def _session_home(self):
-        """Home: return to the frame being decided after scrubbing around."""
         if self.session.active and self.session.target is not None:
             self._show_frame(self.session.target)
 
     def _session_undo_last(self):
-        """U: delete the most recent label and go back to that frame."""
         undone = self.session.undo_last() if self.session.active else None
         if undone is None:
             return
@@ -978,7 +920,6 @@ class App(QMainWindow):
                          f"({done}/{total} done)")
 
     def _reset_scene_labels(self):
-        """Clear every label in the current scene (button, with confirm)."""
         idx = self._current_scene_idx()
         n = len(self.annotations.labels_of(idx))
         if not n:
@@ -1001,14 +942,12 @@ class App(QMainWindow):
                          "Save the project to make it permanent.")
 
     def _on_label_point_dragged(self, which, fx, fy):
-        """Handle dragging of a label's point (tip, base, or contact)."""
         idx = self._current_scene_idx()
         entry = self._ensure_label_of_frame()
         if entry is None:
             return
         entry[which] = (fx, fy)
         self._mark_dirty()
-        # Update display without re-reading the frame
         label = self._label_of_frame(idx, self.current_frame_idx)
         self.viewport.set_label(label)
 
@@ -1019,7 +958,6 @@ class App(QMainWindow):
         root.setContentsMargins(MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD, MARGIN_STANDARD)
         root.setSpacing(GAP_MEDIUM)
 
-        # --- File I/O toolbar ---
         tb = QToolBar()
         tb.setMovable(False)
         tb.setFloatable(False)
@@ -1028,17 +966,14 @@ class App(QMainWindow):
         tb.setStyleSheet(toolbar_rules())
         self.addToolBar(tb)
 
-        # Left pad to match central widget margin
         left_pad = QWidget()
         left_pad.setFixedWidth(MARGIN_STANDARD)
         tb.addWidget(left_pad)
 
-        # Spacer — fills toolbar when progress bar is hidden
         self._spacer = QWidget()
         self._spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._spacer_action = tb.addWidget(self._spacer)
 
-        # Progress bar + abort button embedded in toolbar (no layout shift)
         self._progress_sep = tb.addSeparator()
         self._progress_sep.setVisible(False)
         self.progress_bar = QProgressBar()
@@ -1052,9 +987,6 @@ class App(QMainWindow):
         self._abort_action.setVisible(False)
         tb.addAction(self._abort_action)
 
-        # The file actions sit at the RIGHT, the way Evolver's toolbar puts its
-        # own -- the spacer above is what pushes them there.  They were flush
-        # left, which left the two apps' top bars reading as different chrome.
         for icon, label, handler in [
             ("plus", "New", self._open_video),
             ("save", "Save", self._save_project),
@@ -1069,25 +1001,21 @@ class App(QMainWindow):
         act.triggered.connect(self._export)
         tb.addAction(act)
 
-        # Right pad
         right_pad = QWidget()
         right_pad.setFixedWidth(MARGIN_STANDARD)
         tb.addWidget(right_pad)
 
-        # --- Viewport ---
         self.viewport = Viewport()
         self.viewport.clicked.connect(self._on_viewport_click)
         self.viewport.point_dragged.connect(self._on_point_dragged)
         self.viewport.context_menu_requested.connect(self._on_viewport_context_menu)
         root.addWidget(self.viewport, stretch=1)
 
-        # --- Timeline ---
         self.timeline = TimelineWidget()
         self.timeline.frame_changed.connect(self._show_frame)
         self.timeline.context_menu_requested.connect(self._on_timeline_context_menu)
         root.addWidget(self.timeline)
 
-        # --- Footer: Process All + info ---
         footer = QHBoxLayout()
         footer.setSpacing(GAP_MEDIUM)
 
@@ -1140,7 +1068,6 @@ class App(QMainWindow):
         self.scenes = scenes_from_splits(self.splits, self.total_frames)
         self.annotations.reindex(self._scene_index_for_frame)
         self.session.reindex(self._scene_index_for_frame)
-        # Auto actions are global; re-bucket them into the new scene layout
         if self.auto_result is not None:
             self.annotations.replace_actions(actions_by_scene(
                 self.auto_result.actions, self.scenes, self.fps))
@@ -1171,7 +1098,6 @@ class App(QMainWindow):
         )
         self._set_status(f"{sc_info}  |  {fr_info}")
 
-    # ── Video loading ──────────────────────────────────────────────
 
     def _reset_project(self):
         self.splits = []
@@ -1196,7 +1122,6 @@ class App(QMainWindow):
         self._show_frame(0)
 
     def _load_video(self, path):
-        """Open a video and keep it, or say why not and keep the one in hand."""
         source = VideoSource.opened(path)
         if source is None:
             QMessageBox.critical(self, "Video not found", f"Cannot open: {path}")
@@ -1206,7 +1131,6 @@ class App(QMainWindow):
         self.video_path = path
         return True
 
-    # ── Frame display ──────────────────────────────────────────────
 
     def _show_frame(self, frame_idx):
         frame = self.video.frame_at(frame_idx)
@@ -1224,7 +1148,6 @@ class App(QMainWindow):
             self.viewport.set_pending_tip(self.pending_tip)
             self.viewport.set_pending_base(self.pending_base)
 
-        # Auto-tracking overlay takes precedence when the auto pipeline ran
         if self.auto_result is not None:
             self.viewport.set_auto_overlay(auto_overlay(
                 result=self.auto_result, frame_idx=frame_idx, fps=self.fps,
@@ -1234,7 +1157,6 @@ class App(QMainWindow):
         else:
             self.viewport.set_auto_overlay(None)
 
-        # Debug overlay for processed scenes (works with full positions or just actions)
         if axis is not None and (idx in self.annotations.tracking
                                  or idx in self.annotations.actions):
             self.viewport.set_overlay(tracked_overlay(
@@ -1244,7 +1166,6 @@ class App(QMainWindow):
         else:
             self.viewport.set_overlay(None)
 
-        # The label's layer
         if self.annotations.labels_of(idx):
             self.viewport.set_label(self._label_of_frame(idx, frame_idx))
         else:
@@ -1253,7 +1174,6 @@ class App(QMainWindow):
         self._update_info()
         self._update_timeline()
 
-    # ── Scene splitting ────────────────────────────────────────────
 
     def _split_or_unsplit(self):
         if self.total_frames == 0:
@@ -1284,7 +1204,6 @@ class App(QMainWindow):
         self._show_frame(frame)
         self._set_status(f"Removed split. {len(self.scenes)} scenes.")
 
-    # ── Context menus ──────────────────────────────────────────────
 
     def _on_viewport_context_menu(self, fx, fy):
         if not self.scenes:
@@ -1337,14 +1256,12 @@ class App(QMainWindow):
         self._show_frame(frame)
         self._set_status(f"Split at frame {frame}. {len(self.scenes)} scenes.")
 
-    # ── Axis annotation ────────────────────────────────────────────
 
     def _cancel_placing(self):
         self.placing = None
         self.pending_tip = self.pending_base = None
 
     def _may_move_the_axis(self, idx):
-        """Ask before an already-drawn axis moves to the frame on screen."""
         axis = self.annotations.axis_of(idx)
         if axis is None or axis.frame == self.current_frame_idx:
             return True
@@ -1356,7 +1273,6 @@ class App(QMainWindow):
         return reply == QMessageBox.StandardButton.Yes
 
     def _form_axis_if_both_placed(self, idx):
-        """Draw the axis once both ends are down, then redraw the frame."""
         if self.pending_tip and self.pending_base:
             self.annotations.set_axis(idx, AxisDefinition(
                 tip=self.pending_tip, base=self.pending_base, frame=self.current_frame_idx,
@@ -1366,14 +1282,11 @@ class App(QMainWindow):
         self._show_frame(self.current_frame_idx)
 
     def _place_point(self, which):
-        """Enter placement mode for tip or base."""
         self.placing = which
 
     def _place_point_at(self, which, fx, fy):
-        """Place a point directly at (fx, fy) without entering placement mode."""
         idx = self._current_scene_idx()
 
-        # If there's an existing axis on a different frame, confirm change
         if not self._may_move_the_axis(idx):
             return
         old = self.annotations.drop_axis(idx)
@@ -1447,7 +1360,6 @@ class App(QMainWindow):
 
     def _on_point_dragged(self, which, fx, fy):
         idx = self._current_scene_idx()
-        # A label's point dragged (contact, or tip/base while a label is showing)
         if which in ("contact", "tip", "base") and self.annotations.labels_of(idx):
             self._on_label_point_dragged(which, fx, fy)
             return
@@ -1467,7 +1379,6 @@ class App(QMainWindow):
             self.pending_base = (fx, fy)
             self.viewport.set_pending_base(self.pending_base)
 
-    # ── Processing ─────────────────────────────────────────────────
 
     def _build_jobs(self, indices):
         axes = self.annotations.axes
@@ -1493,7 +1404,6 @@ class App(QMainWindow):
 
     def _start_processing(self, jobs):
         tf = sum(sc.end_frame - sc.start_frame for _, sc, _ in jobs)
-        # Indeterminate (pulsing) during CoTracker3
         self._show_progress_ui(0, "Tracking axis with CoTracker3\u2026")
         self._process_total_frames = tf
         self._worker = ProcessWorker(self.video_path, jobs, self.fps)
@@ -1532,7 +1442,6 @@ class App(QMainWindow):
         self._hide_progress_ui()
         self._set_status("Processing aborted.")
 
-    # \u2500\u2500 Automatic YOLO+flow processing \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
     def _auto_process(self):
         if self._is_processing():
@@ -1549,7 +1458,6 @@ class App(QMainWindow):
         self._worker.start()
 
     def _set_auto_result(self, result):
-        """Install a pipeline result: bucket actions and refresh caches."""
         self.auto_result = result
         self._auto_det_frames = sorted(result.signal.detections.keys()) if result else []
         self._auto_last_anchor = None
@@ -1557,7 +1465,6 @@ class App(QMainWindow):
             self.annotations.replace_actions(
                 actions_by_scene(result.actions, self.scenes, self.fps))
             self.annotations.clear_tracking()
-            # For each frame, the most recent frame with a direct sighting
             last_anchor = np.full(len(result.signal.lock), -1, dtype=np.int64)
             last = -1
             for i, state in enumerate(result.signal.lock):
@@ -1614,7 +1521,6 @@ class App(QMainWindow):
             self._update_timeline()
             self._set_status(f"Discarded actions for scene {idx+1}.")
 
-    # ── Project save/load ──────────────────────────────────────────
 
     def _project(self):
         return Project(
@@ -1697,7 +1603,6 @@ class App(QMainWindow):
     def _try_load_last_project(self):
         reopen_last_project(_LAST_PROJECT_FILE, self._do_load)
 
-    # ── Export ──────────────────────────────────────────────────────
 
     def _export(self):
         if not self.annotations.actions:
@@ -1714,7 +1619,6 @@ class App(QMainWindow):
             write_funscript(Path(path), fs)
             self._set_status(f"Exported {len(all_a)} actions to {Path(path).name}")
 
-    # ── Close guard ────────────────────────────────────────────────
 
     def closeEvent(self, event):
         if self._worker and self._worker.isRunning():

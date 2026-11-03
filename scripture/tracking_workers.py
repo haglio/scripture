@@ -44,7 +44,7 @@ class _TrackingWorker(QThread):
 
 
 class ProcessWorker(_TrackingWorker):
-    scene_done = pyqtSignal(int, list, object)  # idx, actions, TrackingResult
+    scene_done = pyqtSignal(int, list, object)
     finished = pyqtSignal()
     error = pyqtSignal(int, str)
 
@@ -78,7 +78,7 @@ class ProcessWorker(_TrackingWorker):
 
 
 class AutoProcessWorker(_TrackingWorker):
-    done = pyqtSignal(object)  # PipelineResult
+    done = pyqtSignal(object)
     error = pyqtSignal(str)
 
     def __init__(self, video_path, *, track=run_pipeline):

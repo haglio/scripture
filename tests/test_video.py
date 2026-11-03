@@ -1,10 +1,3 @@
-"""The open video: its shape, the frame at an index, and refusing to open.
-
-The window read four properties off a raw cv2 capture in two places, seeked and
-read in a third, and released the old capture by hand in both of the first two --
-so "a video that cannot be opened is not a video" was a check at one site and a
-missing one at the other, which is the bug tests/test_gui_loading.py records.
-"""
 from __future__ import annotations
 
 import numpy as np
@@ -14,7 +7,6 @@ from scripture.video import NO_VIDEO, VideoSource
 
 
 class FakeCapture:
-    """A cv2 capture over a fixed number of frames."""
 
     def __init__(self, opened=True, frames=3, fps=30.0):
         self._opened = opened
@@ -24,7 +16,7 @@ class FakeCapture:
         self.sought = None
         self.released = False
 
-    def isOpened(self):  # noqa: N802 - cv2 spells it this way
+    def isOpened(self):
         return self._opened
 
     def get(self, prop):

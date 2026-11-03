@@ -1,4 +1,3 @@
-"""Extract cycle peaks and valleys from a position signal."""
 from __future__ import annotations
 
 import numpy as np
@@ -10,17 +9,12 @@ _MIDPOINT = 0.5
 
 
 def smooth_signal(positions: np.ndarray, window: int = 15, polyorder: int = 3) -> np.ndarray:
-    """Apply Savitzky-Golay filter to smooth the position signal."""
     if len(positions) < window:
         return positions
     return savgol_filter(positions, window, polyorder)
 
 
 def remove_drift(positions: np.ndarray, cutoff_period_frames: int = 300) -> np.ndarray:
-    """Remove low-frequency drift via high-pass filtering.
-
-    Subtracts a heavily-smoothed version of the signal (the drift component).
-    """
     if len(positions) < cutoff_period_frames:
         return positions - np.mean(positions) + _MIDPOINT
 
@@ -35,26 +29,19 @@ def remove_drift(positions: np.ndarray, cutoff_period_frames: int = 300) -> np.n
 
 def _adaptive_prominence(positions: np.ndarray, fps: float,
                          floor: float = 0.05) -> float:
-    """Compute prominence threshold based on local signal variation."""
-    # Local: scipy's filters are only wanted when a prominence has to be adapted.
     from scipy.ndimage import uniform_filter1d  # noqa: PLC0415
     window = max(3, int(fps * 5))
-    # Rolling IQR approximation: use std * 1.35 as IQR proxy
     local_mean = uniform_filter1d(positions.astype(np.float64), size=window, mode="nearest")
     local_sq_mean = uniform_filter1d((positions ** 2).astype(np.float64), size=window, mode="nearest")
     local_std = np.sqrt(np.maximum(local_sq_mean - local_mean ** 2, 0))
     median_std = np.median(local_std)
-    # Use 30% of the local IQR proxy as prominence, with a floor
     return max(floor, 0.3 * median_std * 1.35)
 
 
-# The closest two turnarounds can be and still count as two cycles.
 _MIN_CYCLE_DISTANCE_MS = 200.0
 
 
 def _enforce_alternating(indices: np.ndarray, values: np.ndarray) -> np.ndarray:
-    """Keep only alternating extrema — when two peaks/valleys are consecutive,
-    keep the more extreme one."""
     if len(indices) <= 1:
         return indices
     result = [indices[0]]
@@ -64,7 +51,6 @@ def _enforce_alternating(indices: np.ndarray, values: np.ndarray) -> np.ndarray:
         prev_is_peak = prev_val > _MIDPOINT
         curr_is_peak = curr_val > _MIDPOINT
         if prev_is_peak == curr_is_peak:
-            # Same type — keep the more extreme one
             if prev_is_peak:
                 if curr_val > prev_val:
                     result[-1] = indices[i]
@@ -78,12 +64,6 @@ def _enforce_alternating(indices: np.ndarray, values: np.ndarray) -> np.ndarray:
 def extract_cycles(positions: np.ndarray, timestamps_ms: np.ndarray,
                    max_prominence: float = 0.15,
                    fps: float = 30.0) -> list[dict]:
-    """Find cycle turnaround points (peaks and valleys).
-
-    Returns a list of {"at": timestamp_ms, "pos": 0-100} dicts, containing
-    only the extrema — the minimal representation of the cycle pattern.
-    """
-    # Remove drift before smoothing
     detrended = remove_drift(positions, cutoff_period_frames=max(5, int(fps * 10)))
     smooth_window = max(5, min(15, int(fps * 0.2)))
     if smooth_window % 2 == 0:
@@ -96,13 +76,10 @@ def extract_cycles(positions: np.ndarray, timestamps_ms: np.ndarray,
     prominence = _adaptive_prominence(smoothed, fps)
     effective_prominence = min(prominence, max_prominence)
 
-    # Find peaks (high positions = near tip)
     peaks, _ = find_peaks(smoothed, distance=min_distance_frames, prominence=effective_prominence)
 
-    # Find valleys (low positions = near base)
     valleys, _ = find_peaks(-smoothed, distance=min_distance_frames, prominence=effective_prominence)
 
-    # Merge, sort, and enforce alternation
     extrema_indices = np.sort(np.concatenate([peaks, valleys]))
     if len(extrema_indices) > 0:
         extrema_indices = _enforce_alternating(extrema_indices, smoothed)

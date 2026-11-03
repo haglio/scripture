@@ -1,12 +1,3 @@
-"""Opening a video starts a new project; nothing of the last one may survive.
-
-`_open_video` cleared the splits, the scenes and the three per-scene dicts and
-left the hand-placed labels, the label session and its undo stack alone. The
-timeline then painted another video's labels over this one, the session counted
-them as frames already done, and the next save wrote them into the new video's
-project file.
-"""
-
 from __future__ import annotations
 
 from scripture import gui
@@ -54,7 +45,6 @@ def test_a_new_video_does_not_inherit_the_label_session(window, tmp_path, monkey
 
 def test_a_video_that_will_not_open_says_so_and_keeps_the_one_in_hand(
         window, tmp_path, monkeypatch):
-    """The same answer _do_load already gave a project whose video had moved."""
     playing = Capture()
     window.video = VideoSource(playing)
     kept = window.video

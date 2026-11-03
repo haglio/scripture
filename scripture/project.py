@@ -1,18 +1,3 @@
-"""The `.scripture` project file: what it holds, and how it reads and writes.
-
-Another program opens this format: evolver globs the sessions directory, reads
-the top-level video path and writes the file back whole.  So the shape -- the
-key names, the `str()`-keyed scene indices, the tuple/list coercions, the numpy
-round trip -- lives here rather than inside the Qt window, which is the least
-reachable file in the repo.
-
-That makes the shape a contract rather than an implementation detail, so it
-says which shape it is.  Evolver rewrites only a version it was written for
-and leaves anything else alone, which is what turns a rename here into a
-refusal there instead of a silent mangling; `tests/test_project.py` holds both
-the version and the field name against this module.
-"""
-
 from __future__ import annotations
 
 import json
@@ -32,12 +17,8 @@ from scripture.motion_tracker import AxisDefinition, TrackingResult
 
 Label = dict[str, object]
 
-#: Which shape a saved project is.  A file written before this key existed is
-#: the first, and reads as one.
 PROJECT_FORMAT_VERSION = 1
 
-#: Where the video this project was cut against is recorded.  Evolver moves
-#: videos and repoints this in place, so the name is a contract with it.
 VIDEO_PATH_FIELD = "video_path"
 
 _log = logging.getLogger("scripture")
@@ -46,7 +27,6 @@ _DAMAGED_PROJECT_ERRORS = (OSError, ValueError, LookupError, TypeError, Attribut
 
 @dataclass
 class Project:
-    """One video's worth of work: where it was split, and what was marked."""
 
     video_path: str | None = None
     splits: list[int] = field(default_factory=list)
@@ -59,7 +39,6 @@ class Project:
 
 
 def state_from_project(project: Project) -> dict:
-    """The project as the plain JSON object that reaches the file."""
     return {
         "version": PROJECT_FORMAT_VERSION,
         VIDEO_PATH_FIELD: project.video_path,
@@ -77,7 +56,6 @@ def state_from_project(project: Project) -> dict:
 
 
 def project_from_state(state: dict) -> Project:
-    """The project a saved state describes, tolerating what older ones omit."""
     auto = state.get("auto")
     return Project(
         video_path=state[VIDEO_PATH_FIELD],

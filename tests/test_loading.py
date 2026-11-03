@@ -1,6 +1,3 @@
-"""What Scripture shows while it opens: the family's loading screen, walking
-the steps the launch takes, the slow one first."""
-
 from __future__ import annotations
 
 import json

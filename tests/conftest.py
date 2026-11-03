@@ -1,31 +1,14 @@
-"""What the whole suite runs under.
-
-The QApplication is a fixture a test asks for by name, never autouse. An autouse
-one stood here once and no test ever asked for it -- the only PyQt6 import in
-`tests/` was the fixture's own -- so its one effect was to leave the process
-Qt-initialized before the first test module was collected, which is exactly the
-condition `test_launch_smoke.py` exists to rule out: a green run on a launch
-sequence that never completes. Asking by name keeps Qt out of every run that
-does not build a widget.
-"""
 from __future__ import annotations
 
 import os
 
 import pytest
 
-# Ask Qt for a headless platform. The window fixture below builds a real
-# QMainWindow, and the subprocesses that import `scripture.gui` set this in
-# their own env -- but the day one of them stops, the difference is a window on
-# the screen of the machine this is run from. The merge gate sets it too;
-# setdefault lets a developer override it to watch something on a real display.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 @pytest.fixture(scope="session")
 def qt_app():
-    """The one QApplication a widget test needs, built when one asks for it."""
-    # Local: the toolkit, only for the tests that use one.
     from PyQt6.QtWidgets import QApplication  # noqa: PLC0415
 
     return QApplication.instance() or QApplication([])
@@ -33,18 +16,10 @@ def qt_app():
 
 @pytest.fixture
 def window(qt_app, tmp_path, monkeypatch):
-    """A real `App`, with the last-session pointer aimed at a scratch file.
-
-    Left alone, `App.__init__` finishes by reopening whatever project the
-    developer had open last -- reading their video off disk in a unit test.
-    """
-    # Local: the window, and the toolkit under it, only for the tests that use one.
     from scripture import gui  # noqa: PLC0415
 
     monkeypatch.setattr(gui, "_LAST_PROJECT_FILE", tmp_path / ".last_session")
     app_window = gui.App()
     yield app_window
-    # The close guard asks about unsaved work, and a modal question with no one
-    # to answer it would hang the suite.
     app_window._mark_clean()
     app_window.close()
