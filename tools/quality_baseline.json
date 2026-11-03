@@ -47,19 +47,18 @@
     "tests/test_loading.py": 1
   },
   "statements": {
-    "scripture/gui.py": 1230
+    "scripture/gui.py": 1221
   },
   "trailing_comments": {},
   "uncovered_lines": {
     "scripture/__main__.py": 3,
-    "scripture/annotations.py": 5,
-    "scripture/auto_funscript.py": 41,
-    "scripture/cotracker_tracking.py": 119,
-    "scripture/cycle_extract.py": 1,
-    "scripture/gui.py": 679,
-    "scripture/main.py": 20,
+    "scripture/annotations.py": 4,
+    "scripture/auto_funscript.py": 38,
+    "scripture/cotracker_tracking.py": 48,
+    "scripture/gui.py": 423,
+    "scripture/main.py": 18,
     "scripture/motion_tracker.py": 3,
     "scripture/overlay.py": 1,
-    "scripture/tracker_environment.py": 8
+    "scripture/tracker_environment.py": 5
   }
 }

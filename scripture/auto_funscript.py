@@ -20,6 +20,7 @@ from scripture.cycle_extract import extract_cycles
 from scripture.frames import ms_of_frame
 from scripture.funscript import build_funscript, made_by
 from scripture.roi_lock import Detection, RoiLock
+from scripture.video import VideoSource
 
 TRACKER = "roi_flow"
 TRACKER_VERSION = "1"
@@ -287,14 +288,12 @@ def run_pipeline(
     run = run or PipelineRun()
     config = run.config
 
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    cap.release()
-    end_frame = total_frames if run.end_frame is None else min(run.end_frame, total_frames)
+    source = VideoSource(cv2.VideoCapture(video_path))
+    fps, total_frames = source.fps, source.total_frames
+    source.release()
 
     signal = track_flow_signal(
-        _read_frames(video_path, run.start_frame, end_frame),
+        _read_frames(video_path, run.start_frame, run.end_frame),
         run.detect_fn or _make_yolo_detector(run.model_path, config.conf_threshold),
         run.flow_fn or _make_dis_flow(),
         config,

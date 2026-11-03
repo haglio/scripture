@@ -47,3 +47,12 @@ def test_the_detection_colors_are_the_familys_nearest_to_what_the_loaded_overlay
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == f"['sprocket', 'widget'] {palette.RED}"
+
+
+def test_opening_the_window_does_not_load_torch_or_the_detector():
+    result = _fresh_interpreter(
+        "import sys, scripture.gui;"
+        "print(sorted({'torch', 'ultralytics'} & set(sys.modules)))")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "[]"

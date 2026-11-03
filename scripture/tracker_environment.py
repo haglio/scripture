@@ -29,10 +29,10 @@ def complaints() -> list[str]:
     return []
 
 
-def _has_an_nvidia_driver() -> bool:
-    if shutil.which("nvidia-smi") is None:
+def _has_an_nvidia_driver(*, which=shutil.which, run=subprocess.run) -> bool:
+    if which("nvidia-smi") is None:
         return False
-    return subprocess.run(["nvidia-smi"], capture_output=True, check=False).returncode == 0
+    return run(["nvidia-smi"], capture_output=True, check=False).returncode == 0
 
 
 def _torch() -> ModuleType | None:

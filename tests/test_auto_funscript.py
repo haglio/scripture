@@ -496,3 +496,77 @@ class TestParseArgs:
         assert args.start_frame == 3231
         assert args.end_frame == 14478
         assert args.detect_every == 2
+
+
+def _beliefs_seeing(*detections):
+    result = track_flow_signal(
+        iter([textured_frame()]), lambda _frame: list(detections), _flow_of(0.0), TrackConfig())
+    return result.beliefs[0]
+
+
+class TestChoosingTheAnchor:
+
+    def test_the_first_class_wins_even_when_the_second_is_surer(self):
+        assert _beliefs_seeing(det(ANCHOR_TIP, 1, 1, 9, 9, conf=0.99),
+                               det(ANCHOR, 2, 2, 9, 9, conf=0.5)) == (2, 2, 9, 9)
+
+    def test_the_second_class_anchors_when_the_first_is_not_seen(self):
+        assert _beliefs_seeing(det(ANCHOR_TIP, 1, 1, 9, 9)) == (1, 1, 9, 9)
+
+    def test_the_surest_of_a_class_is_the_one_chosen(self):
+        assert _beliefs_seeing(det(ANCHOR, 1, 1, 9, 9, conf=0.5),
+                               det(ANCHOR, 2, 2, 9, 9, conf=0.9)) == (2, 2, 9, 9)
+
+
+class TestTheInteractionDistance:
+
+    @pytest.mark.parametrize(("offset", "interacting"), [(42, True), (43, False)])
+    def test_it_is_eighty_five_percent_of_the_two_half_diagonals(self, offset, interacting):
+        anchor = det(ANCHOR, 0, 0, 30, 40)
+        other = det("hand", offset, 0, 30, 40)
+
+        assert (find_interacting(anchor, [other]) == [other]) is interacting
+
+
+class TestWhenDetectionRuns:
+
+    def test_it_runs_on_every_frame_until_an_roi_is_held_then_every_nth(self):
+        frames = [textured_frame()] * 8
+        seen = iter([[], [det(ANCHOR, 100, 60, 60, 90)]])
+
+        result = track_flow_signal(
+            iter(frames), lambda _frame: next(seen, []), _flow_of(0.0),
+            TrackConfig(detect_every=5))
+
+        assert sorted(result.detections) == [0, 1, 5]
+
+    def test_a_cut_lets_go_of_the_roi(self):
+        bright = np.full((200, 300, 3), 230, dtype=np.uint8)
+        looks = iter([[det(ANCHOR, 100, 60, 60, 90)]])
+
+        result = track_flow_signal(
+            iter([textured_frame(1), bright]), lambda _frame: next(looks, []),
+            _flow_of(0.0), TrackConfig(detect_every=5))
+
+        assert result.rois[1] is None
+
+
+def test_a_signal_never_locked_makes_no_actions_however_it_moved():
+    moving = TrackSignal(dy=np.sin(np.arange(300) / 5.0) * 5, lock=["none"] * 300)
+
+    assert signal_to_actions(moving, fps=30.0, config=TrackConfig()) == []
+
+
+class TestAProjectFromBeforeTheLockStates:
+
+    @staticmethod
+    def _saved():
+        return {"dy": [0.0, 0.0], "roi_active": [True, False], "rois": [None, None],
+                "detections": {}, "positions": [50.0, 50.0], "actions": [],
+                "fps": 30.0, "start_frame": 0, "total_frames": 2}
+
+    def test_a_frame_that_was_active_reads_as_locked_on_the_anchor(self):
+        assert pipeline_result_from_state(self._saved()).signal.lock == ["anchor", "none"]
+
+    def test_it_remembers_no_anchor(self):
+        assert pipeline_result_from_state(self._saved()).signal.beliefs == [None, None]

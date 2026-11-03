@@ -63,6 +63,12 @@ from shared_ui.spacing import BUTTON_ICON, BUTTON_RADIUS_HUD, GAP_MEDIUM, GAP_SM
 from scripture.annotations import SceneAnnotations
 from scripture.content import LOCAL_CONTENT, load_content
 from scripture.cotracker_tracking import compute_pos_from_points
+from scripture.editing_rules import (
+    both_scenes_have_an_axis,
+    moving_the_axis_needs_asking,
+    next_frame,
+    previous_frame,
+)
 from scripture.frames import frame_of_ms
 from scripture.funscript import build_funscript
 from scripture.label_session import LabelSession, schedule_frames
@@ -670,18 +676,6 @@ class Viewport(QWidget):
             self.zoom /= 1.15
 
 
-def next_frame(frames, current):
-    if not frames:
-        return None
-    return next((frame for frame in frames if frame > current), frames[0])
-
-
-def previous_frame(frames, current):
-    if not frames:
-        return None
-    return next((frame for frame in reversed(frames) if frame < current), frames[-1])
-
-
 def _fmt_duration(seconds):
     s = int(seconds)
     if s < _SECONDS_PER_MINUTE:
@@ -1186,8 +1180,7 @@ class App(QMainWindow):
         idx = self._current_scene_idx()
         left_idx = idx - 1 if idx > 0 and self.scenes[idx].start_frame == frame else idx
         right_idx = left_idx + 1
-        axes = self.annotations.axes
-        if left_idx in axes and right_idx < len(self.scenes) and right_idx in axes:
+        if both_scenes_have_an_axis(self.annotations.axes, left_idx, right_idx):
             QMessageBox.warning(self, "Cannot unsplit", "Both adjacent scenes have axes. Delete one axis first.")
             return
         self.splits.remove(frame)
@@ -1255,8 +1248,7 @@ class App(QMainWindow):
         self.pending_tip = self.pending_base = None
 
     def _may_move_the_axis(self, idx):
-        axis = self.annotations.axis_of(idx)
-        if axis is None or axis.frame == self.current_frame_idx:
+        if not moving_the_axis_needs_asking(self.annotations.axis_of(idx), self.current_frame_idx):
             return True
         reply = QMessageBox.question(
             self, "Change representative frame?",

@@ -50,6 +50,9 @@ class TestWhatTheCheckerSays:
     def test_a_machine_with_no_driver_is_not_a_machine_that_tracks(self, machine):
         assert machine(driver=False) == []
 
+    def test_with_no_driver_the_cpu_wheel_draws_no_complaint_either(self, machine):
+        assert machine(driver=False, torch=FakeTorch(cuda_version=None)) == []
+
     def test_no_torch_at_all_is_said_rather_than_raised(self, machine):
         assert "torch is not installed" in machine(torch=False)[0]
 
@@ -66,3 +69,22 @@ class TestThePremiseTheCheckerRestsOn:
             "cotracker_tracking now names a CPU device; if it can fall back, the "
             "tracker-environment check's premise no longer holds"
         )
+
+
+class _Finished:
+    def __init__(self, returncode):
+        self.returncode = returncode
+
+
+class TestAskingForTheDriver:
+
+    def test_no_nvidia_smi_on_the_path_is_no_driver(self):
+        assert not tracker_environment._has_an_nvidia_driver(which=lambda _name: None)
+
+    def test_an_nvidia_smi_that_fails_is_no_driver(self):
+        assert not tracker_environment._has_an_nvidia_driver(
+            which=lambda _name: "nvidia-smi", run=lambda *_args, **_kw: _Finished(9))
+
+    def test_an_nvidia_smi_that_answers_is_a_driver(self):
+        assert tracker_environment._has_an_nvidia_driver(
+            which=lambda _name: "nvidia-smi", run=lambda *_args, **_kw: _Finished(0))

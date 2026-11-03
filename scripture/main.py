@@ -42,8 +42,8 @@ def _name_this_process() -> None:
     ProcessNamer("Scripture", icon=_ICON).name_this_process("Scripture", interpreter="python.exe")
 
 
-def _report_tracker_environment() -> None:
-    for said in complaints():
+def _report_tracker_environment(*, found=complaints) -> None:
+    for said in found():
         print(f"scripture: {said}", file=sys.stderr)
 
 

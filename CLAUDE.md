@@ -17,9 +17,10 @@ rebuilding `.venv`, replace it from PyTorch's own index:
 
 Pick the `cuXXX` index that the installed NVIDIA driver supports (`nvidia-smi`
 prints the highest CUDA version it can run). You do not have to remember to
-check: `tests/test_tracker_environment.py` fails the suite on any machine with
-an NVIDIA driver whose torch is the CPU build or cannot reach the GPU, and names
-this command when it does. It skips where no driver exists, which is CI.
+check: at startup `scripture/tracker_environment.py` writes to the launcher's log
+on any machine with an NVIDIA driver whose torch is the CPU build or cannot reach
+the GPU, and names this command when it does. It says nothing where no driver
+exists, which is CI.
 
 This is also why `launch_scripture.vbs` runs the venv and nothing else. It used
 to prefer `%USERPROFILE%\miniconda3\python.exe`, which was the only interpreter
@@ -31,8 +32,8 @@ numpy/OpenCV logic with synthetic data.
 `shared_ui` and `app_support` are sibling repos, not PyPI packages:
 `pyproject.toml` names each at the tag this repo was built against, and
 `pip install -e .` fetches those tags from GitHub. The launcher exports no
-`PYTHONPATH`, so the venv's copies are the ones Scripture runs, and moving a pin
-means installing the new tag into the venv too.
+`PYTHONPATH`, so the venv's copies are the ones Scripture runs, and the production
+updater installs a moved pin's tag into the venv.
 
 ## Its words
 
@@ -107,7 +108,7 @@ This repo is public at `github.com/haglio/scripture` with a merge-queue ruleset 
 - **The demo is `launch_preview_branch.vbs`,** tracked in every checkout and
   rendered from its spec in `pyproject.toml`. It runs the whole app out of your
   worktree on the primary checkout's venv, so a worktree needs no venv and still
-  gets the CUDA torch and the editable siblings. Hand the owner a `file:///` link
+  gets the CUDA torch and the pinned siblings. Hand the owner a `file:///` link
   to your worktree's copy; the visible launch is his, never yours.
   A branch that needs a sibling version the venv does not hold gets a launcher
   of its own in the worktree's git-ignored `state/` that also puts checkouts of
