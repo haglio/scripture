@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cache
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
+from scipy.ndimage import median_filter, uniform_filter1d
+from scipy.signal import savgol_filter
 
-from scripture.motion_tracker import AxisDefinition
+if TYPE_CHECKING:
+    from scripture.motion_tracker import AxisDefinition
 
 
 @cache
@@ -20,9 +24,6 @@ _FILTER_WIDTH = 5
 
 
 def sanitize_positions(positions: np.ndarray, fps: float = 30.0) -> np.ndarray:
-    from scipy.ndimage import median_filter  # noqa: PLC0415
-    from scipy.signal import savgol_filter  # noqa: PLC0415
-
     n = len(positions)
     if n < _FILTER_WIDTH:
         return positions.copy()
@@ -52,8 +53,6 @@ def sample_axis_intensity(
     n: int = 200,
     strip_w: int = 20,
 ) -> tuple[np.ndarray, np.ndarray]:
-    from scipy.ndimage import uniform_filter1d  # noqa: PLC0415
-
     t_values = np.linspace(0, 1, n)
     intensities = np.zeros(n)
     h, w = gray.shape[:2]
@@ -63,7 +62,7 @@ def sample_axis_intensity(
         count = 0
         for off in range(-strip_w, strip_w + 1):
             px = pt + off * perp
-            x, y = int(round(px[0])), int(round(px[1]))
+            x, y = round(px[0]), round(px[1])
             if 0 <= x < w and 0 <= y < h:
                 total += float(gray[y, x])
                 count += 1
@@ -105,7 +104,7 @@ def compute_pos_from_points(
     if dot_aa < _NO_LENGTH:
         return 50
     t = np.dot(contact_a - base_a, axis_vec) / dot_aa
-    return int(round(max(0.0, min(1.0, t)) * 100))
+    return round(max(0.0, min(1.0, t)) * 100)
 
 
 def scale_coords(

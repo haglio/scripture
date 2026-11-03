@@ -27,8 +27,8 @@ def interpolate_actions(actions: list[dict], frame_ms: float,
     for earlier, later in pairwise(actions):
         if earlier["at"] <= frame_ms <= later["at"]:
             across = (frame_ms - earlier["at"]) / (later["at"] - earlier["at"])
-            return int(round(earlier["pos"]
-                             + across * (later["pos"] - earlier["pos"]))), False
+            return round(earlier["pos"]
+                         + across * (later["pos"] - earlier["pos"])), False
     return 50, False
 
 
@@ -42,7 +42,7 @@ def tracked_overlay(*, axis: AxisDefinition, scene: Scene, frame_idx: int, fps: 
         if local_idx < 0 or local_idx >= len(result.positions):
             return None
         pos_frac = float(result.positions[local_idx])
-        pos_100 = int(round(pos_frac * 100))
+        pos_100 = round(pos_frac * 100)
         stamp = result.timestamps_ms[local_idx]
         on_action = [a for a in actions if abs(a["at"] - stamp) < half_a_frame]
         is_action = bool(on_action)
@@ -81,7 +81,7 @@ def auto_overlay(*, result: PipelineResult, frame_idx: int, fps: float,
     return {
         "roi": result.signal.rois[local],
         "detections": _last_sighting(result, detection_frames, local),
-        "pos": int(round(result.positions[local])),
+        "pos": round(result.positions[local]),
         "active": lock != "none",
         "lock": lock,
         "belief": remembered,
@@ -129,4 +129,4 @@ def _age(remembered, last_anchor: np.ndarray | None, local: int,
 
 
 def _point(coords) -> tuple[int, int]:
-    return int(round(coords[0])), int(round(coords[1]))
+    return round(coords[0]), round(coords[1])

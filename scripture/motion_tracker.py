@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
+from scripture import cotracker_tracking
 from scripture.frames import ms_of_frame
 from scripture.funscript import made_by
 
@@ -41,17 +42,10 @@ def _released_after(capture):
 def track_motion(video_path: str, axis: AxisDefinition,
                  start_frame: int, end_frame: int,
                  on_frame: Callable[[int], None] | None = None) -> TrackingResult:
-    from scripture.cotracker_tracking import (  # noqa: PLC0415
-        cotrack_axis,
-        find_contact_gradient,
-        sample_axis_intensity,
-        sanitize_positions,
-    )
-
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
 
-    ct_result = cotrack_axis(video_path, axis, start_frame, end_frame)
+    ct_result = cotracker_tracking.cotrack_axis(video_path, axis, start_frame, end_frame)
     tip_coords = ct_result.tip_coords
     base_coords = ct_result.base_coords
 
@@ -74,15 +68,15 @@ def track_motion(video_path: str, axis: AxisDefinition,
                 continue
             perp = np.array([-axis_vec[1], axis_vec[0]]) / axis_len
 
-            t_vals, intensities = sample_axis_intensity(
+            t_vals, intensities = cotracker_tracking.sample_axis_intensity(
                 gray, base_f, axis_vec, perp, n=200, strip_w=20,
             )
-            raw_positions[i] = find_contact_gradient(t_vals, intensities)
+            raw_positions[i] = cotracker_tracking.find_contact_gradient(t_vals, intensities)
 
             if on_frame is not None:
                 on_frame(i)
 
-    positions = sanitize_positions(raw_positions, fps=fps)
+    positions = cotracker_tracking.sanitize_positions(raw_positions, fps=fps)
     timestamps = ms_of_frame(start_frame + np.arange(n_frames), fps)
 
     return TrackingResult(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+from scipy.ndimage import uniform_filter1d
 from scipy.signal import find_peaks, savgol_filter
 
 from scripture.frames import ms_of_frame
@@ -29,7 +30,6 @@ def remove_drift(positions: np.ndarray, cutoff_period_frames: int = 300) -> np.n
 
 def _adaptive_prominence(positions: np.ndarray, fps: float,
                          floor: float = 0.05) -> float:
-    from scipy.ndimage import uniform_filter1d  # noqa: PLC0415
     window = max(3, int(fps * 5))
     local_mean = uniform_filter1d(positions.astype(np.float64), size=window, mode="nearest")
     local_sq_mean = uniform_filter1d((positions ** 2).astype(np.float64), size=window, mode="nearest")
@@ -84,11 +84,7 @@ def extract_cycles(positions: np.ndarray, timestamps_ms: np.ndarray,
     if len(extrema_indices) > 0:
         extrema_indices = _enforce_alternating(extrema_indices, smoothed)
 
-    actions = []
-    for idx in extrema_indices:
-        actions.append({
-            "at": int(round(timestamps_ms[idx])),
-            "pos": int(round(np.clip(smoothed[idx], 0, 1) * 100)),
-        })
-
-    return actions
+    return [
+        {"at": round(timestamps_ms[idx]), "pos": round(np.clip(smoothed[idx], 0, 1) * 100)}
+        for idx in extrema_indices
+    ]
