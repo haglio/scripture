@@ -46,29 +46,16 @@ def _reopened(project, tmp_path, monkeypatch):
     return reopened
 
 
-def test_a_saved_project_holds_exactly_these_top_level_keys_a_change_to_them_is_a_new_shape_and_raises_the_version_evolver_reads(window, tmp_path):
-    state = _populated(window, tmp_path / "example clip.mp4")._build_state()
-
-    assert (PROJECT_FORMAT_VERSION, sorted(state)) == (1, [
-        "actions", "auto", "axes", "current_frame", "ground_truth",
-        "splits", "tracking", "version", "video_path",
-    ])
-
-
-def test_the_video_path_another_repo_rewrites_is_a_top_level_string(window, tmp_path):
+def test_a_saved_project_of_a_video_outside_the_library_holds_exactly_these_top_level_keys(
+    window, tmp_path,
+):
     video = tmp_path / "example clip.mp4"
-
     state = _populated(window, video)._build_state()
 
-    assert state["video_path"] == str(video)
-
-
-def test_a_saved_project_says_which_shape_the_repo_that_rewrites_it_is_reading(
-    window, tmp_path
-):
-    state = _populated(window, tmp_path / "example clip.mp4")._build_state()
-
-    assert state["version"] == PROJECT_FORMAT_VERSION
+    assert (PROJECT_FORMAT_VERSION, sorted(state), state["video_path"]) == (2, [
+        "actions", "auto", "axes", "current_frame", "ground_truth",
+        "splits", "tracking", "version", "video_path",
+    ], str(video))
 
 
 def test_the_scene_indices_are_strings_so_the_file_is_plain_json(window, tmp_path):
