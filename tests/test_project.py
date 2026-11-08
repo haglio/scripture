@@ -6,14 +6,15 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from app_support import haglio_settings, video_ids
 
 from scripture.auto_funscript import PipelineResult, TrackSignal
 from scripture.motion_tracker import AxisDefinition, TrackingResult
 from scripture.project import (
     PROJECT_FORMAT_VERSION,
-    VIDEO_PATH_FIELD,
     Project,
     load_project,
+    name_the_videos_by_id,
     project_from_state,
     provenance_of_actions,
     reopen_last_project,
@@ -167,25 +168,58 @@ class TestDocumentSchema:
             project_from_state(frameless)
 
 
-class TestTheShapeEvolverRewritesWhenItMovesAVideoGlobbingTheSessionsFolderForProjects:
+class TestTheVideoAProjectWasMadeOn:
 
-    def _project(self):
-        return Project(video_path="C:/videos/example clip.mp4", splits=[])
+    @pytest.fixture
+    def library(self, tmp_path, monkeypatch):
+        settings = tmp_path / "settings.json"
+        settings.write_text(json.dumps({"library_root": str(tmp_path / "library")}),
+                            encoding="utf-8")
+        monkeypatch.setenv(haglio_settings.SETTINGS_ENV, str(settings))
+        return tmp_path / "library" / "videos" / "videos"
+
+    def _video(self, folder):
+        video = folder / "example clip.mp4"
+        video.parent.mkdir(parents=True, exist_ok=True)
+        video.write_bytes(b"")
+        return video
 
     def test_a_project_saved_before_the_version_key_existed_is_the_first_shape_and_still_loads(self):
-        state = state_from_project(self._project())
+        state = state_from_project(Project(video_path="C:/videos/example clip.mp4", splits=[]))
         del state["version"]
 
         assert project_from_state(state).video_path == "C:/videos/example clip.mp4"
 
-    def test_a_saved_project_says_which_shape_it_is_evolver_rewrites_only_a_shape_it_was_written_for(self):
-        assert state_from_project(self._project())["version"] == PROJECT_FORMAT_VERSION
+    def test_a_library_video_is_named_by_its_id_and_found_again_after_it_moves(self, library):
+        video = self._video(library / "2D")
+        state = state_from_project(Project(video_path=str(video), splits=[]))
+        moved = library / "elsewhere" / "example clip.mp4"
+        for was, now in ((video_ids.record_of(video), video_ids.record_of(moved)), (video, moved)):
+            now.parent.mkdir(parents=True, exist_ok=True)
+            was.replace(now)
 
-    def test_the_video_is_recorded_at_the_top_level_under_its_declared_name(self):
-        state = state_from_project(self._project())
+        assert (state["version"], "video_path" in state) == (PROJECT_FORMAT_VERSION, False)
+        assert project_from_state(state).video_path == str(moved)
 
-        assert state[VIDEO_PATH_FIELD] == "C:/videos/example clip.mp4"
-        assert VIDEO_PATH_FIELD == "video_path"
+    def test_a_video_outside_the_library_is_named_by_its_path(self, library, tmp_path):
+        outside = str(tmp_path / "downloads" / "example clip.mp4")
+
+        assert state_from_project(Project(video_path=outside, splits=[]))["video_path"] == outside
+
+    def test_the_saved_projects_of_library_videos_are_moved_to_their_ids_once(
+        self, library, tmp_path,
+    ):
+        video = self._video(library / "2D")
+        projects = tmp_path / "sessions"
+        projects.mkdir()
+        (projects / "one.scripture").write_text(json.dumps(
+            {"version": 1, "video_path": str(video), "splits": [3]}), encoding="utf-8")
+
+        name_the_videos_by_id(projects)
+
+        assert json.loads((projects / "one.scripture").read_text(encoding="utf-8")) == {
+            "version": PROJECT_FORMAT_VERSION, "splits": [3],
+            "video_id": video_ids.id_of(video_ids.record_of(video))}
 
 
 class TestWhatMadeTheActions:

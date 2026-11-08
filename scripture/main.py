@@ -11,6 +11,7 @@ from app_support.win32 import set_app_user_model_id, stamp_pinned_shortcuts
 from shared_ui.preview import Preview, preview_of, taskbar_identity
 
 from scripture import content
+from scripture.project import PROJECTS_DIR, name_the_videos_by_id
 from scripture.tracker_environment import complaints
 
 APP_USER_MODEL_ID = "FunTime.Scripture"
@@ -58,6 +59,7 @@ def open_scripture(loading, *, preview: Preview | None, dress):
     _warn_at_start_about_the_tracker()
     loading.say(loading_scripture)
     content.refuse_an_incomplete_overlay()
+    name_the_videos_by_id(PROJECTS_DIR)
     from scripture.gui import App  # noqa: PLC0415
 
     dress()

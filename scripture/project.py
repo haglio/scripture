@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+from app_support import video_ids
 
 from scripture.auto_funscript import (
     PipelineResult,
@@ -17,9 +18,8 @@ from scripture.motion_tracker import AxisDefinition, TrackingResult
 
 Label = dict[str, object]
 
-PROJECT_FORMAT_VERSION = 1
-
-VIDEO_PATH_FIELD = "video_path"
+PROJECT_FORMAT_VERSION = 2
+PROJECTS_DIR = Path(__file__).resolve().parent.parent / "sessions"
 
 _log = logging.getLogger("scripture")
 _DAMAGED_PROJECT_ERRORS = (OSError, ValueError, LookupError, TypeError, AttributeError, StopIteration)
@@ -41,7 +41,7 @@ class Project:
 def state_from_project(project: Project) -> dict:
     return {
         "version": PROJECT_FORMAT_VERSION,
-        VIDEO_PATH_FIELD: project.video_path,
+        **_reference_to(project.video_path),
         "splits": project.splits,
         "axes": {str(i): {"tip": list(a.tip), "base": list(a.base), "frame": a.frame}
                  for i, a in project.axes.items()},
@@ -58,7 +58,7 @@ def state_from_project(project: Project) -> dict:
 def project_from_state(state: dict) -> Project:
     auto = state.get("auto")
     return Project(
-        video_path=state[VIDEO_PATH_FIELD],
+        video_path=_video_named_by(state),
         splits=state["splits"],
         axes={int(k): AxisDefinition(tip=tuple(v["tip"]), base=tuple(v["base"]),
                                      frame=v["frame"])
@@ -72,6 +72,29 @@ def project_from_state(state: dict) -> Project:
         auto=pipeline_result_from_state(auto) if auto else None,
         current_frame=state.get("current_frame", 0),
     )
+
+
+def _reference_to(video_path: str | None) -> dict:
+    if video_path is None:
+        return {video_ids.REFERENCE_PATH_KEY: None}
+    return video_ids.reference_to(video_path)
+
+
+def _video_named_by(state: dict) -> str | None:
+    if video_ids.REFERENCE_ID_KEY not in state:
+        return state[video_ids.REFERENCE_PATH_KEY]
+    return video_ids.video_named_by(state)
+
+
+def name_the_videos_by_id(projects_dir: Path) -> None:
+    for path in sorted(Path(projects_dir).glob("*.scripture")):
+        try:
+            moved = video_ids.named_by_id(load_project(str(path)))
+        except _DAMAGED_PROJECT_ERRORS:
+            _log.warning("Could not read the project %s", path, exc_info=True)
+            continue
+        if moved is not None:
+            save_project(str(path), {**moved, "version": PROJECT_FORMAT_VERSION})
 
 
 def provenance_of_actions(project: Project) -> dict | None:

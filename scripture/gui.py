@@ -75,6 +75,7 @@ from scripture.label_session import LabelSession, schedule_frames
 from scripture.motion_tracker import AxisDefinition
 from scripture.overlay import FrameMoment, auto_overlay, tracked_overlay
 from scripture.project import (
+    PROJECTS_DIR,
     Project,
     load_project,
     project_from_state,
@@ -89,7 +90,7 @@ from scripture.video import NO_VIDEO, VideoSource
 
 _ICON_COLOR = TEXT_PRIMARY
 _QT_PULSES_A_BAR_WHOSE_MAXIMUM_IS = 0
-_LAST_PROJECT_FILE = Path(__file__).resolve().parent.parent / "sessions" / ".last_session"
+_LAST_PROJECT_FILE = PROJECTS_DIR / ".last_session"
 
 _PROGRESS_STYLE = f"""
     QProgressBar {{
@@ -1547,7 +1548,7 @@ class App(QMainWindow):
     def _save_project_as(self):
         if not self._require_video():
             return False
-        sd = str(Path(__file__).resolve().parent.parent / "sessions")
+        sd = str(PROJECTS_DIR)
         dn = Path(self.video_path).stem + ".scripture"
         path, _ = QFileDialog.getSaveFileName(self, "Save As", str(Path(sd) / dn), "Scripture (*.scripture);;All (*)")
         if not path:
@@ -1555,7 +1556,7 @@ class App(QMainWindow):
         return self._do_save(path)
 
     def _load_project(self):
-        sd = str(Path(__file__).resolve().parent.parent / "sessions")
+        sd = str(PROJECTS_DIR)
         path, _ = QFileDialog.getOpenFileName(self, "Load", sd, "Scripture (*.scripture);;All (*)")
         if path:
             self._do_load(path)
