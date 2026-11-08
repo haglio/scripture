@@ -88,6 +88,7 @@ from scripture.tracking_workers import AutoProcessWorker, ProcessWorker
 from scripture.video import NO_VIDEO, VideoSource
 
 _ICON_COLOR = TEXT_PRIMARY
+_QT_PULSES_A_BAR_WHOSE_MAXIMUM_IS = 0
 _LAST_PROJECT_FILE = Path(__file__).resolve().parent.parent / "sessions" / ".last_session"
 
 _PROGRESS_STYLE = f"""
@@ -1389,7 +1390,7 @@ class App(QMainWindow):
 
     def _start_processing(self, jobs):
         tf = sum(sc.end_frame - sc.start_frame for _, sc, _ in jobs)
-        self._show_progress_ui(0, "Tracking axis with CoTracker3\u2026")
+        self._show_progress_ui(_QT_PULSES_A_BAR_WHOSE_MAXIMUM_IS, "Tracking axis with CoTracker3\u2026")
         self._process_total_frames = tf
         self._worker = ProcessWorker(self.video_path, jobs, self.fps)
         self._worker.frame_progress.connect(self._on_frame_progress)

@@ -46,7 +46,7 @@ class TestActionsByScene:
         assert [a["at"] for a in buckets[0]] == [1000, 9000]
         assert [a["at"] for a in buckets[1]] == [11000]
 
-    def test_scenes_without_actions_are_absent(self):
+    def test_scenes_without_actions_are_absent_the_window_takes_a_missing_entry_as_a_scene_not_yet_processed(self):
         scenes = [Scene(0, 300), Scene(300, 900)]
         buckets = actions_by_scene([{"at": 100, "pos": 5}], scenes, 30.0)
         assert 1 not in buckets

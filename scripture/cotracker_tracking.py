@@ -14,9 +14,15 @@ if TYPE_CHECKING:
     from scripture.motion_tracker import AxisDefinition
 
 
+def _torch_imported_where_used_it_takes_seconds_and_a_gpu_handshake():
+    import torch  # noqa: PLC0415
+
+    return torch
+
+
 @cache
 def _get_model():
-    import torch  # noqa: PLC0415
+    torch = _torch_imported_where_used_it_takes_seconds_and_a_gpu_handshake()
 
     return torch.hub.load("facebookresearch/co-tracker", "cotracker3_offline").to("cuda")
 
@@ -29,7 +35,7 @@ def sanitize_positions(positions: np.ndarray, fps: float = 30.0) -> np.ndarray:
     if n < _FILTER_WIDTH:
         return positions.copy()
 
-    cleaned = median_filter(positions, size=_FILTER_WIDTH, mode="nearest")
+    cleaned = _remove_single_frame_spikes_keeping_edges(positions)
 
     window = max(_FILTER_WIDTH, min(int(fps * 0.2), n))
     if window % 2 == 0:
@@ -125,7 +131,7 @@ def scale_coords(
 
 _TARGET_LONG_SIDE = 384
 _AXIS_POINTS = 30
-_MAX_CHUNK_FRAMES = 300
+_MAX_CHUNK_FRAMES_COTRACKER3S_ATTENTION_TAKES_FIFTY_TIMES_THE_VIDEO_TENSOR = 300
 _CHUNK_OVERLAP = 75
 _VISIBLE_ABOVE = 0.5
 
@@ -145,7 +151,7 @@ def _get_video_geometry(video_path: str, start_frame: int):
 
 def _read_chunk(video_path: str, start_frame: int, n_frames: int,
                 scaled_size: tuple[int, int]):
-    import torch  # noqa: PLC0415
+    torch = _torch_imported_where_used_it_takes_seconds_and_a_gpu_handshake()
 
     new_h, new_w = scaled_size
     cap = cv2.VideoCapture(video_path)
@@ -165,7 +171,7 @@ def _read_chunk(video_path: str, start_frame: int, n_frames: int,
 
 
 def _track_chunk(model, video_chunk, queries):
-    import torch  # noqa: PLC0415
+    torch = _torch_imported_where_used_it_takes_seconds_and_a_gpu_handshake()
 
     with torch.no_grad():
         pred_tracks, pred_visibility = model(
@@ -193,11 +199,11 @@ class TrackingChunk:
 
 
 def chunks_outward(n_frames: int, reference: int) -> list[TrackingChunk]:
-    if n_frames <= _MAX_CHUNK_FRAMES:
+    if n_frames <= _MAX_CHUNK_FRAMES_COTRACKER3S_ATTENTION_TAKES_FIFTY_TIMES_THE_VIDEO_TENSOR:
         return [TrackingChunk(0, n_frames, reference, seed=None)]
-    first_start = max(0, reference - _MAX_CHUNK_FRAMES // 2)
-    first_end = min(n_frames, first_start + _MAX_CHUNK_FRAMES)
-    first_start = max(0, first_end - _MAX_CHUNK_FRAMES)
+    first_start = max(0, reference - _MAX_CHUNK_FRAMES_COTRACKER3S_ATTENTION_TAKES_FIFTY_TIMES_THE_VIDEO_TENSOR // 2)
+    first_end = min(n_frames, first_start + _MAX_CHUNK_FRAMES_COTRACKER3S_ATTENTION_TAKES_FIFTY_TIMES_THE_VIDEO_TENSOR)
+    first_start = max(0, first_end - _MAX_CHUNK_FRAMES_COTRACKER3S_ATTENTION_TAKES_FIFTY_TIMES_THE_VIDEO_TENSOR)
     return [
         TrackingChunk(first_start, first_end, reference - first_start, seed=None),
         *_chunks_forward(first_end - _CHUNK_OVERLAP, n_frames),
@@ -207,7 +213,7 @@ def chunks_outward(n_frames: int, reference: int) -> list[TrackingChunk]:
 
 def _chunks_forward(start: int, n_frames: int) -> Iterator[TrackingChunk]:
     while start < n_frames:
-        end = min(start + _MAX_CHUNK_FRAMES, n_frames)
+        end = min(start + _MAX_CHUNK_FRAMES_COTRACKER3S_ATTENTION_TAKES_FIFTY_TIMES_THE_VIDEO_TENSOR, n_frames)
         yield TrackingChunk(start, end, 0, seed=start)
         if end == n_frames:
             return
@@ -216,7 +222,7 @@ def _chunks_forward(start: int, n_frames: int) -> Iterator[TrackingChunk]:
 
 def _chunks_backward(end: int) -> Iterator[TrackingChunk]:
     while end > 0:
-        start = max(0, end - _MAX_CHUNK_FRAMES)
+        start = max(0, end - _MAX_CHUNK_FRAMES_COTRACKER3S_ATTENTION_TAKES_FIFTY_TIMES_THE_VIDEO_TENSOR)
         seed = end - 1
         yield TrackingChunk(start, end, seed - start, seed=seed)
         if start == 0:
@@ -251,7 +257,7 @@ def ends_from_visible_points(
 
 
 def _queries_at(query_frame: int, points: np.ndarray):
-    import torch  # noqa: PLC0415
+    torch = _torch_imported_where_used_it_takes_seconds_and_a_gpu_handshake()
 
     queries = torch.zeros(1, _AXIS_POINTS, 3, device="cuda")
     queries[0, :, 0] = query_frame
@@ -286,3 +292,7 @@ def cotrack_axis(
     base_coords, tip_coords = ends_from_visible_points(all_tracks, all_vis, drawn_points)
     return CoTrackResult(tip_coords=scale_coords(tip_coords, scaled_size, orig_size),
                          base_coords=scale_coords(base_coords, scaled_size, orig_size))
+
+
+def _remove_single_frame_spikes_keeping_edges(positions: np.ndarray) -> np.ndarray:
+    return median_filter(positions, size=_FILTER_WIDTH, mode="nearest")

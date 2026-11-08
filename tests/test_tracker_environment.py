@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 TRACKER = REPO_ROOT / "scripture" / "cotracker_tracking.py"
 
 
-class FakeTorch:
+class FakeTorchSoTheseTestsRunAndCanFailOnTheGateWhereTheRealOneWouldOnlySkip:
 
     def __init__(self, cuda_version="12.8", sees_a_device=True):
         self.__version__ = "2.6.0"
@@ -23,9 +23,9 @@ class FakeTorch:
 @pytest.fixture
 def machine(monkeypatch):
     def described(*, driver=True, torch=None):
-        monkeypatch.setattr(tracker_environment, "_has_an_nvidia_driver", lambda: driver)
+        monkeypatch.setattr(tracker_environment, "_has_an_nvidia_driver_asked_of_nvidia_smi_not_of_the_torch_being_checked", lambda: driver)
         monkeypatch.setattr(tracker_environment, "_torch",
-                            lambda: FakeTorch() if torch is None else torch)
+                            lambda: FakeTorchSoTheseTestsRunAndCanFailOnTheGateWhereTheRealOneWouldOnlySkip() if torch is None else torch)
         return complaints()
     return described
 
@@ -36,13 +36,13 @@ class TestWhatTheCheckerSays:
         assert machine() == []
 
     def test_the_cpu_wheel_is_named_along_with_the_way_out_of_it(self, machine):
-        (said,) = machine(torch=FakeTorch(cuda_version=None))
+        (said,) = machine(torch=FakeTorchSoTheseTestsRunAndCanFailOnTheGateWhereTheRealOneWouldOnlySkip(cuda_version=None))
 
         assert "CPU build" in said
         assert "download.pytorch.org/whl/cu" in said
 
     def test_a_cuda_build_the_driver_is_too_old_for_is_told_apart(self, machine):
-        (said,) = machine(torch=FakeTorch(sees_a_device=False))
+        (said,) = machine(torch=FakeTorchSoTheseTestsRunAndCanFailOnTheGateWhereTheRealOneWouldOnlySkip(sees_a_device=False))
 
         assert "sees no device" in said
         assert "CPU build" not in said
@@ -51,7 +51,7 @@ class TestWhatTheCheckerSays:
         assert machine(driver=False) == []
 
     def test_with_no_driver_the_cpu_wheel_draws_no_complaint_either(self, machine):
-        assert machine(driver=False, torch=FakeTorch(cuda_version=None)) == []
+        assert machine(driver=False, torch=FakeTorchSoTheseTestsRunAndCanFailOnTheGateWhereTheRealOneWouldOnlySkip(cuda_version=None)) == []
 
     def test_no_torch_at_all_is_said_rather_than_raised(self, machine):
         assert "torch is not installed" in machine(torch=False)[0]
@@ -79,12 +79,12 @@ class _Finished:
 class TestAskingForTheDriver:
 
     def test_no_nvidia_smi_on_the_path_is_no_driver(self):
-        assert not tracker_environment._has_an_nvidia_driver(which=lambda _name: None)
+        assert not tracker_environment._has_an_nvidia_driver_asked_of_nvidia_smi_not_of_the_torch_being_checked(which=lambda _name: None)
 
     def test_an_nvidia_smi_that_fails_is_no_driver(self):
-        assert not tracker_environment._has_an_nvidia_driver(
+        assert not tracker_environment._has_an_nvidia_driver_asked_of_nvidia_smi_not_of_the_torch_being_checked(
             which=lambda _name: "nvidia-smi", run=lambda *_args, **_kw: _Finished(9))
 
     def test_an_nvidia_smi_that_answers_is_a_driver(self):
-        assert tracker_environment._has_an_nvidia_driver(
+        assert tracker_environment._has_an_nvidia_driver_asked_of_nvidia_smi_not_of_the_torch_being_checked(
             which=lambda _name: "nvidia-smi", run=lambda *_args, **_kw: _Finished(0))

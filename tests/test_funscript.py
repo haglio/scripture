@@ -26,7 +26,7 @@ class TestBuildFunscript:
         timestamps = [a["at"] for a in result["actions"]]
         assert timestamps == [1000, 2000, 3000]
 
-    def test_the_script_says_which_app_authored_it(self):
+    def test_the_script_says_which_app_authored_it_an_outside_player_shows_the_credit_for_a_script_it_did_not_make(self):
         assert build_funscript([], 100, provenance=None)["metadata"]["creator"] == CREATOR
 
 

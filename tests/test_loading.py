@@ -23,7 +23,7 @@ class _Loading:
 
 def test_the_launch_says_each_step_before_it_takes_it():
     loading = _Loading()
-    with patch.object(main, "_report_tracker_environment") as checked, \
+    with patch.object(main, "_warn_at_start_about_the_tracker_the_gate_has_no_gpu_and_installs_the_cpu_wheel_on_purpose") as checked, \
          patch("scripture.gui.App") as window_class:
         window = main.open_scripture(loading, preview=None, dress=lambda: None)
 
@@ -72,7 +72,7 @@ def test_a_launch_on_a_settings_file_missing_a_line_its_example_documents_refuse
     window = MagicMock()
     monkeypatch.setitem(sys.modules, "scripture.gui", SimpleNamespace(App=window))
 
-    with patch.object(main, "_report_tracker_environment"), \
+    with patch.object(main, "_warn_at_start_about_the_tracker_the_gate_has_no_gpu_and_installs_the_cpu_wheel_on_purpose"), \
          pytest.raises(MissingOverlayKey, match="class_colors"):
         main.open_scripture(_Loading(), preview=None, dress=lambda: None)
 
@@ -88,6 +88,6 @@ def test_the_pyproject_says_the_launch_needs_every_key_of_the_example_in_the_loc
 
 
 def test_what_is_wrong_with_the_tracker_goes_to_the_launcher_s_log(capsys):
-    main._report_tracker_environment(found=lambda: ["an invented complaint"])
+    main._warn_at_start_about_the_tracker_the_gate_has_no_gpu_and_installs_the_cpu_wheel_on_purpose(found=lambda: ["an invented complaint"])
 
     assert capsys.readouterr().err == "scripture: an invented complaint\n"

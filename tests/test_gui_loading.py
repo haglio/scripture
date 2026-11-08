@@ -3,7 +3,10 @@ from __future__ import annotations
 from scripture import gui
 from scripture.project import save_project
 from scripture.video import VideoSource
-from tests.gui_doubles import Capture, Dialogs
+from tests.gui_doubles import (
+    CaptureOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly,
+    DialogsOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly,
+)
 
 
 def _project_naming(video, path):
@@ -13,10 +16,10 @@ def _project_naming(video, path):
 
 def test_a_project_whose_video_moved_leaves_the_open_one_playing(
         window, tmp_path, monkeypatch):
-    playing = Capture()
+    playing = CaptureOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly()
     window.video = VideoSource(playing)
     kept = window.video
-    dialogs = Dialogs()
+    dialogs = DialogsOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly()
     monkeypatch.setattr(gui, "QMessageBox", dialogs)
     project = _project_naming(tmp_path / "moved clip.mp4", tmp_path / "one.scripture")
 
@@ -29,9 +32,9 @@ def test_a_project_whose_video_moved_leaves_the_open_one_playing(
 
 def test_a_project_that_opens_releases_the_capture_it_replaces(
         window, tmp_path, monkeypatch):
-    replaced = Capture()
+    replaced = CaptureOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly()
     window.video = VideoSource(replaced)
-    opening = Capture()
+    opening = CaptureOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly()
     monkeypatch.setattr(gui.cv2, "VideoCapture", lambda _path: opening)
     project = _project_naming(tmp_path / "example clip.mp4", tmp_path / "two.scripture")
 
@@ -48,7 +51,7 @@ def test_a_loaded_project_starts_its_own_labeling_session(
     window.session.after_label(0, 800)
     window.session.active = True
     window.btn_label_session.setChecked(True)
-    monkeypatch.setattr(gui.cv2, "VideoCapture", lambda _path: Capture())
+    monkeypatch.setattr(gui.cv2, "VideoCapture", lambda _path: CaptureOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly())
     project = _project_naming(tmp_path / "example clip.mp4", tmp_path / "three.scripture")
 
     window._do_load(project)

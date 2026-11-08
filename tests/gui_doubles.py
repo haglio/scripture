@@ -27,7 +27,7 @@ class CloseEvent:
         self.accepted = False
 
 
-class Dialogs:
+class DialogsOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly:
 
     StandardButton = QMessageBox.StandardButton
 
@@ -45,7 +45,7 @@ class Dialogs:
         self.shown.append((title, text))
 
 
-class FileDialog:
+class FileDialogOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly:
 
     def __init__(self, chosen=""):
         self._chosen = chosen
@@ -57,7 +57,7 @@ class FileDialog:
         return self._chosen, ""
 
 
-class Capture:
+class CaptureOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly:
 
     def __init__(self, opened=True):
         self._opened = opened
