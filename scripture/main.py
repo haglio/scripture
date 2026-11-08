@@ -42,7 +42,7 @@ def _name_this_process() -> None:
     ProcessNamer("Scripture", icon=_ICON).name_this_process("Scripture", interpreter="python.exe")
 
 
-def _warn_at_start_about_the_tracker_the_gate_has_no_gpu_and_installs_the_cpu_wheel_on_purpose(
+def _warn_at_start_about_the_tracker(
         *, found=complaints) -> None:
     for said in found():
         print(f"scripture: {said}", file=sys.stderr)
@@ -55,7 +55,7 @@ def _log_errors_and_keep_running() -> None:
 def open_scripture(loading, *, preview: Preview | None, dress):
     checking, loading_scripture, opening = (step for step, _weight in STEPS)
     loading.say(checking)
-    _warn_at_start_about_the_tracker_the_gate_has_no_gpu_and_installs_the_cpu_wheel_on_purpose()
+    _warn_at_start_about_the_tracker()
     loading.say(loading_scripture)
     content.refuse_an_incomplete_overlay()
     from scripture.gui import App  # noqa: PLC0415

@@ -10,6 +10,7 @@ from scripture.gui import TimelineState, TimelineWidget, Viewport, action_dot_fr
 from scripture.motion_tracker import AxisDefinition
 from scripture.roi_lock import Detection
 from scripture.scene import Scene
+from tests.gui_doubles import Capture, Dialogs, FileDialog, Footage
 
 
 def _right_click_at(x, y):
@@ -111,3 +112,7 @@ def test_the_viewport_paints_no_target_when_the_tracker_has_none(qt_app):
     viewport.set_auto_overlay({"active": False})
 
     viewport.render(QPixmap(viewport.size()))
+
+
+def test_no_stand_in_subclasses_the_real_thing_so_a_window_asking_for_more_fails_loudly():
+    assert all(double.__bases__ == (object,) for double in (Capture, Dialogs, FileDialog, Footage))

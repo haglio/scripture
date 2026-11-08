@@ -23,7 +23,7 @@ class FakeTorchSoTheseTestsRunAndCanFailOnTheGateWhereTheRealOneWouldOnlySkip:
 @pytest.fixture
 def machine(monkeypatch):
     def described(*, driver=True, torch=None):
-        monkeypatch.setattr(tracker_environment, "_has_an_nvidia_driver_asked_of_nvidia_smi_not_of_the_torch_being_checked", lambda: driver)
+        monkeypatch.setattr(tracker_environment, "_has_an_nvidia_driver", lambda: driver)
         monkeypatch.setattr(tracker_environment, "_torch",
                             lambda: FakeTorchSoTheseTestsRunAndCanFailOnTheGateWhereTheRealOneWouldOnlySkip() if torch is None else torch)
         return complaints()
@@ -35,13 +35,13 @@ class TestWhatTheCheckerSays:
     def test_a_working_cuda_build_draws_no_complaint(self, machine):
         assert machine() == []
 
-    def test_the_cpu_wheel_is_named_along_with_the_way_out_of_it(self, machine):
+    def test_the_cpu_wheel_is_named_along_with_the_way_out_of_it_a_rebuilt_venv_gets_it_from_pypi_on_windows(self, machine):
         (said,) = machine(torch=FakeTorchSoTheseTestsRunAndCanFailOnTheGateWhereTheRealOneWouldOnlySkip(cuda_version=None))
 
         assert "CPU build" in said
         assert "download.pytorch.org/whl/cu" in said
 
-    def test_a_cuda_build_the_driver_is_too_old_for_is_told_apart(self, machine):
+    def test_a_cuda_build_the_driver_is_too_old_for_is_told_apart_the_driver_is_asked_not_the_torch_being_checked(self, machine):
         (said,) = machine(torch=FakeTorchSoTheseTestsRunAndCanFailOnTheGateWhereTheRealOneWouldOnlySkip(sees_a_device=False))
 
         assert "sees no device" in said
@@ -79,12 +79,12 @@ class _Finished:
 class TestAskingForTheDriver:
 
     def test_no_nvidia_smi_on_the_path_is_no_driver(self):
-        assert not tracker_environment._has_an_nvidia_driver_asked_of_nvidia_smi_not_of_the_torch_being_checked(which=lambda _name: None)
+        assert not tracker_environment._has_an_nvidia_driver(which=lambda _name: None)
 
     def test_an_nvidia_smi_that_fails_is_no_driver(self):
-        assert not tracker_environment._has_an_nvidia_driver_asked_of_nvidia_smi_not_of_the_torch_being_checked(
+        assert not tracker_environment._has_an_nvidia_driver(
             which=lambda _name: "nvidia-smi", run=lambda *_args, **_kw: _Finished(9))
 
     def test_an_nvidia_smi_that_answers_is_a_driver(self):
-        assert tracker_environment._has_an_nvidia_driver_asked_of_nvidia_smi_not_of_the_torch_being_checked(
+        assert tracker_environment._has_an_nvidia_driver(
             which=lambda _name: "nvidia-smi", run=lambda *_args, **_kw: _Finished(0))

@@ -212,7 +212,7 @@ class TestTheTrackingModel:
         assert loads == [("facebookresearch/co-tracker", "cotracker3_offline")]
 
 
-class TestTheChunksOfALongScene:
+class TestTheChunksOfALongSceneCoTracker3sAttentionTakesFiftyTimesTheVideoTensor:
 
     def test_a_scene_that_fits_in_one_chunk_runs_once_from_the_drawn_axis(self):
         assert chunks_outward(300, reference=120) == [TrackingChunk(0, 300, 120, seed=None)]

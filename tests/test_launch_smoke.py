@@ -14,6 +14,8 @@ from app_support.launch_smoke import (
 )
 from app_support.launcher import dry_run
 
+from scripture import content
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "scripture"
 LAUNCHER = REPO_ROOT / "launch_scripture.vbs"
@@ -80,6 +82,7 @@ def test_a_launch_import_that_cannot_resolve_fails_here():
         _run_the_launchs_way, _launch_imports(), "scripture.gui")
 
 
+@runs_the_launcher
 def test_the_window_and_qt_are_imported_only_once_a_window_is_wanted():
     done = _run_the_launchs_way([
         "import sys, scripture.main",
@@ -90,12 +93,19 @@ def test_the_window_and_qt_are_imported_only_once_a_window_is_wanted():
     assert done.stdout.strip() == "[]"
 
 
-def test_the_launcher_runs_the_venv_the_suite_runs_on_so_a_green_suite_speaks_for_the_app_that_opens():
+@runs_the_launcher
+def test_the_launcher_runs_the_checkouts_own_venv_the_suite_runs_on_where_the_checkout_has_one():
     named = Path(dry_run(LAUNCHER).value("interpreter"))
 
-    assert named.parent.parent.name == ".venv"
-    assert named.name == "python.exe"
+    assert named == REPO_ROOT / ".venv" / "Scripts" / "python.exe"
+    if named.is_file():
+        assert Path(sys.executable).resolve() == named.resolve()
 
 
 def test_nothing_but_the_package_sits_beside_it_at_the_root_an_installed_copy_would_leave_a_root_module_behind():
     assert sorted(path.name for path in REPO_ROOT.glob("*.py")) == ["vulture_whitelist.py"]
+
+
+def test_the_overlay_is_read_from_the_top_of_the_checkout_where_his_own_file_is_and_the_example_from_inside_the_package_an_installed_copy_ships():
+    assert content.LOCAL_CONTENT == REPO_ROOT / "content.local.json"
+    assert content.EXAMPLE_CONTENT == REPO_ROOT / "scripture" / "content.example.json"

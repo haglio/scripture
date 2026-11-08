@@ -7,8 +7,8 @@ import numpy as np
 from scripture import gui
 from scripture.motion_tracker import TrackingResult
 from tests.gui_doubles import (
-    DialogsOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly,
-    FileDialogOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly,
+    Dialogs,
+    FileDialog,
     Footage,
 )
 from tests.stamps import A_STAMP
@@ -28,7 +28,7 @@ def test_export_writes_every_scene_s_actions_in_time_order(
         window, tmp_path, monkeypatch):
     _ready_to_export(window, tmp_path)
     target = tmp_path / "example clip.funscript"
-    monkeypatch.setattr(gui, "QFileDialog", FileDialogOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly(chosen=str(target)))
+    monkeypatch.setattr(gui, "QFileDialog", FileDialog(chosen=str(target)))
 
     window._export()
 
@@ -46,7 +46,7 @@ def test_export_writes_what_made_the_actions_beside_the_format_version(
                               provenance=A_STAMP)
         for scene in (0, 1)})
     target = tmp_path / "example clip.funscript"
-    monkeypatch.setattr(gui, "QFileDialog", FileDialogOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly(chosen=str(target)))
+    monkeypatch.setattr(gui, "QFileDialog", FileDialog(chosen=str(target)))
 
     window._export()
 
@@ -55,7 +55,7 @@ def test_export_writes_what_made_the_actions_beside_the_format_version(
 
 def test_a_cancelled_export_dialog_writes_nothing(window, tmp_path, monkeypatch):
     _ready_to_export(window, tmp_path)
-    monkeypatch.setattr(gui, "QFileDialog", FileDialogOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly(chosen=""))
+    monkeypatch.setattr(gui, "QFileDialog", FileDialog(chosen=""))
 
     window._export()
 
@@ -65,10 +65,10 @@ def test_a_cancelled_export_dialog_writes_nothing(window, tmp_path, monkeypatch)
 def test_exporting_before_a_scene_is_processed_says_so_and_writes_nothing(
         window, tmp_path, monkeypatch):
     window.video_path = str(tmp_path / "example clip.mp4")
-    dialogs = DialogsOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly()
+    dialogs = Dialogs()
     monkeypatch.setattr(gui, "QMessageBox", dialogs)
     monkeypatch.setattr(
-        gui, "QFileDialog", FileDialogOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly(chosen=str(tmp_path / "example clip.funscript")))
+        gui, "QFileDialog", FileDialog(chosen=str(tmp_path / "example clip.funscript")))
 
     window._export()
 
