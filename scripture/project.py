@@ -61,7 +61,7 @@ def project_from_state(state: dict) -> Project:
         video_path=state[VIDEO_PATH_FIELD],
         splits=state["splits"],
         axes={int(k): AxisDefinition(tip=tuple(v["tip"]), base=tuple(v["base"]),
-                                     frame=v.get("frame", 0))
+                                     frame=v["frame"])
               for k, v in state.get("axes", {}).items()},
         actions={int(k): v for k, v in state.get("actions", {}).items()},
         tracking={int(k): _tracking_from_state(v)

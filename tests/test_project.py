@@ -158,6 +158,14 @@ class TestDocumentSchema:
         assert restored.auto is None
         assert restored.current_frame == 0
 
+    def test_an_axis_without_its_frame_is_a_damaged_file_never_an_axis_on_the_video_s_first_frame(self):
+        frameless = {"video_path": "C:/videos/example clip.mp4", "splits": [100],
+                     "axes": {"0": {"tip": [10, 20], "base": [30, 40]},
+                              "1": {"tip": [50, 60], "base": [70, 80]}}}
+
+        with pytest.raises(LookupError):
+            project_from_state(frameless)
+
 
 class TestTheShapeEvolverRewritesWhenItMovesAVideoGlobbingTheSessionsFolderForProjects:
 
