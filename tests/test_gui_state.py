@@ -7,7 +7,7 @@ import numpy as np
 from scripture import gui
 from scripture.motion_tracker import AxisDefinition, TrackingResult
 from scripture.project import PROJECT_FORMAT_VERSION, save_project
-from tests.gui_doubles import Capture, Footage
+from tests.gui_doubles import CaptureOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly, Footage
 
 _LABEL = {"tip": (40, 30), "base": (40, 150), "contact": (40, 90), "is_action": True}
 _LABEL_ON_DISK = {"tip": [40, 30], "base": [40, 150], "contact": [40, 90],
@@ -40,13 +40,13 @@ def _saved(window, tmp_path, name="example clip.scripture"):
 
 def _reopened(project, tmp_path, monkeypatch):
     monkeypatch.setattr(gui, "_LAST_PROJECT_FILE", tmp_path / ".last_session")
-    monkeypatch.setattr(gui.cv2, "VideoCapture", lambda _path: Capture())
+    monkeypatch.setattr(gui.cv2, "VideoCapture", lambda _path: CaptureOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly())
     reopened = gui.App()
     reopened._do_load(str(project))
     return reopened
 
 
-def test_a_saved_project_holds_exactly_these_top_level_keys(window, tmp_path):
+def test_a_saved_project_holds_exactly_these_top_level_keys_a_change_to_them_is_a_new_shape_and_raises_the_version_evolver_reads(window, tmp_path):
     state = _populated(window, tmp_path / "example clip.mp4")._build_state()
 
     assert sorted(state) == [
@@ -81,7 +81,7 @@ def test_the_scene_indices_are_strings_so_the_file_is_plain_json(window, tmp_pat
     assert list(state["ground_truth"]["1"]) == ["800"]
 
 
-def test_each_scene_entry_carries_the_keys_the_loader_reads(window, tmp_path):
+def test_each_scene_entry_carries_the_keys_the_loader_reads_the_round_trip_cannot_see_a_field_that_stops_being_written_on_both_sides(window, tmp_path):
     state = _populated(window, tmp_path / "example clip.mp4")._build_state()
 
     assert sorted(state["axes"]["0"]) == ["base", "frame", "tip"]

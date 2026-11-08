@@ -24,7 +24,7 @@ def test_the_launcher_runs_the_console_interpreter_its_log_needs():
     assert LAUNCHER.interpreter == "python.exe"
 
 
-def test_the_app_prepares_that_copy_for_next_time(tmp_path: Path):
+def test_the_app_prepares_that_copy_for_next_time_its_row_the_apps_name_alone_one_app_one_window(tmp_path: Path):
     assert_the_process_is_named(
         _name_this_process, tmp_path,
         ProcessName(

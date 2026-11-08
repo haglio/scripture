@@ -26,7 +26,7 @@ LOADING_CAPTION = "Scripture Loading"
 CANCEL_HINT = "Press Esc to cancel opening Scripture"
 
 
-def _set_windows_app_user_model_id(preview: Preview | None) -> None:
+def _claim_the_taskbar_identity_before_the_first_window(preview: Preview | None) -> None:
     if sys.platform != "win32":
         return
     with contextlib.suppress(OSError):
@@ -42,7 +42,8 @@ def _name_this_process() -> None:
     ProcessNamer("Scripture", icon=_ICON).name_this_process("Scripture", interpreter="python.exe")
 
 
-def _report_tracker_environment(*, found=complaints) -> None:
+def _warn_at_start_about_the_tracker_the_gate_has_no_gpu_and_installs_the_cpu_wheel_on_purpose(
+        *, found=complaints) -> None:
     for said in found():
         print(f"scripture: {said}", file=sys.stderr)
 
@@ -54,7 +55,7 @@ def _log_errors_and_keep_running() -> None:
 def open_scripture(loading, *, preview: Preview | None, dress):
     checking, loading_scripture, opening = (step for step, _weight in STEPS)
     loading.say(checking)
-    _report_tracker_environment()
+    _warn_at_start_about_the_tracker_the_gate_has_no_gpu_and_installs_the_cpu_wheel_on_purpose()
     loading.say(loading_scripture)
     content.refuse_an_incomplete_overlay()
     from scripture.gui import App  # noqa: PLC0415
@@ -77,7 +78,7 @@ def open_the_loading_screen(preview: Preview | None):
 def main():
     _log_errors_and_keep_running()
     preview = preview_of(PROJECT_DIR)
-    _set_windows_app_user_model_id(preview)
+    _claim_the_taskbar_identity_before_the_first_window(preview)
     _name_this_process()
 
     from PyQt6.QtWidgets import QApplication  # noqa: PLC0415

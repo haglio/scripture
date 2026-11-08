@@ -216,3 +216,35 @@ class TestTheViewport:
         viewport.set_label({"contact": None, "tip": None, "base": (100, 100)})
 
         assert viewport._hit_point(*viewport._frame_to_viewport(100, 100)) == "base"
+
+
+class _FootageCountingReads(Footage):
+    def __init__(self, total_frames):
+        super().__init__(total_frames)
+        self.reads = 0
+
+    def frame_at(self, _index):
+        self.reads += 1
+        return np.zeros((120, 160, 3), dtype=np.uint8)
+
+
+def test_dragging_a_labels_point_reads_no_frame_from_the_video(window):
+    footage = _FootageCountingReads(total_frames=1000)
+    window.video = footage
+    window.splits = []
+    window._rebuild_scenes()
+    window.annotations.set_label(0, 100, _label())
+    window.current_frame_idx = 100
+    footage.reads = 0
+
+    window._on_point_dragged("contact", 7, 8)
+
+    assert footage.reads == 0
+
+
+def test_a_new_label_in_a_scene_with_no_drawn_axis_has_no_tip_and_no_base_the_automatic_sessions_draw_none_and_the_trainer_derives_the_axis_from_the_anchor_track(scene):
+    scene.current_frame_idx = 100
+
+    entry = scene._ensure_label_of_frame()
+
+    assert (entry["tip"], entry["base"]) == (None, None)

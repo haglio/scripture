@@ -20,7 +20,7 @@ from scripture.project import (
     save_project,
     state_from_project,
 )
-from tests.stamps import A_STAMP, METHOD
+from tests.stamps import A_STAMP, METHOD_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT
 
 
 def _tracked(provenance):
@@ -159,10 +159,19 @@ class TestDocumentSchema:
         assert restored.current_frame == 0
 
 
-class TestTheShapeAnotherAppRewrites:
+class TestTheShapeEvolverRewritesWhenItMovesAVideoGlobbingTheSessionsFolderForProjects:
 
     def _project(self):
         return Project(video_path="C:/videos/example clip.mp4", splits=[])
+
+    def test_a_saved_project_says_which_shape_it_is_evolver_rewrites_only_a_shape_it_was_written_for(self):
+        assert state_from_project(self._project())["version"] == PROJECT_FORMAT_VERSION
+
+    def test_a_project_saved_before_the_version_key_existed_is_the_first_shape_and_still_loads(self):
+        state = state_from_project(self._project())
+        del state["version"]
+
+        assert project_from_state(state).video_path == "C:/videos/example clip.mp4"
 
     def test_a_saved_project_says_which_shape_it_is(self):
         assert state_from_project(self._project())["version"] == PROJECT_FORMAT_VERSION
@@ -192,7 +201,7 @@ class TestWhatMadeTheActions:
         assert provenance_of_actions(project) is None
 
     def test_scenes_the_auto_pass_filled_carry_its_stamp(self):
-        auto_stamp = {**A_STAMP, METHOD: "roi_flow"}
+        auto_stamp = {**A_STAMP, METHOD_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT: "roi_flow"}
         project = Project(
             actions={0: [{"at": 0, "pos": 50}], 1: [{"at": 900, "pos": 90}]},
             auto=_auto_pass(auto_stamp))
@@ -203,9 +212,9 @@ class TestWhatMadeTheActions:
         project = Project(
             actions={0: [{"at": 0, "pos": 50}]},
             tracking={0: _tracked(A_STAMP)},
-            auto=_auto_pass({**A_STAMP, METHOD: "roi_flow"}))
+            auto=_auto_pass({**A_STAMP, METHOD_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT: "roi_flow"}))
 
-        assert provenance_of_actions(project) == {**A_STAMP, METHOD: None}
+        assert provenance_of_actions(project) == {**A_STAMP, METHOD_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT: None}
 
 
 def _pointing_at(project: Path, tmp_path: Path) -> Path:

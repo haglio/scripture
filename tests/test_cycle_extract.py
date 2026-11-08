@@ -48,9 +48,9 @@ class TestExtractCycles:
         assert actions == []
 
     def test_drifting_signal_detects_cycles(self):
-        drift = np.linspace(0, 15, 1000)
+        drift_that_leaves_the_cycles_under_the_default_prominence_once_normalized = np.linspace(0, 15, 1000)
         cycles = np.sin(np.linspace(0, 20 * np.pi, 1000))
-        raw = drift + cycles
+        raw = drift_that_leaves_the_cycles_under_the_default_prominence_once_normalized + cycles
         positions = (raw - raw.min()) / (raw.max() - raw.min())
         timestamps_ms = np.linspace(0, 33333, 1000)
         actions = extract_cycles(positions, timestamps_ms, fps=30)
@@ -92,7 +92,7 @@ class TestRemoveDrift:
 
         np.testing.assert_allclose(result, [0.0, 0.5, 1.0])
 
-    def test_an_even_window_is_the_odd_one_above_it(self):
+    def test_an_even_window_is_the_odd_one_above_it_scipys_savitzky_golay_filter_needs_an_odd_one(self):
         signal = np.random.RandomState(42).rand(500)
 
         np.testing.assert_allclose(

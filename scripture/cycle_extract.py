@@ -28,6 +28,10 @@ def remove_drift(positions: np.ndarray, cutoff_period_frames: int = 300) -> np.n
     return np.clip(corrected, 0, 1)
 
 
+_INTERQUARTILE_RANGE_PER_STANDARD_DEVIATION = 1.35
+_SHARE_OF_THE_SPREAD = 0.3
+
+
 def _adaptive_prominence(positions: np.ndarray, fps: float,
                          floor: float = 0.05) -> float:
     window = max(3, int(fps * 5))
@@ -35,7 +39,7 @@ def _adaptive_prominence(positions: np.ndarray, fps: float,
     local_sq_mean = uniform_filter1d((positions ** 2).astype(np.float64), size=window, mode="nearest")
     local_std = np.sqrt(np.maximum(local_sq_mean - local_mean ** 2, 0))
     median_std = np.median(local_std)
-    return max(floor, 0.3 * median_std * 1.35)
+    return max(floor, _SHARE_OF_THE_SPREAD * median_std * _INTERQUARTILE_RANGE_PER_STANDARD_DEVIATION)
 
 
 _MIN_CYCLE_DISTANCE_MS = 200.0

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from PyQt6.QtWidgets import QMenu, QSizePolicy, QToolBar
+from PyQt6.QtWidgets import QApplication, QMenu, QSizePolicy, QToolBar
 from shared_ui.colors import RED, TEXT_PRIMARY
 from shared_ui.icons import qt_icon
 from shared_ui.spacing import MARGIN_STANDARD
@@ -22,7 +22,7 @@ def _texts(toolbar: QToolBar) -> list[str]:
     return [action.text() for action in toolbar.actions()]
 
 
-def test_the_spacer_comes_before_the_file_actions(toolbar, window):
+def test_the_spacer_comes_before_the_file_actions_pushing_them_right_where_evolvers_toolbar_puts_its_own(toolbar, window):
     places = toolbar.actions()
     spacer = places.index(window._spacer_action)
     first_action = min(places.index(a) for a in places if a.text() in _FILE_ACTIONS)
@@ -90,3 +90,17 @@ def test_the_point_menus_remove_items_wear_the_familys_cross(window, monkeypatch
     (menu,) = shown
     (remove_tip,) = [action for action in menu.actions() if action.text() == "Remove Tip"]
     assert _drawn(remove_tip.icon()) == _drawn(qt_icon("cross"))
+
+
+def test_showing_the_progress_bar_in_the_spacers_place_moves_nothing_else_in_the_toolbar(toolbar, window):
+    window.resize(1400, 800)
+    window.show()
+    QApplication.processEvents()
+    others = [a for a in toolbar.actions() if a.text() in _FILE_ACTIONS]
+    before = [toolbar.widgetForAction(a).geometry() for a in others]
+    assert all(place.x() > 0 for place in before)
+
+    window._show_progress_ui(100, "")
+    QApplication.processEvents()
+
+    assert [toolbar.widgetForAction(a).geometry() for a in others] == before

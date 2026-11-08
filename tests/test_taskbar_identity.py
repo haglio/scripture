@@ -17,13 +17,13 @@ def test_the_pin_is_stamped_with_the_identity_the_process_claims(monkeypatch):
     monkeypatch.setattr(main, "stamp_pinned_shortcuts",
                         lambda app_id, names: stamped.append((app_id, tuple(names))) or {})
 
-    main._set_windows_app_user_model_id(None)
+    main._claim_the_taskbar_identity_before_the_first_window(None)
 
     assert claimed == [main.APP_USER_MODEL_ID]
     assert stamped == [(main.APP_USER_MODEL_ID, ("Scripture",))]
 
 
-def test_a_process_windows_refuses_an_identity_still_stamps_its_pin(monkeypatch):
+def test_a_process_windows_refuses_an_identity_still_stamps_its_pin_the_identity_only_changes_the_icon(monkeypatch):
     stamped: list[str] = []
 
     def refuse(app_id: str) -> None:
@@ -34,7 +34,7 @@ def test_a_process_windows_refuses_an_identity_still_stamps_its_pin(monkeypatch)
     monkeypatch.setattr(main, "stamp_pinned_shortcuts",
                         lambda app_id, names: stamped.append(app_id) or {})
 
-    main._set_windows_app_user_model_id(None)
+    main._claim_the_taskbar_identity_before_the_first_window(None)
 
     assert stamped == [main.APP_USER_MODEL_ID]
 
@@ -47,7 +47,7 @@ def test_a_preview_claims_a_taskbar_button_of_its_own_and_leaves_the_pin_to_the_
     monkeypatch.setattr(main, "stamp_pinned_shortcuts",
                         lambda app_id, names: stamped.append(app_id) or {})
 
-    main._set_windows_app_user_model_id(Preview(feature=None))
+    main._claim_the_taskbar_identity_before_the_first_window(Preview(feature=None))
 
     assert claimed == [f"{main.APP_USER_MODEL_ID}.Preview"]
     assert stamped == [main.APP_USER_MODEL_ID]
@@ -65,5 +65,5 @@ def _calls_in_the_launch() -> set[str]:
 def test_the_launch_hands_this_checkouts_preview_to_the_taskbar_and_the_window():
     calls = _calls_in_the_launch()
 
-    assert {"preview_of(PROJECT_DIR)", "_set_windows_app_user_model_id(preview)",
+    assert {"preview_of(PROJECT_DIR)", "_claim_the_taskbar_identity_before_the_first_window(preview)",
             "App(preview=preview)"} <= calls

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +14,7 @@ from scripture.auto_funscript import (
     PipelineRun,
     TrackConfig,
     TrackSignal,
+    _make_yolo_detector,
     anti_plateau_normalize,
     compute_positions,
     flow_to_position,
@@ -33,7 +36,11 @@ from scripture.roi_lock import (
     find_interacting,
     smooth_roi,
 )
-from tests.stamps import A_STAMP, METHOD, METHOD_VERSION
+from tests.stamps import (
+    A_STAMP,
+    METHOD_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT,
+    METHOD_VERSION_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT,
+)
 from tests.videos import a_flat_video
 
 ANCHOR, ANCHOR_TIP = ANCHOR_CLASSES[0], ANCHOR_CLASSES[1]
@@ -129,8 +136,8 @@ class TestWeightedFlow:
         assert dx == 0.0
 
 
-class TestFlowToPosition:
-    def test_maps_flow_velocity_around_center(self):
+class TestFlowToPositionFunGensOwnMappingFromItsLiveYoloRoiTrackerYoloFindsTheAnchorAndFlowInTheRoiDrivesThePosition:
+    def test_maps_flow_velocity_around_center_a_scaled_velocity_of_a_rhythmic_motion_is_the_same_wave_shifted_in_phase(self):
         dy = np.array([0.0, 2.0, -2.0, 10.0, -10.0])
         pos = flow_to_position(dy, gain=10.0, median_window=1)
         assert pos.tolist() == [50.0, 70.0, 30.0, 100.0, 0.0]
@@ -141,7 +148,7 @@ class TestFlowToPosition:
         assert pos[2] == 50.0
 
 
-class TestAntiPlateauNormalize:
+class TestAntiPlateauNormalizeCenteredOnItsWindowWhichFunGensLiveCausalVersionCannotBe:
     def test_moderate_wave_expands_to_full_range(self):
         t = np.arange(600)
         wave = 50 + 20 * np.sin(2 * np.pi * t / 30)
@@ -271,7 +278,7 @@ class TestTrackFlowSignal:
         assert not result.roi_active[-3:].any()
         assert result.lock[-1] == "none"
 
-    def test_belief_stays_frozen_during_occlusion(self):
+    def test_belief_stays_frozen_during_occlusion_every_way_of_moving_it_tried_predicted_the_reappearing_anchor_worse_on_real_footage(self):
         frames = [textured_frame(0) for _ in range(10)]
         anchor = Detection(ANCHOR, 0.9, (100, 60, 60, 90))
         face_over_anchor = Detection("face", 0.9, (80, 40, 110, 130))
@@ -375,8 +382,8 @@ class TestRunPipeline:
         result = run_pipeline(video_path, _no_detections())
 
         made = result.provenance
-        assert (made["app"], made[METHOD]) == ("scripture", "roi_flow")
-        assert made[METHOD_VERSION] == TRACKER_VERSION
+        assert (made["app"], made[METHOD_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT]) == ("scripture", "roi_flow")
+        assert made[METHOD_VERSION_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT] == TRACKER_VERSION
 
 
 class TestGenerateFunscript:
@@ -403,7 +410,7 @@ class TestGenerateFunscript:
             video_path, str(output_path), _no_detections())
 
         written = json.loads(output_path.read_text(encoding="utf-8"))
-        assert written["provenance"][METHOD] == "roi_flow"
+        assert written["provenance"][METHOD_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT] == "roi_flow"
         assert "provenance" not in written["metadata"]
 
 
@@ -453,7 +460,7 @@ class TestPipelineResultSerialization:
 
         assert restored.provenance == A_STAMP
 
-    def test_a_project_saved_before_the_field_was_renamed_still_loads(self):
+    def test_a_project_saved_before_the_field_was_renamed_still_loads_read_by_elimination_the_old_key_cannot_be_written_here_and_projects_lie_wherever_he_saved_them(self):
         state = {
             "dy": [0.0, 1.0],
             "lock": ["anchor", "none"],
@@ -510,7 +517,7 @@ class TestChoosingTheAnchor:
         assert _beliefs_seeing(det(ANCHOR_TIP, 1, 1, 9, 9, conf=0.99),
                                det(ANCHOR, 2, 2, 9, 9, conf=0.5)) == (2, 2, 9, 9)
 
-    def test_the_second_class_anchors_when_the_first_is_not_seen(self):
+    def test_the_second_class_anchors_when_the_first_is_not_seen_the_model_often_still_sees_it_when_the_first_is_hidden(self):
         assert _beliefs_seeing(det(ANCHOR_TIP, 1, 1, 9, 9)) == (1, 1, 9, 9)
 
     def test_the_surest_of_a_class_is_the_one_chosen(self):
@@ -570,3 +577,38 @@ class TestAProjectFromBeforeTheLockStates:
 
     def test_it_remembers_no_anchor(self):
         assert pipeline_result_from_state(self._saved()).signal.beliefs == [None, None]
+
+
+def test_the_tuning_defaults_are_the_fungen_runs_that_produced_a_usable_script_plus_the_offline_only_ones():
+    config = TrackConfig()
+
+    assert (config.roi_padding, config.roi_persistence_frames, config.roi_smoothing) == (20, 180, 0.6)
+
+
+class _FakeBoxes:
+    def __init__(self):
+        self.xyxy = [np.array([10.0, 20.0, 40.0, 60.0])]
+        self.cls = [0]
+        self.conf = [0.9]
+
+
+class _FakeResult:
+    def __init__(self):
+        self.names = {0: "anchor"}
+        self.boxes = [_FakeBoxes()]
+
+
+class _FakeYolo:
+    def __init__(self, *_args, **_kwargs):
+        pass
+
+    def __call__(self, *_args, **_kwargs):
+        return [_FakeResult()]
+
+
+def test_the_detector_reads_the_librarys_own_word_boxes_which_has_no_alias(monkeypatch):
+    monkeypatch.setitem(sys.modules, "ultralytics", types.SimpleNamespace(YOLO=_FakeYolo))
+
+    detections = _make_yolo_detector("a-model.pt", 0.4)(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert detections == [Detection(class_name="anchor", confidence=0.9, rect=(10, 20, 30, 40))]

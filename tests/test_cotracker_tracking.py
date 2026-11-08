@@ -23,6 +23,8 @@ from scripture.cotracker_tracking import (
 from scripture.motion_tracker import AxisDefinition
 from tests.videos import a_flat_video
 
+_A_TOLERANCE_ONLY_THE_MEDIAN_FILTER_MEETS_SMOOTHING_ALONE_LEAVES_THE_SPIKE_AT_A_THIRD = 0.01
+
 
 class TestSanitizePositions:
 
@@ -38,7 +40,7 @@ class TestSanitizePositions:
 
         result = sanitize_positions(positions, fps=30)
 
-        assert result[50] == pytest.approx(0.5, abs=0.01)
+        assert result[50] == pytest.approx(0.5, abs=_A_TOLERANCE_ONLY_THE_MEDIAN_FILTER_MEETS_SMOOTHING_ALONE_LEAVES_THE_SPIKE_AT_A_THIRD)
 
     def test_enforces_max_speed(self):
         positions = np.zeros(100)
