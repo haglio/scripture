@@ -6,13 +6,13 @@ from scripture import gui
 from scripture.project import load_project
 from tests.gui_doubles import (
     CloseEvent,
-    DialogsOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly,
-    FileDialogOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly,
+    Dialogs,
+    FileDialog,
 )
 
 
 def _close_asking_to_save(window, monkeypatch, save_dialog):
-    monkeypatch.setattr(gui, "QMessageBox", DialogsOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly(QMessageBox.StandardButton.Save))
+    monkeypatch.setattr(gui, "QMessageBox", Dialogs(QMessageBox.StandardButton.Save))
     monkeypatch.setattr(gui, "QFileDialog", save_dialog)
     event = CloseEvent()
     window.closeEvent(event)
@@ -23,7 +23,7 @@ def test_a_cancelled_save_as_dialog_leaves_the_window_open(window, monkeypatch, 
     window.video_path = str(tmp_path / "example clip.mp4")
     window._mark_dirty()
 
-    event = _close_asking_to_save(window, monkeypatch, FileDialogOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly(chosen=""))
+    event = _close_asking_to_save(window, monkeypatch, FileDialog(chosen=""))
 
     assert event.accepted is False
     assert window._dirty, "the unsaved work is still unsaved"
@@ -32,7 +32,7 @@ def test_a_cancelled_save_as_dialog_leaves_the_window_open(window, monkeypatch, 
 def test_closing_with_no_video_open_leaves_the_window_open(window, monkeypatch):
     window._mark_dirty()
 
-    event = _close_asking_to_save(window, monkeypatch, FileDialogOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly())
+    event = _close_asking_to_save(window, monkeypatch, FileDialog())
 
     assert event.accepted is False
     assert window._dirty
@@ -44,7 +44,7 @@ def test_choosing_a_file_saves_it_and_closes(window, monkeypatch, tmp_path):
     window._mark_dirty()
     chosen = tmp_path / "example clip.scripture"
 
-    event = _close_asking_to_save(window, monkeypatch, FileDialogOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly(chosen=str(chosen)))
+    event = _close_asking_to_save(window, monkeypatch, FileDialog(chosen=str(chosen)))
 
     assert event.accepted is True
     assert not window._dirty
@@ -55,8 +55,8 @@ def test_discarding_closes_without_writing_anything(window, monkeypatch, tmp_pat
     window.video_path = str(tmp_path / "example clip.mp4")
     window._mark_dirty()
     monkeypatch.setattr(
-        gui, "QMessageBox", DialogsOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly(QMessageBox.StandardButton.Discard))
-    monkeypatch.setattr(gui, "QFileDialog", FileDialogOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly())
+        gui, "QMessageBox", Dialogs(QMessageBox.StandardButton.Discard))
+    monkeypatch.setattr(gui, "QFileDialog", FileDialog())
     event = CloseEvent()
 
     window.closeEvent(event)

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from scripture.motion_tracker import AxisDefinition
 
 
-def _torch_imported_where_used_it_takes_seconds_and_a_gpu_handshake():
+def _torch():
     import torch  # noqa: PLC0415
 
     return torch
@@ -22,7 +22,7 @@ def _torch_imported_where_used_it_takes_seconds_and_a_gpu_handshake():
 
 @cache
 def _get_model():
-    torch = _torch_imported_where_used_it_takes_seconds_and_a_gpu_handshake()
+    torch = _torch()
 
     return torch.hub.load("facebookresearch/co-tracker", "cotracker3_offline").to("cuda")
 
@@ -131,7 +131,7 @@ def scale_coords(
 
 _TARGET_LONG_SIDE = 384
 _AXIS_POINTS = 30
-_MAX_CHUNK_FRAMES_COTRACKER3S_ATTENTION_TAKES_FIFTY_TIMES_THE_VIDEO_TENSOR = 300
+_MAX_CHUNK_FRAMES = 300
 _CHUNK_OVERLAP = 75
 _VISIBLE_ABOVE = 0.5
 
@@ -151,7 +151,7 @@ def _get_video_geometry(video_path: str, start_frame: int):
 
 def _read_chunk(video_path: str, start_frame: int, n_frames: int,
                 scaled_size: tuple[int, int]):
-    torch = _torch_imported_where_used_it_takes_seconds_and_a_gpu_handshake()
+    torch = _torch()
 
     new_h, new_w = scaled_size
     cap = cv2.VideoCapture(video_path)
@@ -171,7 +171,7 @@ def _read_chunk(video_path: str, start_frame: int, n_frames: int,
 
 
 def _track_chunk(model, video_chunk, queries):
-    torch = _torch_imported_where_used_it_takes_seconds_and_a_gpu_handshake()
+    torch = _torch()
 
     with torch.no_grad():
         pred_tracks, pred_visibility = model(
@@ -199,11 +199,11 @@ class TrackingChunk:
 
 
 def chunks_outward(n_frames: int, reference: int) -> list[TrackingChunk]:
-    if n_frames <= _MAX_CHUNK_FRAMES_COTRACKER3S_ATTENTION_TAKES_FIFTY_TIMES_THE_VIDEO_TENSOR:
+    if n_frames <= _MAX_CHUNK_FRAMES:
         return [TrackingChunk(0, n_frames, reference, seed=None)]
-    first_start = max(0, reference - _MAX_CHUNK_FRAMES_COTRACKER3S_ATTENTION_TAKES_FIFTY_TIMES_THE_VIDEO_TENSOR // 2)
-    first_end = min(n_frames, first_start + _MAX_CHUNK_FRAMES_COTRACKER3S_ATTENTION_TAKES_FIFTY_TIMES_THE_VIDEO_TENSOR)
-    first_start = max(0, first_end - _MAX_CHUNK_FRAMES_COTRACKER3S_ATTENTION_TAKES_FIFTY_TIMES_THE_VIDEO_TENSOR)
+    first_start = max(0, reference - _MAX_CHUNK_FRAMES // 2)
+    first_end = min(n_frames, first_start + _MAX_CHUNK_FRAMES)
+    first_start = max(0, first_end - _MAX_CHUNK_FRAMES)
     return [
         TrackingChunk(first_start, first_end, reference - first_start, seed=None),
         *_chunks_forward(first_end - _CHUNK_OVERLAP, n_frames),
@@ -213,7 +213,7 @@ def chunks_outward(n_frames: int, reference: int) -> list[TrackingChunk]:
 
 def _chunks_forward(start: int, n_frames: int) -> Iterator[TrackingChunk]:
     while start < n_frames:
-        end = min(start + _MAX_CHUNK_FRAMES_COTRACKER3S_ATTENTION_TAKES_FIFTY_TIMES_THE_VIDEO_TENSOR, n_frames)
+        end = min(start + _MAX_CHUNK_FRAMES, n_frames)
         yield TrackingChunk(start, end, 0, seed=start)
         if end == n_frames:
             return
@@ -222,7 +222,7 @@ def _chunks_forward(start: int, n_frames: int) -> Iterator[TrackingChunk]:
 
 def _chunks_backward(end: int) -> Iterator[TrackingChunk]:
     while end > 0:
-        start = max(0, end - _MAX_CHUNK_FRAMES_COTRACKER3S_ATTENTION_TAKES_FIFTY_TIMES_THE_VIDEO_TENSOR)
+        start = max(0, end - _MAX_CHUNK_FRAMES)
         seed = end - 1
         yield TrackingChunk(start, end, seed - start, seed=seed)
         if start == 0:
@@ -257,7 +257,7 @@ def ends_from_visible_points(
 
 
 def _queries_at(query_frame: int, points: np.ndarray):
-    torch = _torch_imported_where_used_it_takes_seconds_and_a_gpu_handshake()
+    torch = _torch()
 
     queries = torch.zeros(1, _AXIS_POINTS, 3, device="cuda")
     queries[0, :, 0] = query_frame

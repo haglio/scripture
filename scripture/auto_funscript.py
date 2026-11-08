@@ -228,8 +228,14 @@ def _read_frames(video_path: str, start_frame: int, end_frame: int | None):
         cap.release()
 
 
+def _yolo():
+    from ultralytics import YOLO  # noqa: PLC0415
+
+    return YOLO
+
+
 def _make_yolo_detector(model_path: str, conf_threshold: float):
-    model = _yolo_imported_where_used_it_brings_torch_seconds_and_a_gpu_handshake()(model_path, task="detect")
+    model = _yolo()(model_path, task="detect")
 
     def detect(frame: np.ndarray) -> list[Detection]:
         results = model(frame, device=0, verbose=False, conf=conf_threshold)
@@ -438,9 +444,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-def _yolo_imported_where_used_it_brings_torch_seconds_and_a_gpu_handshake():
-    from ultralytics import YOLO  # noqa: PLC0415
-
-    return YOLO

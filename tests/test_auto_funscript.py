@@ -38,8 +38,8 @@ from scripture.roi_lock import (
 )
 from tests.stamps import (
     A_STAMP,
-    METHOD_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT,
-    METHOD_VERSION_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT,
+    METHOD_KEY_ON_DISK,
+    METHOD_VERSION_KEY_ON_DISK,
 )
 from tests.videos import a_flat_video
 
@@ -136,7 +136,7 @@ class TestWeightedFlow:
         assert dx == 0.0
 
 
-class TestFlowToPositionFunGensOwnMappingFromItsLiveYoloRoiTrackerYoloFindsTheAnchorAndFlowInTheRoiDrivesThePosition:
+class TestFlowToPositionFunGensOwnMappingTheFlowsVelocityScaledAroundFifty:
     def test_maps_flow_velocity_around_center_a_scaled_velocity_of_a_rhythmic_motion_is_the_same_wave_shifted_in_phase(self):
         dy = np.array([0.0, 2.0, -2.0, 10.0, -10.0])
         pos = flow_to_position(dy, gain=10.0, median_window=1)
@@ -358,7 +358,7 @@ class TestSignalToActions:
             assert b["at"] - a["at"] == 10000
 
 
-class TestRunPipeline:
+class TestRunPipelineAPortOfFunGensLiveYoloRoiTrackerYoloFindsTheAnchorAndFlowInTheRoiDrivesThePosition:
     def test_processes_video_file_with_injected_stages(self, tmp_path):
         video_path = a_flat_video(tmp_path / "example clip.mp4")
         dets = [Detection(ANCHOR, 0.9, (40, 30, 40, 60))]
@@ -382,8 +382,8 @@ class TestRunPipeline:
         result = run_pipeline(video_path, _no_detections())
 
         made = result.provenance
-        assert (made["app"], made[METHOD_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT]) == ("scripture", "roi_flow")
-        assert made[METHOD_VERSION_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT] == TRACKER_VERSION
+        assert (made["app"], made[METHOD_KEY_ON_DISK]) == ("scripture", "roi_flow")
+        assert made[METHOD_VERSION_KEY_ON_DISK] == TRACKER_VERSION
 
 
 class TestGenerateFunscript:
@@ -410,7 +410,7 @@ class TestGenerateFunscript:
             video_path, str(output_path), _no_detections())
 
         written = json.loads(output_path.read_text(encoding="utf-8"))
-        assert written["provenance"][METHOD_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT] == "roi_flow"
+        assert written["provenance"][METHOD_KEY_ON_DISK] == "roi_flow"
         assert "provenance" not in written["metadata"]
 
 
@@ -579,10 +579,11 @@ class TestAProjectFromBeforeTheLockStates:
         assert pipeline_result_from_state(self._saved()).signal.beliefs == [None, None]
 
 
-def test_the_tuning_defaults_are_the_fungen_runs_that_produced_a_usable_script_plus_the_offline_only_ones():
+def test_the_tuning_defaults_are_the_fungen_runs_that_produced_a_usable_script_plus_the_offline_only_normalizer_window_and_threshold():
     config = TrackConfig()
 
     assert (config.roi_padding, config.roi_persistence_frames, config.roi_smoothing) == (20, 180, 0.6)
+    assert (config.norm_window, config.norm_threshold) == (120, 15.0)
 
 
 class _FakeBoxes:

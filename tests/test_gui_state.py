@@ -7,7 +7,7 @@ import numpy as np
 from scripture import gui
 from scripture.motion_tracker import AxisDefinition, TrackingResult
 from scripture.project import PROJECT_FORMAT_VERSION, save_project
-from tests.gui_doubles import CaptureOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly, Footage
+from tests.gui_doubles import Capture, Footage
 
 _LABEL = {"tip": (40, 30), "base": (40, 150), "contact": (40, 90), "is_action": True}
 _LABEL_ON_DISK = {"tip": [40, 30], "base": [40, 150], "contact": [40, 90],
@@ -40,7 +40,7 @@ def _saved(window, tmp_path, name="example clip.scripture"):
 
 def _reopened(project, tmp_path, monkeypatch):
     monkeypatch.setattr(gui, "_LAST_PROJECT_FILE", tmp_path / ".last_session")
-    monkeypatch.setattr(gui.cv2, "VideoCapture", lambda _path: CaptureOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly())
+    monkeypatch.setattr(gui.cv2, "VideoCapture", lambda _path: Capture())
     reopened = gui.App()
     reopened._do_load(str(project))
     return reopened
@@ -49,10 +49,10 @@ def _reopened(project, tmp_path, monkeypatch):
 def test_a_saved_project_holds_exactly_these_top_level_keys_a_change_to_them_is_a_new_shape_and_raises_the_version_evolver_reads(window, tmp_path):
     state = _populated(window, tmp_path / "example clip.mp4")._build_state()
 
-    assert sorted(state) == [
+    assert (PROJECT_FORMAT_VERSION, sorted(state)) == (1, [
         "actions", "auto", "axes", "current_frame", "ground_truth",
         "splits", "tracking", "version", "video_path",
-    ]
+    ])
 
 
 def test_the_video_path_another_repo_rewrites_is_a_top_level_string(window, tmp_path):

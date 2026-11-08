@@ -7,8 +7,8 @@ from scripture import cotracker_tracking
 from scripture.cotracker_tracking import CoTrackResult
 from scripture.motion_tracker import TRACKER_VERSION, AxisDefinition, _released_after, track_motion
 from tests.stamps import (
-    METHOD_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT,
-    METHOD_VERSION_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT,
+    METHOD_KEY_ON_DISK,
+    METHOD_VERSION_KEY_ON_DISK,
 )
 from tests.videos import a_flat_video
 
@@ -21,18 +21,18 @@ def test_a_tracked_result_says_which_tracker_made_it_and_at_which_version(tmp_pa
     result = track_motion(video_path, AxisDefinition(tip=(80, 20), base=(80, 100)), 0, 5)
 
     made = result.provenance
-    assert (made["app"], made[METHOD_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT]) == ("scripture", "axis_tracking")
-    assert made[METHOD_VERSION_KEY_AS_EVERY_FILE_ON_DISK_ALREADY_HOLDS_IT] == TRACKER_VERSION
+    assert (made["app"], made[METHOD_KEY_ON_DISK]) == ("scripture", "axis_tracking")
+    assert made[METHOD_VERSION_KEY_ON_DISK] == TRACKER_VERSION
 
 
 def test_a_stopped_run_still_lets_the_video_go():
     released = []
 
-    class CaptureOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly:
+    class Capture:
         def release(self):
             released.append(True)
 
-    with pytest.raises(RuntimeError), _released_after(CaptureOfferingOnlyWhatTheWindowUsesSoMoreFailsLoudly()):
+    with pytest.raises(RuntimeError), _released_after(Capture()):
         raise RuntimeError("an invented stop")
 
     assert released == [True]
