@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 @pytest.fixture(scope="session")
 def qt_app():
-    from PyQt6.QtWidgets import QApplication  # noqa: PLC0415
+    from PySide6.QtWidgets import QApplication  # noqa: PLC0415
 
     return QApplication.instance() or QApplication([])
 

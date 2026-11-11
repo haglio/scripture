@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from PyQt6.QtCore import QEvent, QPointF, Qt
-from PyQt6.QtGui import QMouseEvent, QPixmap
+from PySide6.QtCore import QEvent, QPointF, Qt
+from PySide6.QtGui import QMouseEvent, QPixmap
+from shared_ui.testing import appending_to
 
 from scripture.editing_rules import next_frame, previous_frame
 from scripture.gui import TimelineState, TimelineWidget, Viewport, action_dot_frames
@@ -30,7 +31,7 @@ def test_the_timeline_asks_for_a_menu_at_the_frame_under_the_click(qt_app, emitt
     timeline = TimelineWidget()
     timeline.resize(400, 60)
     timeline.set_state(TimelineState(total_frames=800))
-    timeline.context_menu_requested.connect(emitted.append)
+    timeline.context_menu_requested.connect(appending_to(emitted))
 
     timeline.mousePressEvent(_right_click_at(200, 30))
 

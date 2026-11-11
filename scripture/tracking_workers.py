@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import traceback
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 from scripture.auto_funscript import run_pipeline
 from scripture.cycle_extract import extract_cycles
@@ -20,7 +20,7 @@ class _Stopped(Exception):
 
 
 class _TrackingWorker(QThread):
-    frame_progress = pyqtSignal(int)
+    frame_progress = Signal(int)
 
     def __init__(self, video_path):
         super().__init__()
@@ -31,7 +31,7 @@ class _TrackingWorker(QThread):
         self._stop_asked = True
 
     def stop(self):
-        self.disconnect()
+        self.blockSignals(True)
         self.ask_to_stop()
         if not self.wait(_STOP_WAIT_MS):
             self.terminate()
@@ -44,9 +44,9 @@ class _TrackingWorker(QThread):
 
 
 class ProcessWorker(_TrackingWorker):
-    scene_done = pyqtSignal(int, list, object)
-    finished = pyqtSignal()
-    error = pyqtSignal(int, str)
+    scene_done = Signal(int, list, object)
+    finished = Signal()
+    error = Signal(int, str)
 
     def __init__(self, video_path, jobs, fps, *, track=track_motion):
         super().__init__(video_path)
@@ -78,8 +78,8 @@ class ProcessWorker(_TrackingWorker):
 
 
 class AutoProcessWorker(_TrackingWorker):
-    done = pyqtSignal(object)
-    error = pyqtSignal(str)
+    done = Signal(object)
+    error = Signal(str)
 
     def __init__(self, video_path, *, track=run_pipeline):
         super().__init__(video_path)

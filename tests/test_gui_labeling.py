@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from PyQt6.QtCore import QPoint, QPointF, Qt
-from PyQt6.QtGui import QWheelEvent
+from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtGui import QWheelEvent
 
 from scripture.auto_funscript import PipelineResult, TrackSignal
 from scripture.editing_rules import both_scenes_have_an_axis, moving_the_axis_needs_asking

@@ -15,8 +15,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def test_an_error_nothing_catches_is_logged_and_the_app_keeps_running():
     child = textwrap.dedent("""
         import sys
-        from PyQt6.QtCore import QTimer
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QApplication
         from scripture.main import _log_errors_and_keep_running
         app = QApplication(sys.argv[:1])
         _log_errors_and_keep_running()

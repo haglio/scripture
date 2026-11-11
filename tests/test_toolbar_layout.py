@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from PyQt6.QtWidgets import QApplication, QMenu, QSizePolicy, QToolBar
+from PySide6.QtWidgets import QApplication, QMenu, QSizePolicy, QToolBar
 from shared_ui.colors import RED, TEXT_PRIMARY
 from shared_ui.icons import qt_icon
 from shared_ui.spacing import MARGIN_STANDARD
@@ -51,7 +51,7 @@ def test_the_row_starts_and_ends_with_its_margin_pad(toolbar):
 
 def _drawn(icon) -> bytes:
     image = icon.pixmap(32, 32).toImage()
-    return image.constBits().asstring(image.sizeInBytes())
+    return bytes(image.constBits())
 
 
 def test_the_file_action_marks_are_drawn_in_the_family_ink(toolbar):
@@ -79,7 +79,12 @@ def test_each_file_action_wears_the_familys_mark_for_it(toolbar, label, mark):
 
 def test_the_point_menus_remove_items_wear_the_familys_cross(window, monkeypatch):
     shown = []
-    monkeypatch.setattr(QMenu, "exec", lambda menu, *_args: shown.append(menu))
+
+    class _Unshown(QMenu):
+        def exec(self, *_args) -> None:
+            shown.append(self)
+
+    monkeypatch.setattr(gui, "QMenu", _Unshown)
     window.video = Footage(total_frames=1000)
     window.splits = []
     window._rebuild_scenes()
