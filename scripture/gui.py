@@ -8,8 +8,8 @@ import cv2
 import numpy as np
 from app_support.funscript import write as write_funscript
 from app_support.overlay import overlay_value
-from PyQt6.QtCore import QPointF, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import (
+from PySide6.QtCore import QPointF, QSize, Qt, Signal
+from PySide6.QtGui import (
     QAction,
     QBrush,
     QColor,
@@ -22,7 +22,7 @@ from PyQt6.QtGui import (
     QPolygonF,
     QShortcut,
 )
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -165,8 +165,8 @@ def action_dot_frames(state: TimelineState) -> list[int]:
 
 
 class TimelineWidget(QWidget):
-    frame_changed = pyqtSignal(int)
-    context_menu_requested = pyqtSignal(int)
+    frame_changed = Signal(int)
+    context_menu_requested = Signal(int)
 
     def __init__(self):
         super().__init__()
@@ -385,9 +385,9 @@ def _draw_position_gauge(p, overlay, viewport_size):
 
 
 class Viewport(QWidget):
-    clicked = pyqtSignal(int, int)
-    point_dragged = pyqtSignal(str, int, int)
-    context_menu_requested = pyqtSignal(int, int)
+    clicked = Signal(int, int)
+    point_dragged = Signal(str, int, int)
+    context_menu_requested = Signal(int, int)
 
     def __init__(self):
         super().__init__()

@@ -83,7 +83,7 @@ def main():
     _claim_the_taskbar_identity_before_the_first_window(preview)
     _name_this_process()
 
-    from PyQt6.QtWidgets import QApplication  # noqa: PLC0415
+    from PySide6.QtWidgets import QApplication  # noqa: PLC0415
     from shared_ui.colors import dress_application  # noqa: PLC0415
     from shared_ui.loading_window import Loading, LoadingCanceled  # noqa: PLC0415
 

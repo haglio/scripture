@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QPoint, QRect
-from PyQt6.QtWidgets import QApplication, QToolBar, QToolButton
+from PySide6.QtCore import QPoint, QRect
+from PySide6.QtWidgets import QApplication, QToolBar, QToolButton
 from shared_ui.colors import BG_BUTTON, BORDER_SUBTLE
 
 

@@ -25,7 +25,7 @@ LAUNCH_FILES_THE_WHOLE_SEQUENCE_WHILE_EVERY_HELPER_MAIN_CALLS_LIVES_IN_THEM = (
     REPO_ROOT / PACKAGE / "main.py",
 )
 
-_REACHED_ONLY_FROM_INSIDE_MAIN = ("scripture.gui", "PyQt6.QtWidgets")
+_REACHED_ONLY_FROM_INSIDE_MAIN = ("scripture.gui", "PySide6.QtWidgets")
 _THE_PYTHONPATH_THE_LAUNCHER_NEVER_EXPORTS = "PYTHONPATH"
 _A_PUBLIC_CHECKOUT_HAS_ONLY_THE_EXAMPLE_SO_THE_LAUNCH_COMES_UP_ON_IT = (
     "from scripture import content as _content",
@@ -86,7 +86,7 @@ def test_a_launch_import_that_cannot_resolve_fails_here():
 def test_the_window_and_qt_are_imported_only_once_a_window_is_wanted():
     done = _run_the_launchs_way([
         "import sys, scripture.main",
-        "print(sorted(name for name in ('scripture.gui', 'PyQt6.QtWidgets') if name in sys.modules))",
+        "print(sorted(name for name in ('scripture.gui', 'PySide6.QtWidgets') if name in sys.modules))",
     ])
 
     assert done.returncode == 0, done.stderr
