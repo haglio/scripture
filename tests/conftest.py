@@ -10,8 +10,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 @pytest.fixture(scope="session")
 def qt_app():
     from PySide6.QtWidgets import QApplication  # noqa: PLC0415
+    from shared_ui.gui_thread_collection import the_application  # noqa: PLC0415
 
-    return QApplication.instance() or QApplication([])
+    return the_application(QApplication, [])
 
 
 def _the_last_project_pointer_aimed_at_scratch_or_a_new_window_reopens_his_project_and_video(

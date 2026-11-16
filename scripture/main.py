@@ -85,9 +85,10 @@ def main():
 
     from PySide6.QtWidgets import QApplication  # noqa: PLC0415
     from shared_ui.colors import dress_application  # noqa: PLC0415
+    from shared_ui.gui_thread_collection import the_application  # noqa: PLC0415
     from shared_ui.loading_window import Loading, LoadingCanceled  # noqa: PLC0415
 
-    app = QApplication.instance() or QApplication(sys.argv)
+    app = the_application(QApplication, sys.argv)
     loading = Loading(app, logging.getLogger("scripture"), open_the_loading_screen(preview))
     try:
         # Qt styles a tooltip, a top-level popup, only from the QApplication's rules.
