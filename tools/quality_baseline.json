@@ -4,5 +4,9 @@
   "private_imports": {},
   "private_reaches": {},
   "prose_lines": {},
-  "trailing_comments": {}
+  "trailing_comments": {},
+  "wall_clock_waits": {
+    "tests/test_errors.py": 1,
+    "tests/test_tracking_workers.py": 1
+  }
 }
