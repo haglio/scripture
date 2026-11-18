@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import QMessageBox
+from shared_ui.testing import alert_shown
 
 from scripture import gui
 from scripture.project import load_project
@@ -32,10 +33,12 @@ def test_a_cancelled_save_as_dialog_leaves_the_window_open(window, monkeypatch, 
 def test_closing_with_no_video_open_leaves_the_window_open(window, monkeypatch):
     window._mark_dirty()
 
-    event = _close_asking_to_save(window, monkeypatch, FileDialog())
+    with alert_shown() as shown:
+        event = _close_asking_to_save(window, monkeypatch, FileDialog())
 
     assert event.accepted is False
     assert window._dirty
+    assert shown.call_args.args[0] == "No video"
 
 
 def test_choosing_a_file_saves_it_and_closes(window, monkeypatch, tmp_path):

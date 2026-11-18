@@ -33,16 +33,9 @@ class Dialogs:
 
     def __init__(self, *answers):
         self._answers = list(answers)
-        self.shown = []
 
     def question(self, *_args):
         return self._answers.pop(0)
-
-    def warning(self, _parent, title, text):
-        self.shown.append((title, text))
-
-    def critical(self, _parent, title, text):
-        self.shown.append((title, text))
 
 
 class FileDialog:

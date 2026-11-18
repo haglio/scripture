@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 
 import numpy as np
+from shared_ui.alert import Level
+from shared_ui.testing import alert_shown
 
 from scripture import gui
 from scripture.motion_tracker import TrackingResult
 from tests.gui_doubles import (
-    Dialogs,
     FileDialog,
     Footage,
 )
@@ -65,12 +66,12 @@ def test_a_cancelled_export_dialog_writes_nothing(window, tmp_path, monkeypatch)
 def test_exporting_before_a_scene_is_processed_says_so_and_writes_nothing(
         window, tmp_path, monkeypatch):
     window.video_path = str(tmp_path / "example clip.mp4")
-    dialogs = Dialogs()
-    monkeypatch.setattr(gui, "QMessageBox", dialogs)
     monkeypatch.setattr(
         gui, "QFileDialog", FileDialog(chosen=str(tmp_path / "example clip.funscript")))
 
-    window._export()
+    with alert_shown() as shown:
+        window._export()
 
-    assert [title for title, _text in dialogs.shown] == ["No data"]
+    assert [call.args[0] for call in shown.call_args_list] == ["No data"]
+    assert shown.call_args.kwargs["level"] is Level.WARNING
     assert not list(tmp_path.glob("*.funscript"))
