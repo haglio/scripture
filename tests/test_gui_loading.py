@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from shared_ui.alert import Level
+from shared_ui.testing import alert_shown
+
 from scripture import gui
 from scripture.project import save_project
 from scripture.video import VideoSource
 from tests.gui_doubles import (
     Capture,
-    Dialogs,
 )
 
 
@@ -19,15 +21,15 @@ def test_a_project_whose_video_moved_leaves_the_open_one_playing(
     playing = Capture()
     window.video = VideoSource(playing)
     kept = window.video
-    dialogs = Dialogs()
-    monkeypatch.setattr(gui, "QMessageBox", dialogs)
     project = _project_naming(tmp_path / "moved clip.mp4", tmp_path / "one.scripture")
 
-    window._do_load(project)
+    with alert_shown() as shown:
+        window._do_load(project)
 
     assert window.video is kept
     assert not playing.released
-    assert [title for title, _text in dialogs.shown] == ["Video not found"]
+    assert [call.args[0] for call in shown.call_args_list] == ["Video not found"]
+    assert shown.call_args.kwargs["level"] is Level.ERROR
 
 
 def test_a_project_that_opens_releases_the_capture_it_replaces(

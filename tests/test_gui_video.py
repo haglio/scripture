@@ -3,11 +3,12 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from shared_ui.testing import alert_shown
+
 from scripture import gui
 from scripture.video import VideoSource
 from tests.gui_doubles import (
     Capture,
-    Dialogs,
     FileDialog,
     Footage,
 )
@@ -56,17 +57,16 @@ def test_a_video_that_will_not_open_says_so_and_keeps_the_one_in_hand(
     playing = Capture()
     window.video = VideoSource(playing)
     kept = window.video
-    dialogs = Dialogs()
-    monkeypatch.setattr(gui, "QMessageBox", dialogs)
     monkeypatch.setattr(
         gui, "QFileDialog", FileDialog(chosen=str(tmp_path / "unreadable clip.mp4")))
     monkeypatch.setattr(gui.cv2, "VideoCapture", lambda _path: Capture(opened=False))
 
-    window._open_video()
+    with alert_shown() as shown:
+        window._open_video()
 
     assert window.video is kept
     assert not playing.released
-    assert [title for title, _text in dialogs.shown] == ["Video not found"]
+    assert [call.args[0] for call in shown.call_args_list] == ["Video not found"]
 
 
 def test_the_window_opens_no_capture_of_its_own_video_py_reads_its_footage():

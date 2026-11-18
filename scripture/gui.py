@@ -60,6 +60,7 @@ from shared_ui.preview import Preview, window_title
 from shared_ui.preview_icon import app_icon
 from shared_ui.spacing import BUTTON_ICON, BUTTON_RADIUS_HUD, GAP_MEDIUM, GAP_SMALL, MARGIN_STANDARD
 
+from scripture.alerts import show_error, show_warning
 from scripture.annotations import SceneAnnotations
 from scripture.content import LOCAL_CONTENT, load_content
 from scripture.cotracker_tracking import compute_pos_from_points
@@ -1119,7 +1120,7 @@ class App(QMainWindow):
     def _load_video(self, path):
         source = VideoSource.opened(path)
         if source is None:
-            QMessageBox.critical(self, "Video not found", f"Cannot open: {path}")
+            show_error("Video not found", f"Cannot open: {path}")
             return False
         self.video.release()
         self.video = source
@@ -1183,7 +1184,7 @@ class App(QMainWindow):
         left_idx = idx - 1 if idx > 0 and self.scenes[idx].start_frame == frame else idx
         right_idx = left_idx + 1
         if both_scenes_have_an_axis(self.annotations.axes, left_idx, right_idx):
-            QMessageBox.warning(self, "Cannot unsplit", "Both adjacent scenes have axes. Delete one axis first.")
+            show_warning("Cannot unsplit", "Both adjacent scenes have axes. Delete one axis first.")
             return
         self.splits.remove(frame)
         self._rebuild_scenes()
@@ -1413,7 +1414,7 @@ class App(QMainWindow):
 
     def _on_process_error(self, idx, msg):
         self._set_status(f"Error scene {idx+1}: {msg}")
-        QMessageBox.warning(self, f"Processing Error (Scene {idx+1})", msg)
+        show_warning(f"Processing Error (Scene {idx+1})", msg)
 
     def _on_process_finished(self):
         el = time.monotonic() - self._process_start_time
@@ -1468,7 +1469,7 @@ class App(QMainWindow):
 
     def _on_auto_error(self, msg):
         self._set_status(f"Auto processing error: {msg}")
-        QMessageBox.warning(self, "Auto Processing Error", msg)
+        show_warning("Auto Processing Error", msg)
 
     def _on_auto_finished(self):
         el = time.monotonic() - self._process_start_time
@@ -1497,7 +1498,7 @@ class App(QMainWindow):
         axes = self.annotations.axes
         annotated = [i for i in range(len(self.scenes)) if i in axes]
         if not annotated:
-            QMessageBox.warning(self, "No axes", "Annotate tip/base on at least one scene first.")
+            show_warning("No axes", "Annotate tip/base on at least one scene first.")
             return
         self._start_processing(self._build_jobs(annotated))
 
@@ -1535,7 +1536,7 @@ class App(QMainWindow):
     def _require_video(self):
         if self.video_path:
             return True
-        QMessageBox.warning(self, "No video", "Open a video first.")
+        show_warning("No video", "Open a video first.")
         return False
 
     def _save_project(self):
@@ -1593,7 +1594,7 @@ class App(QMainWindow):
 
     def _export(self):
         if not self.annotations.actions:
-            QMessageBox.warning(self, "No data", "Process at least one scene first.")
+            show_warning("No data", "Process at least one scene first.")
             return
         all_a = []
         for a in self.annotations.actions.values():
