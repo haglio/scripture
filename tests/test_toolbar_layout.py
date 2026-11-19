@@ -9,7 +9,7 @@ from shared_ui.spacing import MARGIN_STANDARD
 from scripture import gui
 from tests.gui_doubles import Footage
 
-_FILE_ACTIONS = ["New", "Save", "Save As", "Load", "Export"]
+_FILE_ACTIONS = ["New", "Save", "Save as", "Load", "Export"]
 
 
 @pytest.fixture
@@ -69,7 +69,7 @@ def test_the_icon_color_is_the_palette_s_and_not_this_app_s_own():
 
 
 @pytest.mark.parametrize(("label", "mark"), [
-    ("New", "plus"), ("Save", "save"), ("Save As", "copy"), ("Load", "folder"),
+    ("New", "plus"), ("Save", "save"), ("Save as", "copy"), ("Load", "folder"),
 ])
 def test_each_file_action_wears_the_familys_mark_for_it(toolbar, label, mark):
     (action,) = [a for a in toolbar.actions() if a.text() == label]
@@ -93,7 +93,7 @@ def test_the_point_menus_remove_items_wear_the_familys_cross(window, monkeypatch
     window._on_viewport_context_menu(40, 30)
 
     (menu,) = shown
-    (remove_tip,) = [action for action in menu.actions() if action.text() == "Remove Tip"]
+    (remove_tip,) = [action for action in menu.actions() if action.text() == "Remove tip"]
     assert _drawn(remove_tip.icon()) == _drawn(qt_icon("cross"))
 
 

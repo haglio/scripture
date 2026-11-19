@@ -23,7 +23,7 @@ STEPS = (
     ("Loading Scripture...", 1.0),
     ("Opening the window...", 0.2),
 )
-LOADING_CAPTION = "Scripture Loading"
+LOADING_CAPTION = "Scripture loading"
 CANCEL_HINT = "Press Esc to cancel opening Scripture"
 
 
