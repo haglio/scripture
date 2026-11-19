@@ -115,3 +115,9 @@ namespaces = false
 # console script that cannot start.
 [tool.setuptools.package-data]
 scripture = ["content.example.json"]
+
+# The names the screen capitalizes inside sentence-case text, and the calls here that take on-screen text
+# (app_support.sentence_case).
+[tool.haglio.sentence-case]
+names = ["Scripture"]
+calls = ["show_warning"]

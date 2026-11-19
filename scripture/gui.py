@@ -997,7 +997,7 @@ class App(QMainWindow):
         for icon, label, handler in [
             ("plus", "New", self._open_video),
             ("save", "Save", self._save_project),
-            ("copy", "Save As", self._save_project_as),
+            ("copy", "Save as", self._save_project_as),
             ("folder", "Load", self._load_project),
         ]:
             act = QAction(qt_icon(icon, color=_ICON_COLOR), label, self)
@@ -1016,20 +1016,20 @@ class App(QMainWindow):
         footer = QHBoxLayout()
         footer.setSpacing(GAP_MEDIUM)
 
-        self.btn_auto_process = QPushButton("Auto Process (YOLO)")
+        self.btn_auto_process = QPushButton("Auto process (YOLO)")
         self.btn_auto_process.clicked.connect(self._auto_process)
         footer.addWidget(self.btn_auto_process)
 
-        self.btn_process_all = QPushButton("Process All")
+        self.btn_process_all = QPushButton("Process all")
         self.btn_process_all.clicked.connect(self._process_all)
         footer.addWidget(self.btn_process_all)
 
-        self.btn_label_session = QPushButton("Label Session")
+        self.btn_label_session = QPushButton("Label session")
         self.btn_label_session.setCheckable(True)
         self.btn_label_session.clicked.connect(self._toggle_label_session)
         footer.addWidget(self.btn_label_session)
 
-        self.btn_reset_labels = QPushButton("Reset Labels")
+        self.btn_reset_labels = QPushButton("Reset labels")
         self.btn_reset_labels.clicked.connect(self._reset_scene_labels)
         footer.addWidget(self.btn_reset_labels)
 
@@ -1107,7 +1107,7 @@ class App(QMainWindow):
 
     def _open_video(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open Video", "",
+            self, "Open video", "",
             "Video files (*.mp4 *.mkv *.avi *.webm *.mov);;All files (*)",
         )
         if not path or not self._load_video(path):
@@ -1202,14 +1202,14 @@ class App(QMainWindow):
         menu = QMenu(self)
 
         if has_axis or self.pending_tip:
-            menu.addAction(qt_icon("cross"), "Remove Tip", lambda: self._delete_point("tip"))
+            menu.addAction(qt_icon("cross"), "Remove tip", lambda: self._delete_point("tip"))
         else:
-            menu.addAction("Place Tip Here", lambda: self._place_point_at("tip", fx, fy))
+            menu.addAction("Place tip here", lambda: self._place_point_at("tip", fx, fy))
 
         if has_axis or self.pending_base:
-            menu.addAction(qt_icon("cross"), "Remove Base", lambda: self._delete_point("base"))
+            menu.addAction(qt_icon("cross"), "Remove base", lambda: self._delete_point("base"))
         else:
-            menu.addAction("Place Base Here", lambda: self._place_point_at("base", fx, fy))
+            menu.addAction("Place base here", lambda: self._place_point_at("base", fx, fy))
 
         menu.exec(QCursor.pos())
 
@@ -1224,14 +1224,14 @@ class App(QMainWindow):
         if frame in self.splits:
             menu.addAction("Unsplit", lambda: self._do_unsplit(frame))
         elif 0 < frame < self.total_frames:
-            menu.addAction("Split Here", lambda: self._do_split_at(frame))
+            menu.addAction("Split here", lambda: self._do_split_at(frame))
 
         menu.addSeparator()
         if self.annotations.axis_of(idx) is not None:
             if idx in self.annotations.actions:
-                menu.addAction("Discard Scene Actions", lambda: self._discard_scene(idx))
+                menu.addAction("Discard scene actions", lambda: self._discard_scene(idx))
             elif not self._is_processing():
-                menu.addAction("Process Scene Actions", lambda: self._process_scene(idx))
+                menu.addAction("Process scene actions", lambda: self._process_scene(idx))
 
         menu.exec(QCursor.pos())
 
@@ -1414,7 +1414,7 @@ class App(QMainWindow):
 
     def _on_process_error(self, idx, msg):
         self._set_status(f"Error scene {idx+1}: {msg}")
-        show_warning(f"Processing Error (Scene {idx+1})", msg)
+        show_warning(f"Processing error (Scene {idx+1})", msg)
 
     def _on_process_finished(self):
         el = time.monotonic() - self._process_start_time
@@ -1469,7 +1469,7 @@ class App(QMainWindow):
 
     def _on_auto_error(self, msg):
         self._set_status(f"Auto processing error: {msg}")
-        show_warning("Auto Processing Error", msg)
+        show_warning("Auto processing error", msg)
 
     def _on_auto_finished(self):
         el = time.monotonic() - self._process_start_time
@@ -1551,7 +1551,7 @@ class App(QMainWindow):
             return False
         sd = str(PROJECTS_DIR)
         dn = Path(self.video_path).stem + ".scripture"
-        path, _ = QFileDialog.getSaveFileName(self, "Save As", str(Path(sd) / dn), "Scripture (*.scripture);;All (*)")
+        path, _ = QFileDialog.getSaveFileName(self, "Save as", str(Path(sd) / dn), "Scripture (*.scripture);;All (*)")
         if not path:
             return False
         return self._do_save(path)

@@ -14,7 +14,7 @@
     {
       "screen": [
         "Save",
-        "Save As",
+        "Save as",
         "Load",
         "Save the project"
       ],
@@ -34,8 +34,8 @@
     },
     {
       "screen": [
-        "Label Session",
-        "Reset Labels"
+        "Label session",
+        "Reset labels"
       ],
       "his_word": null,
       "code_word": "label",
@@ -55,8 +55,8 @@
     },
     {
       "screen": [
-        "Discard Scene Actions",
-        "Process Scene Actions"
+        "Discard scene actions",
+        "Process scene actions"
       ],
       "his_word": "scene (2026-11-05: 'scene is fine for both')",
       "code_word": "scene",
@@ -69,8 +69,8 @@
     },
     {
       "screen": [
-        "Discard Scene Actions",
-        "Process Scene Actions"
+        "Discard scene actions",
+        "Process scene actions"
       ],
       "his_word": "action",
       "code_word": "action",
@@ -100,7 +100,7 @@
       "screen": [
         "New",
         "Save",
-        "Save As",
+        "Save as",
         "Load",
         "Export"
       ],
