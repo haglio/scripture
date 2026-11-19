@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from shared_ui import palette
+from shared_ui.asking import asked
 from shared_ui.chrome import toolbar_rules
 from shared_ui.colors import (
     BG_BUTTON,
@@ -58,7 +59,13 @@ from shared_ui.fonts import SIZE_BODY, SIZE_SMALL, make_font
 from shared_ui.icons import qt_icon
 from shared_ui.preview import Preview, window_title
 from shared_ui.preview_icon import app_icon
-from shared_ui.spacing import BUTTON_ICON, BUTTON_RADIUS_HUD, GAP_MEDIUM, GAP_SMALL, MARGIN_STANDARD
+from shared_ui.spacing import (
+    BUTTON_ICON,
+    BUTTON_RADIUS_HUD,
+    GAP_MEDIUM,
+    GAP_SMALL,
+    MARGIN_STANDARD,
+)
 
 from scripture.alerts import show_error, show_warning
 from scripture.annotations import SceneAnnotations
@@ -916,12 +923,7 @@ class App(QMainWindow):
         if not n:
             self._set_status("No labels in this scene to reset.")
             return
-        reply = QMessageBox.question(
-            self, "Reset labels?",
-            f"Delete all {n} labeled frames in this scene?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        if not asked(self, "Reset labels?", f"Delete all {n} labeled frames in this scene?"):
             return
         self.annotations.drop_labels(idx)
         self.session.forget_scene(idx)
@@ -1253,12 +1255,7 @@ class App(QMainWindow):
     def _may_move_the_axis(self, idx):
         if not moving_the_axis_needs_asking(self.annotations.axis_of(idx), self.current_frame_idx):
             return True
-        reply = QMessageBox.question(
-            self, "Change representative frame?",
-            "Move axis to this frame?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        return reply == QMessageBox.StandardButton.Yes
+        return asked(self, "Change representative frame?", "Move axis to this frame?")
 
     def _form_axis_if_both_placed(self, idx):
         if self.pending_tip and self.pending_base:
@@ -1610,12 +1607,8 @@ class App(QMainWindow):
 
     def closeEvent(self, event):
         if self._worker and self._worker.isRunning():
-            reply = QMessageBox.question(
-                self, "Processing in progress",
-                "Processing is still running. Abort and close?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
+            if not asked(self, "Processing in progress",
+                         "Processing is still running. Abort and close?"):
                 event.ignore()
                 return
             self._worker.stop()
@@ -1625,6 +1618,7 @@ class App(QMainWindow):
                 self, "Unsaved changes",
                 "Save before closing?",
                 QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Save,
             )
             if reply == QMessageBox.StandardButton.Save:
                 if self._save_project():
