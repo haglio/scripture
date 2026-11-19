@@ -66,3 +66,16 @@ def test_discarding_closes_without_writing_anything(window, monkeypatch, tmp_pat
 
     assert event.accepted is True
     assert not list(tmp_path.glob("*.scripture"))
+
+
+def test_the_unsaved_changes_question_has_save_as_the_default(window, monkeypatch, tmp_path):
+    window.video_path = str(tmp_path / "example clip.mp4")
+    window._mark_dirty()
+    dialogs = Dialogs(QMessageBox.StandardButton.Discard)
+    monkeypatch.setattr(gui, "QMessageBox", dialogs)
+    monkeypatch.setattr(gui, "QFileDialog", FileDialog())
+
+    window.closeEvent(CloseEvent())
+
+    [(_window, title, _text, _buttons, default)] = dialogs.asked
+    assert (title, default) == ("Unsaved changes", QMessageBox.StandardButton.Save)

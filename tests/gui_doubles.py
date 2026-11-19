@@ -33,8 +33,10 @@ class Dialogs:
 
     def __init__(self, *answers):
         self._answers = list(answers)
+        self.asked = []
 
-    def question(self, *_args):
+    def question(self, *args):
+        self.asked.append(args)
         return self._answers.pop(0)
 
 
