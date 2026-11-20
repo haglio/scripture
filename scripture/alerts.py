@@ -11,5 +11,5 @@ def show_error(title: str, message: str) -> bool:
     return alert.show_alert(title, message, icon=ICON_FILE, level=alert.Level.ERROR)
 
 
-def show_warning(title: str, message: str) -> bool:
-    return alert.show_alert(title, message, icon=ICON_FILE, level=alert.Level.WARNING)
+def show_warning(title: str, message: str, *, copyable: bool = True) -> bool:
+    return alert.show_alert(title, message, icon=ICON_FILE, level=alert.Level.WARNING, copyable=copyable)
