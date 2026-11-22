@@ -1186,7 +1186,7 @@ class App(QMainWindow):
         left_idx = idx - 1 if idx > 0 and self.scenes[idx].start_frame == frame else idx
         right_idx = left_idx + 1
         if both_scenes_have_an_axis(self.annotations.axes, left_idx, right_idx):
-            show_warning("Cannot unsplit", "Both adjacent scenes have axes. Delete one axis first.", copyable=False)
+            show_warning("Cannot unsplit", "Both adjacent scenes have axes. Delete one axis first.")
             return
         self.splits.remove(frame)
         self._rebuild_scenes()
@@ -1411,7 +1411,7 @@ class App(QMainWindow):
 
     def _on_process_error(self, idx, msg):
         self._set_status(f"Error scene {idx+1}: {msg}")
-        show_warning(f"Processing error (Scene {idx+1})", msg)
+        show_error(f"Processing error (Scene {idx+1})", msg, warning_icon=True)
 
     def _on_process_finished(self):
         el = time.monotonic() - self._process_start_time
@@ -1466,7 +1466,7 @@ class App(QMainWindow):
 
     def _on_auto_error(self, msg):
         self._set_status(f"Auto processing error: {msg}")
-        show_warning("Auto processing error", msg)
+        show_error("Auto processing error", msg, warning_icon=True)
 
     def _on_auto_finished(self):
         el = time.monotonic() - self._process_start_time
@@ -1495,7 +1495,7 @@ class App(QMainWindow):
         axes = self.annotations.axes
         annotated = [i for i in range(len(self.scenes)) if i in axes]
         if not annotated:
-            show_warning("No axes", "Annotate tip/base on at least one scene first.", copyable=False)
+            show_warning("No axes", "Annotate tip/base on at least one scene first.")
             return
         self._start_processing(self._build_jobs(annotated))
 
@@ -1533,7 +1533,7 @@ class App(QMainWindow):
     def _require_video(self):
         if self.video_path:
             return True
-        show_warning("No video", "Open a video first.", copyable=False)
+        show_warning("No video", "Open a video first.")
         return False
 
     def _save_project(self):
@@ -1591,7 +1591,7 @@ class App(QMainWindow):
 
     def _export(self):
         if not self.annotations.actions:
-            show_warning("No data", "Process at least one scene first.", copyable=False)
+            show_warning("No data", "Process at least one scene first.")
             return
         all_a = []
         for a in self.annotations.actions.values():
