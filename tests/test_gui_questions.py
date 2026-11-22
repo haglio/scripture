@@ -78,10 +78,9 @@ def test_closing_while_processing_asks_with_yes_as_the_default(window, monkeypat
 
 def test_asking_to_open_a_video_first_offers_nothing_to_copy(window, monkeypatch):
     shown = []
-    monkeypatch.setattr(gui, "show_warning",
-                        lambda title, message, **how: shown.append((title, how)))
+    monkeypatch.setattr(gui, "show_warning", lambda title, message: shown.append(title))
     window.video_path = None
 
     window._require_video()
 
-    assert shown == [("No video", {"copyable": False})]
+    assert shown == ["No video"]
