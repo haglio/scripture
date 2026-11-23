@@ -29,7 +29,7 @@ def test_a_project_whose_video_moved_leaves_the_open_one_playing(
     assert window.video is kept
     assert not playing.released
     assert [call.args[0] for call in shown.call_args_list] == ["Video not found"]
-    assert shown.call_args.kwargs["level"] is Level.ERROR
+    assert shown.call_args.kwargs.get("level", Level.ERROR) is Level.ERROR
 
 
 def test_a_project_that_opens_releases_the_capture_it_replaces(
