@@ -9,6 +9,7 @@ from app_support.logging_utils import install_exception_logging
 from app_support.process_identity import ProcessNamer
 from app_support.win32 import set_app_user_model_id, stamp_pinned_shortcuts
 from shared_ui.preview import Preview, preview_of, taskbar_identity
+from shared_ui.preview_taskbar import preview_on_the_taskbar
 
 from scripture import content
 from scripture.project import PROJECTS_DIR, name_the_videos_by_id
@@ -74,6 +75,7 @@ def open_the_loading_screen(preview: Preview | None):
         caption=LOADING_CAPTION, wordmark="Scripture", icon=_ICON, preview=preview,
         steps=STEPS, cancel_hint=CANCEL_HINT,
         app_id=_its_taskbar_identity(preview) if sys.platform == "win32" else None,
+        taskbar=preview_on_the_taskbar("Scripture", _ICON, preview, PROJECT_DIR, PROJECT_DIR / "state"),
     )
 
 

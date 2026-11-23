@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from app_support.overlay import MissingOverlayKey
+from shared_ui.preview import Preview, window_title
 from shared_ui.testing import loading_process_opened
 
 from scripture import content, main
@@ -43,7 +44,7 @@ def test_the_loading_screen_runs_in_a_process_of_its_own_wearing_scriptures_task
     opened.assert_called_once_with(
         caption=main.LOADING_CAPTION, wordmark="Scripture", icon=main.PROJECT_DIR / "icon.ico",
         preview=None, steps=main.STEPS, cancel_hint=main.CANCEL_HINT,
-        app_id=main.APP_USER_MODEL_ID)
+        app_id=main.APP_USER_MODEL_ID, taskbar=None)
 
 
 def test_off_windows_the_loading_screen_wears_no_taskbar_identity(monkeypatch):
@@ -91,3 +92,12 @@ def test_what_is_wrong_with_the_tracker_goes_to_the_launcher_s_log_at_start_not_
     main._warn_at_start_about_the_tracker(found=lambda: ["an invented complaint"])
 
     assert capsys.readouterr().err == "scripture: an invented complaint\n"
+
+
+def test_a_previews_loading_screen_wears_its_own_letter_on_its_taskbar_button():
+    with loading_process_opened() as opened:
+        main.open_the_loading_screen(Preview("the example"))
+
+    button = opened.call_args.kwargs["taskbar"]
+    assert button.name == window_title("Scripture", Preview("the example"))
+    assert button.icon.is_file()
