@@ -1411,7 +1411,7 @@ class App(QMainWindow):
 
     def _on_process_error(self, idx, msg):
         self._set_status(f"Error scene {idx+1}: {msg}")
-        show_error(f"Processing error (Scene {idx+1})", msg, warning_icon=True)
+        show_error(f"Processing error (Scene {idx+1})", msg)
 
     def _on_process_finished(self):
         el = time.monotonic() - self._process_start_time
@@ -1466,7 +1466,7 @@ class App(QMainWindow):
 
     def _on_auto_error(self, msg):
         self._set_status(f"Auto processing error: {msg}")
-        show_error("Auto processing error", msg, warning_icon=True)
+        show_error("Auto processing error", msg)
 
     def _on_auto_finished(self):
         el = time.monotonic() - self._process_start_time
